@@ -1,0 +1,38 @@
+{
+  "name": "techpioasset",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TechpioAsset - Manage Assets. Control Costs. Simplify Operations.",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "packageManager": "pnpm@11.15.1",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "pnpm --filter @techpioasset/e2e test",
+    "db:migrate": "pnpm --filter @techpioasset/api db:migrate",
+    "db:migrate:deploy": "pnpm --filter @techpioasset/api db:migrate:deploy",
+    "db:generate": "pnpm --filter @techpioasset/api db:generate",
+    "db:reset": "pnpm --filter @techpioasset/api db:reset",
+    "db:studio": "pnpm --filter @techpioasset/api db:studio",
+    "seed": "pnpm --filter @techpioasset/api seed",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@techpioasset/config": "workspace:*",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

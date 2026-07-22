@@ -1,0 +1,18 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'e2e'
+
+# pnpm blocks dependency lifecycle scripts by default. These need them:
+# esbuild fetches its platform binary, Prisma generates its client and engines.
+allowBuilds:
+  esbuild: true
+  prisma: true
+  '@prisma/client': true
+  '@prisma/engines': true
+  # Install-time analytics pulled in transitively by Prisma. Denied: it reports
+  # install events to an external endpoint and nothing here depends on it running.
+  '@scarf/scarf': false
+  # Native binaries: Next.js image optimisation, and the ESLint module resolver.
+  sharp: true
+  unrs-resolver: true

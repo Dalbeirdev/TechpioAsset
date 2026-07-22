@@ -1,0 +1,13 @@
+# Normalise to LF in the repository, matching .editorconfig. Without this, Windows
+# checkouts commit CRLF and every cross-platform diff becomes whole-file noise.
+* text=auto eol=lf
+
+# Generated - collapse in diffs and exclude from language statistics.
+pnpm-lock.yaml linguist-generated=true -diff
+apps/api/prisma/migrations/**/*.sql linguist-generated=true
+
+# Binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./base.json",
+  // Deliberately no outDir/rootDir: relative paths in a tsconfig resolve against
+  // the file that declares them, so setting them here would point every consumer
+  // at packages/config. Each package sets its own.
+  // CommonJS output: these packages are consumed by the NestJS API at runtime
+  // (Node, no bundler) as well as by Next and Vitest. CJS resolves extensionless
+  // relative imports, which ESM does not, so this keeps one source style working
+  // everywhere without '.js' suffixes littered through the source.
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node"
+  }
+}

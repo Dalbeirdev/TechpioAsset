@@ -1,0 +1,73 @@
+# TechpioAsset - local development infrastructure.
+#
+# Application processes run on the host (pnpm dev) so hot reload stays fast;
+# Compose provides only the backing services. Every service is bound to
+# localhost, never 0.0.0.0, so a developer laptop on a shared network does not
+# expose an unauthenticated database.
+
+name: techpioasset
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: techpioasset
+      POSTGRES_PASSWORD: techpioasset
+      POSTGRES_DB: techpioasset
+      # Deterministic collation so ORDER BY matches across developer machines.
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U techpioasset -d techpioasset']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Azure Blob Storage emulator. Lets the Azure storage provider be exercised
+  # locally without a subscription, so the production code path is the one under
+  # test rather than a separate mock.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    restart: unless-stopped
+    command: ['azurite-blob', '--blobHost', '0.0.0.0', '--blobPort', '10000', '--location', '/data']
+    ports:
+      - '127.0.0.1:10000:10000'
+    volumes:
+      - azurite-data:/data
+
+  # Catches every outbound email in a web UI at http://localhost:8025 so
+  # notification work never needs a real mail account.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
+
+volumes:
+  postgres-data:
+  redis-data:
+  azurite-data:

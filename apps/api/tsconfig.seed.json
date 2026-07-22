@@ -1,0 +1,16 @@
+{
+  "extends": "@techpioasset/config/tsconfig/base.json",
+  // The seed and prisma.config.ts run as ESM under tsx and use import.meta.url,
+  // so they need NodeNext rather than the CommonJS library preset the API itself
+  // compiles to. NodeNext is also what maps their './x.js' specifiers to sources.
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"]
+  },
+  "include": ["prisma/**/*.ts", "prisma.config.ts"]
+}

@@ -1,0 +1,17 @@
+{
+  "extends": "@techpioasset/config/tsconfig/nest.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    // Must live inside outDir. Nest's deleteOutDir wipes dist, and a build-info
+    // file surviving outside it makes tsc skip re-emitting "unchanged" files -
+    // producing a dist that compiles clean but crashes at require time.
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "prisma"]
+}

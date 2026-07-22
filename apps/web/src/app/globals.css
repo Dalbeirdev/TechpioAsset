@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+
+/* Theme is class-driven so next-themes can set it explicitly and the user's
+   choice survives a reload, rather than following the OS only. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --color-surface: #ffffff;
+  --color-surface-raised: #f8fafc;
+  --color-surface-sunken: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-content: #0f172a;
+  --color-content-muted: #475569;
+  --color-content-subtle: #64748b;
+  --color-brand: #1d4ed8;
+  --color-brand-hover: #1e40af;
+  --color-brand-contrast: #ffffff;
+  --color-focus: #2563eb;
+
+  --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+}
+
+/* Surface tokens for the dark scheme. Tone tokens (status badge colours) are
+   emitted from @techpioasset/ui-tokens at render time so web and mobile cannot
+   drift - see src/lib/tone-css.ts. */
+.dark {
+  --color-surface: #0b1120;
+  --color-surface-raised: #0f172a;
+  --color-surface-sunken: #020617;
+  --color-border: #1e293b;
+  --color-border-strong: #334155;
+  --color-content: #e2e8f0;
+  --color-content-muted: #94a3b8;
+  --color-content-subtle: #64748b;
+  --color-brand: #60a5fa;
+  --color-brand-hover: #93c5fd;
+  --color-brand-contrast: #0b1120;
+  --color-focus: #60a5fa;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-content);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Spec section 26 requires visible focus. A single global rule is more reliable
+     than remembering a focus style on every interactive component. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

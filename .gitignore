@@ -1,0 +1,44 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+.turbo/
+
+# env - .env.example is committed, real env files are never
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# local infra + generated artefacts
+.pnpm-store/
+prisma/generated/
+*.tsbuildinfo
+.expo/
+.expo-shared/
+
+# test output
+playwright-report/
+test-results/
+blob-report/
+
+# local mock provider output (mock mail/storage writes here)
+.local-storage/
+.local-mail/
+
+# Source requirements document. Kept local and out of the public repository;
+# PLAN.md carries everything needed to work on the codebase.
+TechpioAsset Design and Development Plan.pdf
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+pnpm-debug.log*
