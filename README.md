@@ -6,15 +6,17 @@ Enterprise asset-management platform covering IT equipment, furniture, kitchen a
 office supplies, invoices, employee requests, assignments, returns, maintenance, costs and audit
 history.
 
-> **Status: Phase 4 (Mobile) complete, with one caveat.** The web platform through invoices and AI is
-> working and tested. The Phase 4 mobile app is built and typechecks against real Expo/RN types, and
-> its offline-sync engine and backend are fully tested — but the app **could not be run on a device
-> or emulator in this environment** (Windows, no Android SDK, no iOS). See
-> [the Phase 4 report](./docs/phase-4-report.md) for exactly what is verified versus unverified.
-> Phase 5 (maintenance, warranty, reports) is next. Plan: [PLAN.md](./PLAN.md). Reports:
+> **Status: Phase 5 (Maintenance, warranty, depreciation, reports & scheduling) complete.** The web
+> platform — assets, requests, invoices/AI, and now maintenance lifecycle, exact-decimal depreciation,
+> warranty expiry alerts, and permission-gated CSV/Excel reports with saved scheduled exports — is
+> working and tested (402 automated tests, plus a live-API flow). The Phase 4 mobile app remains built
+> and typechecked but **could not be run on a device or emulator in this environment** (Windows, no
+> Android SDK, no iOS); see [the Phase 4 report](./docs/phase-4-report.md). Phase 6 (hardening —
+> security suite, WCAG audit, performance, dependency audit) is the last phase. Plan:
+> [PLAN.md](./PLAN.md). Reports:
 > [Phase 0](./docs/phase-0-report.md) · [Phase 1](./docs/phase-1-report.md) ·
 > [Phase 2](./docs/phase-2-report.md) · [Phase 3](./docs/phase-3-report.md) ·
-> [Phase 4](./docs/phase-4-report.md).
+> [Phase 4](./docs/phase-4-report.md) · [Phase 5](./docs/phase-5-report.md).
 
 ---
 

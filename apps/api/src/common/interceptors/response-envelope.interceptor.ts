@@ -28,6 +28,18 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       map((payload: unknown) => {
+        // File downloads set their own Content-Type / Content-Disposition and
+        // must not be wrapped — enveloping a CSV would corrupt the download.
+        // A handler signals this by setting a non-JSON content type before
+        // returning its body.
+        const response = context.switchToHttp().getResponse<{
+          getHeader?: (name: string) => unknown;
+        }>();
+        const disposition = response.getHeader?.('content-disposition');
+        if (typeof disposition === 'string' && disposition.includes('attachment')) {
+          return payload;
+        }
+
         const ctx = getRequestContext();
         const meta = {
           requestId: ctx?.requestId ?? 'req_unknown',

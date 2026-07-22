@@ -10,6 +10,7 @@ import {
   Cpu,
   LayoutDashboard,
   Menu,
+  BarChart3,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
@@ -47,6 +48,7 @@ const NAV: NavItem[] = [
     Icon: Wrench,
     permission: PERMISSIONS.MAINTENANCE_READ,
   },
+  { href: '/reports', label: 'Reports', Icon: BarChart3, permission: PERMISSIONS.REPORTS_READ },
   { href: '/settings/ai', label: 'AI settings', Icon: Cpu, permission: PERMISSIONS.AI_CONFIGURE },
 ];
 

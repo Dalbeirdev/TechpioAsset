@@ -82,8 +82,15 @@ export const envSchema = z
     PUSH_PROVIDER: z.enum(['mock', 'expo']).default('mock'),
     EXPO_ACCESS_TOKEN: z.string().optional(),
 
+    // mock | webhook — optional Teams/Slack chat integration (spec section 19).
+    CHAT_PROVIDER: z.enum(['mock', 'webhook']).default('mock'),
     TEAMS_WEBHOOK_URL: z.string().optional(),
     SLACK_WEBHOOK_URL: z.string().optional(),
+    /** Runs the warranty/maintenance alert sweep on boot and daily. */
+    ENABLE_SCHEDULED_JOBS: z
+      .enum(['true', 'false', '1', '0'])
+      .default('false')
+      .transform((v) => v === 'true' || v === '1'),
 
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     LOG_REDACT_KEYS: z

@@ -17,11 +17,15 @@ import { InvoicesModule } from './invoices/invoices.module.js';
 import { AiConfigModule } from './ai-config/ai-config.module.js';
 import { StorageHttpModule } from './storage/storage-http.module.js';
 import { MobileModule } from './mobile/mobile.module.js';
+import { MaintenanceModule } from './maintenance/maintenance.module.js';
+import { ReportsModule } from './reports/reports.module.js';
+import { ScheduledModule } from './scheduled/scheduled.module.js';
 import { MailModule } from './providers/mail/mail.module.js';
 import { QueueModule } from './providers/queue/queue.module.js';
 import { StorageModule } from './providers/storage/storage.module.js';
 import { AiModule } from './providers/ai/ai.module.js';
 import { PushModule } from './providers/push/push.module.js';
+import { ChatModule } from './providers/chat/chat.module.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter.js';
@@ -49,6 +53,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     StorageModule,
     AiModule,
     PushModule,
+    ChatModule,
     AiConfigModule,
     NotificationsModule,
     AuthModule,
@@ -61,6 +66,9 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     InvoicesModule,
     StorageHttpModule,
     MobileModule,
+    MaintenanceModule,
+    ReportsModule,
+    ScheduledModule,
   ],
   providers: [
     // Order matters: throttle before authenticating (so an unauthenticated flood
