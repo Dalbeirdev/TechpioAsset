@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { ThemeProvider } from '@/components/theme-provider';
+import { AuthProvider } from '@/providers/auth-provider';
+import { QueryProvider } from '@/providers/query-provider';
 import { buildToneCss } from '@/lib/tone-css';
 import './globals.css';
 
@@ -30,7 +32,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <style dangerouslySetInnerHTML={{ __html: buildToneCss() }} />
       </head>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-[var(--color-brand)] focus:px-3 focus:py-2 focus:text-[var(--color-brand-contrast)]"
+        >
+          Skip to content
+        </a>
+        <ThemeProvider>
+          <QueryProvider>
+            <AuthProvider>
+              <div id="main">{children}</div>
+            </AuthProvider>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

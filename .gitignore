@@ -28,6 +28,9 @@ blob-report/
 .local-storage/
 .local-mail/
 
+# user-space PostgreSQL cluster created by `pnpm db:local`
+.local-db/
+
 # Source requirements document. Kept local and out of the public repository;
 # PLAN.md carries everything needed to work on the codebase.
 TechpioAsset Design and Development Plan.pdf

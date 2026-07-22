@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { AppConfig } from './config/config.module.js';
 
@@ -12,6 +13,9 @@ async function bootstrap(): Promise<void> {
   const config = app.get(AppConfig);
 
   app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready'] });
+
+  // Refresh tokens travel as httpOnly cookies; this reads them back.
+  app.use(cookieParser());
 
   app.use(
     helmet({

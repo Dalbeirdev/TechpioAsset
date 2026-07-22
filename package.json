@@ -24,6 +24,8 @@
     "db:reset": "pnpm --filter @techpioasset/api db:reset",
     "db:studio": "pnpm --filter @techpioasset/api db:studio",
     "seed": "pnpm --filter @techpioasset/api seed",
+    "db:local": "pnpm --filter @techpioasset/api db:local",
+    "db:local:stop": "pnpm --filter @techpioasset/api db:local:stop",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f",

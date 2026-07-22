@@ -7,6 +7,11 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "rootDir": ".",
+    // @node-rs/argon2 exposes `Algorithm` as an ambient const enum, which
+    // isolatedModules cannot inline. The seed is executed by tsx and never
+    // bundled, and the enum exists at runtime, so per-file transpilation is not
+    // a constraint here.
+    "isolatedModules": false,
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,

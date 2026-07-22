@@ -16,3 +16,7 @@ allowBuilds:
   # Native binaries: Next.js image optimisation, and the ESLint module resolver.
   sharp: true
   unrs-resolver: true
+  # Unpacks the user-space PostgreSQL binaries used by `pnpm db:local`.
+  '@embedded-postgres/windows-x64': true
+  # Native transform binary; used by Vitest to emit decorator metadata for Nest.
+  '@swc/core': true

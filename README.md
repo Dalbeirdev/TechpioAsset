@@ -6,9 +6,10 @@ Enterprise asset-management platform covering IT equipment, furniture, kitchen a
 office supplies, invoices, employee requests, assignments, returns, maintenance, costs and audit
 history.
 
-> **Status: Phase 0 (Foundation) complete.** Authentication, dashboards and asset management arrive
-> in Phase 1. See [PLAN.md](./PLAN.md) for the full seven-phase plan and
-> [docs/phase-0-report.md](./docs/phase-0-report.md) for what is verified versus outstanding.
+> **Status: Phase 1 (Core) complete.** Authentication, RBAC, assets, assignment and return, and the
+> app shell are working and tested; requests, approvals and notifications arrive in Phase 2. See
+> [PLAN.md](./PLAN.md) for the seven-phase plan, and the phase reports for what is verified versus
+> outstanding: [Phase 0](./docs/phase-0-report.md) · [Phase 1](./docs/phase-1-report.md).
 
 ---
 
@@ -20,8 +21,9 @@ history.
 | pnpm           | >= 10    | `npm install -g pnpm`                         |
 | Docker Desktop | latest   | Provides Postgres, Redis, Azurite and Mailpit |
 
-Docker is only needed for the backing services. If you cannot run Docker, install PostgreSQL 16 and
-Redis 7 natively and point `DATABASE_URL` / `REDIS_URL` at them — nothing else changes.
+Docker is only needed for the backing services. **If you cannot run Docker**, see
+[Running without Docker](#running-without-docker) — a real PostgreSQL server can be started from
+user-space binaries with no administrator rights.
 
 ## Installation
 
@@ -57,11 +59,37 @@ pnpm seed
 eight system roles with their grants, and the full category tree from spec section 4. The seed is
 idempotent — re-running it changes nothing.
 
+### Running without Docker
+
+Docker Desktop needs administrator rights and, on Windows, WSL2. Where that is not available, the
+repository ships a user-space PostgreSQL server — real PostgreSQL binaries, not an emulation — run as
+an ordinary process:
+
+```bash
+pnpm db:local
+```
+
+That creates a cluster in `apps/api/.local-db` (git-ignored), starts it on the port from
+`DATABASE_URL`, and holds the foreground until Ctrl+C. `pnpm db:local:stop` stops a detached one.
+Then run `db:migrate:deploy` and `seed` exactly as above.
+
+Caveats worth knowing:
+
+- **Postgres only.** Redis has no equivalent user-space path on Windows. Nothing in Phase 1 needs it —
+  rate limiting uses in-memory storage — and `/health/ready` reports it as non-critical until Phase 2
+  introduces background jobs.
+- The `embedded-postgres` package is a **`devDependency`, pinned to an exact version**, and is never
+  loaded by the application. Production uses Compose or a managed instance.
+- Compose remains the primary path. Use this only when Docker is genuinely unavailable.
+
 ## Local development
 
 ```bash
 pnpm dev
 ```
+
+> Stop the API dev server before running a full `pnpm build`. `nest build` deletes `dist` while
+> `nest start --watch` is serving out of it, which crashes the running process.
 
 | Surface                     | URL                                |
 | --------------------------- | ---------------------------------- |
@@ -74,6 +102,26 @@ pnpm dev
 
 Run a single app with `pnpm --filter @techpioasset/web dev` or `--filter @techpioasset/api dev`.
 
+### Demonstration accounts
+
+The seed creates one account per role. **Every one shares the same password**, which is why the seed
+refuses to run with `NODE_ENV=production` and the API refuses to boot with a development JWT secret.
+
+| Email                       | Role                 | Sees                                        |
+| --------------------------- | -------------------- | ------------------------------------------- |
+| `admin@techpioasset.dev`    | Super Admin          | Everything, all 48 permissions              |
+| `it@techpioasset.dev`       | IT Administrator     | Full estate, IT lifecycle                   |
+| `hr@techpioasset.dev`       | HR                   | People and assets, **no costs or invoices** |
+| `office@techpioasset.dev`   | Office Administrator | Furniture, kitchen, stock                   |
+| `finance@techpioasset.dev`  | Finance              | Costs, invoices, vendors                    |
+| `manager@techpioasset.dev`  | Manager              | Own and direct reports' assets only         |
+| `auditor@techpioasset.dev`  | Auditor              | Read-only across the estate                 |
+| `employee@techpioasset.dev` | Employee             | **Only their own 3 assets**, no costs       |
+
+Password for all of them: `TechpioDemo!2026`
+
+Set `SEED_DEMO=false` to load reference data without them.
+
 ## Commands
 
 | Command                 | Purpose                                                           |
@@ -84,7 +132,7 @@ Run a single app with `pnpm --filter @techpioasset/web dev` or `--filter @techpi
 | `pnpm typecheck`        | TypeScript, no emit                                               |
 | `pnpm test`             | Unit tests                                                        |
 | `pnpm test:integration` | API integration tests (requires a database)                       |
-| `pnpm test:e2e`         | Playwright end-to-end suite (Phase 1 onward)                      |
+| `pnpm test:e2e`         | Playwright end-to-end suite (Phase 6)                             |
 | `pnpm format`           | Prettier write                                                    |
 
 ### Database commands

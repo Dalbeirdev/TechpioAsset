@@ -7,7 +7,7 @@ import {
   type ExceptionFilter,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { ZodError } from 'zod';
+import type { ZodError, ZodIssue } from 'zod';
 import { Prisma } from '@prisma/client';
 import {
   ERROR_STATUS,
@@ -20,6 +20,24 @@ import { AppError } from '../errors/app-error.js';
 import { getRequestContext } from '../request-context.js';
 
 const PROBLEM_BASE = 'https://techpioasset.dev/errors';
+
+/**
+ * Structural check rather than `instanceof ZodError`.
+ *
+ * Schemas are defined in @techpioasset/contracts, which carries its own Zod
+ * dependency. When the package manager resolves two copies, the error thrown by
+ * a contracts schema is not an instance of the API's ZodError class, and an
+ * `instanceof` check silently degrades every validation failure into a 500.
+ * Shape-checking survives duplicate copies and major-version differences alike.
+ */
+function isZodError(error: unknown): error is ZodError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: string }).name === 'ZodError' &&
+    Array.isArray((error as { issues?: unknown }).issues)
+  );
+}
 
 const TITLES: Partial<Record<ErrorCode, string>> = {
   VALIDATION_FAILED: 'Validation failed',
@@ -104,13 +122,13 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       };
     }
 
-    if (exception instanceof ZodError) {
+    if (isZodError(exception)) {
       return {
         code: 'VALIDATION_FAILED',
         status: ERROR_STATUS.VALIDATION_FAILED,
         title: 'Validation failed',
         detail: 'One or more fields are invalid.',
-        errors: exception.issues.map((issue) => ({
+        errors: exception.issues.map((issue: ZodIssue) => ({
           path: issue.path.join('.'),
           message: issue.message,
           code: issue.code,

@@ -10,6 +10,13 @@ export const dependencyHealthSchema = z.object({
   status: dependencyStatusSchema,
   latencyMs: z.number().nonnegative().optional(),
   detail: z.string().optional(),
+  /**
+   * Whether the API can serve requests without this dependency. Only a failing
+   * critical dependency makes the service `error`; a non-critical one degrades it.
+   * Reported per dependency rather than assumed, so the distinction is visible to
+   * whoever reads the probe rather than buried in the code.
+   */
+  critical: z.boolean().optional(),
 });
 export type DependencyHealth = z.infer<typeof dependencyHealthSchema>;
 

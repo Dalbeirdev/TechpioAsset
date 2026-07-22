@@ -39,11 +39,12 @@ export class HealthService {
     dependencies.push(this.describeProvider('mail', this.config.get('MAIL_PROVIDER'), 'mock'));
     dependencies.push(this.describeProvider('push', this.config.get('PUSH_PROVIDER'), 'mock'));
 
-    const hasDown = dependencies.some((d) => d.status === 'down');
-    const hasMocked = dependencies.some((d) => d.status === 'mocked');
+    const criticalDown = dependencies.some((d) => d.critical && d.status === 'down');
+    const anyDown = dependencies.some((d) => d.status === 'down');
+    const anyMocked = dependencies.some((d) => d.status === 'mocked');
 
     return {
-      status: hasDown ? 'error' : hasMocked ? 'degraded' : 'ok',
+      status: criticalDown ? 'error' : anyDown || anyMocked ? 'degraded' : 'ok',
       service: 'techpioasset-api',
       version: process.env.npm_package_version ?? '0.1.0',
       environment: this.config.get('NODE_ENV'),
@@ -59,10 +60,10 @@ export class HealthService {
   private async checkPostgres(): Promise<DependencyHealth> {
     try {
       const latencyMs = await this.prisma.ping();
-      return { name: 'postgres', status: 'up', latencyMs };
+      return { name: 'postgres', status: 'up', latencyMs, critical: true };
     } catch (error) {
       this.logger.warn(`Postgres health check failed: ${(error as Error).message}`);
-      return { name: 'postgres', status: 'down', detail: 'Connection failed' };
+      return { name: 'postgres', status: 'down', detail: 'Connection failed', critical: true };
     }
   }
 
@@ -78,10 +79,17 @@ export class HealthService {
     try {
       await client.connect();
       await client.ping();
-      return { name: 'redis', status: 'up', latencyMs: Date.now() - started };
+      return { name: 'redis', status: 'up', latencyMs: Date.now() - started, critical: false };
     } catch (error) {
       this.logger.warn(`Redis health check failed: ${(error as Error).message}`);
-      return { name: 'redis', status: 'down', detail: 'Connection failed' };
+      return {
+        name: 'redis',
+        status: 'down',
+        // Rate limiting currently uses in-memory storage. Redis becomes critical
+        // in Phase 2 when BullMQ queues start carrying notifications and jobs.
+        detail: 'Connection failed. Not required until background jobs are enabled (Phase 2).',
+        critical: false,
+      };
     } finally {
       client.disconnect();
     }
@@ -93,7 +101,8 @@ export class HealthService {
           name,
           status: 'mocked',
           detail: `Using the ${configured} provider. Results are simulated, not real.`,
+          critical: false,
         }
-      : { name, status: 'up', detail: `Provider: ${configured}` };
+      : { name, status: 'up', detail: `Provider: ${configured}`, critical: false };
   }
 }

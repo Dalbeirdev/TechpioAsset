@@ -11,6 +11,7 @@ import {
   type SystemRole,
 } from '@techpioasset/domain';
 import { CATEGORY_SEED } from './catalogue.js';
+import { seedDemo } from './demo.js';
 
 // Run via `pnpm seed`, which sets the working directory to apps/api.
 loadEnv({ path: path.resolve(process.cwd(), '../../.env') });
@@ -233,10 +234,18 @@ async function main(): Promise<void> {
   await seedCategories(companyId);
   await seedAiConfiguration(companyId);
 
+  // Demonstration accounts share one published password. Loading them into a
+  // production database would hand out administrator access, so this is refused
+  // outright rather than left to operator discipline.
+  if (process.env.NODE_ENV === 'production') {
+    console.log('\nNODE_ENV=production - demonstration data skipped.');
+  } else if (process.env.SEED_DEMO === 'false') {
+    console.log('\nSEED_DEMO=false - demonstration data skipped.');
+  } else {
+    await seedDemo(prisma, companyId);
+  }
+
   console.log('\nSeed complete.');
-  console.log(
-    'Demonstration accounts (spec section 25) are seeded in Phase 1 with authentication.',
-  );
 }
 
 main()

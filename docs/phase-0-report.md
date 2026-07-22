@@ -77,7 +77,28 @@ Tests worth calling out, because they encode spec rules rather than implementati
 | Infrastructure       | Compose: Postgres 16, Redis 7, Azurite, Mailpit — all bound to localhost only                                                                        |
 | Docs                 | README (prerequisites → production setup), `.env.example` documenting all 54 variables                                                               |
 
+> ## Addendum — 2026-07-23: the §4 blocker is closed
+>
+> A user-space PostgreSQL server (real binaries, no Docker, no WSL, no administrator rights) was
+> added as `pnpm db:local`. Against it:
+>
+> - `prisma migrate deploy` applied `20260722000000_init` cleanly — **54 tables created**.
+> - `pnpm seed` ran: 48 permissions, 1 company, 8 roles with 157 grants, 7 categories, 74
+>   subcategories, AI configuration disabled with human review required.
+> - The seed was **re-run and proved idempotent** — identical counts, company reported as reused.
+> - `/health/ready` now reports `postgres: up`. The already-running API picked up the new database
+>   without a restart, which also confirms the lazy-connect fix from §5.
+>
+> Redis remains unavailable and has no user-space equivalent on Windows. It is now reported as
+> **non-critical** until Phase 2 introduces background jobs, so readiness reads `degraded` rather
+> than `error`. Compose itself is still unverified.
+>
+> Two counts in this report were wrong and are corrected here: the permission catalogue holds **48**
+> permissions (not 51) and the category tree has **74** subcategories (not 84).
+
 ## 4. Known limitations
+
+> Superseded by the addendum above — retained as the record of what was true at Phase 0 sign-off.
 
 **The database was never started.** This machine has no Docker, no WSL, no PostgreSQL and no Redis,
 and the shell is not elevated, so none could be installed. Consequences:
