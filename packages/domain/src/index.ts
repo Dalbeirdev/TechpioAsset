@@ -8,3 +8,4 @@ export * from './permissions';
 export * from './workflow';
 export * from './invoice-verification';
 export * from './ai-config';
+export * from './offline-sync';

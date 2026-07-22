@@ -1,0 +1,19 @@
+{
+  "extends": "@techpioasset/config/tsconfig/base.json",
+  "compilerOptions": {
+    "jsx": "react-native",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["react"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "app/**/*.ts", "app/**/*.tsx"],
+  "exclude": ["node_modules", "src/**/*.test.ts"]
+}

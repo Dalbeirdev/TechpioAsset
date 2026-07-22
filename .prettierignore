@@ -1,0 +1,8 @@
+# Generated — never formatted. pnpm's lockfile also contains dependency keys
+# long enough to exceed Prettier's YAML parser limits.
+pnpm-lock.yaml
+**/dist/
+**/.next/
+**/.expo/
+**/coverage/
+apps/api/prisma/migrations/

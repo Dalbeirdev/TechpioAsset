@@ -438,6 +438,7 @@ model User {
 
   refreshTokens           RefreshToken[]
   verificationTokens      VerificationToken[]
+  deviceTokens            DeviceToken[]
   assignedAssets          Asset[]                 @relation("AssetCurrentAssignee")
   assignmentsHeld         AssetAssignment[]       @relation("AssignmentHolder")
   assignmentsGranted      AssetAssignment[]       @relation("AssignmentGrantedBy")
@@ -611,6 +612,27 @@ model RefreshToken {
   @@index([familyId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+/// A registered mobile device for push delivery (spec section 16, 19).
+model DeviceToken {
+  id     String @id @default(cuid())
+  userId String
+
+  /// Expo push token. Unique so re-registering the same device updates rather
+  /// than duplicating, which is what stops one tap sending three notifications.
+  token    String @unique
+  platform String // ios | android
+  deviceName String?
+
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("device_tokens")
 }
 
 /// Single-use tokens for email verification and password reset (spec section 1).

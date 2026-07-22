@@ -6,13 +6,15 @@ Enterprise asset-management platform covering IT equipment, furniture, kitchen a
 office supplies, invoices, employee requests, assignments, returns, maintenance, costs and audit
 history.
 
-> **Status: Phase 3 (Invoices & AI) complete.** Authentication, RBAC, assets, requests and approval
-> workflows, invoice upload with private storage, a deterministic verification engine, an AI provider
-> abstraction with a split-screen review UI, and Super Admin AI configuration are working and tested;
-> the mobile app arrives in Phase 4. See [PLAN.md](./PLAN.md) for the seven-phase plan, and the phase
-> reports for what is verified versus outstanding: [Phase 0](./docs/phase-0-report.md) ·
-> [Phase 1](./docs/phase-1-report.md) · [Phase 2](./docs/phase-2-report.md) ·
-> [Phase 3](./docs/phase-3-report.md).
+> **Status: Phase 4 (Mobile) complete, with one caveat.** The web platform through invoices and AI is
+> working and tested. The Phase 4 mobile app is built and typechecks against real Expo/RN types, and
+> its offline-sync engine and backend are fully tested — but the app **could not be run on a device
+> or emulator in this environment** (Windows, no Android SDK, no iOS). See
+> [the Phase 4 report](./docs/phase-4-report.md) for exactly what is verified versus unverified.
+> Phase 5 (maintenance, warranty, reports) is next. Plan: [PLAN.md](./PLAN.md). Reports:
+> [Phase 0](./docs/phase-0-report.md) · [Phase 1](./docs/phase-1-report.md) ·
+> [Phase 2](./docs/phase-2-report.md) · [Phase 3](./docs/phase-3-report.md) ·
+> [Phase 4](./docs/phase-4-report.md).
 
 ---
 
@@ -194,6 +196,10 @@ docs/        Architecture, RBAC matrix, phase reports
   Exactly one step is `PENDING` at a time; later steps queue as `WAITING`.
 - **Background jobs run in-process by default.** No Redis needed for development. Set
   `QUEUE_PROVIDER=bullmq` for a durable queue — in-process jobs do not survive a restart.
+- **Offline sync is idempotent by construction.** The mobile app queues changes under a
+  client-generated ULID; the server recognises a replay by it, so a phone on a flaky connection can
+  retry its whole queue without double-counting. The decision logic is pure and exhaustively tested
+  in `packages/domain`.
 
 ## External service setup
 

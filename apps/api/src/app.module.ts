@@ -16,10 +16,12 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { InvoicesModule } from './invoices/invoices.module.js';
 import { AiConfigModule } from './ai-config/ai-config.module.js';
 import { StorageHttpModule } from './storage/storage-http.module.js';
+import { MobileModule } from './mobile/mobile.module.js';
 import { MailModule } from './providers/mail/mail.module.js';
 import { QueueModule } from './providers/queue/queue.module.js';
 import { StorageModule } from './providers/storage/storage.module.js';
 import { AiModule } from './providers/ai/ai.module.js';
+import { PushModule } from './providers/push/push.module.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter.js';
@@ -46,6 +48,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     QueueModule,
     StorageModule,
     AiModule,
+    PushModule,
     AiConfigModule,
     NotificationsModule,
     AuthModule,
@@ -57,6 +60,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     LifecycleModule,
     InvoicesModule,
     StorageHttpModule,
+    MobileModule,
   ],
   providers: [
     // Order matters: throttle before authenticating (so an unauthenticated flood

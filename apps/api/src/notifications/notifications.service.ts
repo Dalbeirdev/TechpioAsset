@@ -6,10 +6,12 @@ import { paginate } from '../common/paginate.js';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MailProvider } from '../providers/mail/mail.provider.js';
+import { PushProvider } from '../providers/push/push.provider.js';
 import { QueueProvider } from '../providers/queue/queue.provider.js';
 import { NOTIFICATION_CATALOGUE, isMandatory } from './notification-catalogue.js';
 
 export const SEND_NOTIFICATION_JOB = 'notification.send';
+export const SEND_PUSH_JOB = 'notification.push';
 
 export interface NotifyInput {
   companyId: string;
@@ -29,6 +31,13 @@ interface SendJobPayload {
   text: string;
 }
 
+interface PushJobPayload {
+  userId: string;
+  title: string;
+  body: string;
+  linkPath?: string;
+}
+
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
@@ -37,6 +46,7 @@ export class NotificationsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly queue: QueueProvider,
     private readonly mail: MailProvider,
+    private readonly push: PushProvider,
     private readonly config: AppConfig,
   ) {}
 
@@ -52,6 +62,31 @@ export class NotificationsService implements OnModuleInit {
         where: { id: payload.notificationId },
         data: { deliveredAt: new Date(), simulated: result.simulated },
       });
+    });
+
+    // Push delivery runs off the request path too. A recipient with no registered
+    // device is a no-op, not an error — most users are web-only.
+    this.queue.register<PushJobPayload>(SEND_PUSH_JOB, async (payload) => {
+      const devices = await this.prisma.client.deviceToken.findMany({
+        where: { userId: payload.userId, revokedAt: null },
+        select: { token: true },
+      });
+      if (devices.length === 0) return;
+
+      const result = await this.push.send({
+        tokens: devices.map((d) => d.token),
+        title: payload.title,
+        body: payload.body,
+        ...(payload.linkPath ? { data: { linkPath: payload.linkPath } } : {}),
+      });
+
+      // Prune tokens Expo reported as dead, so they stop being retried.
+      if (result.invalidTokens.length > 0) {
+        await this.prisma.client.deviceToken.updateMany({
+          where: { token: { in: result.invalidTokens } },
+          data: { revokedAt: new Date() },
+        });
+      }
     });
   }
 
@@ -78,6 +113,19 @@ export class NotificationsService implements OnModuleInit {
         entityId: input.entityId,
       },
     });
+
+    // Push runs alongside email where the type and the user's preference allow.
+    if (
+      definition.channels.includes('PUSH') &&
+      (await this.wants(input.userId, input.type, 'PUSH'))
+    ) {
+      await this.queue.enqueue<PushJobPayload>(SEND_PUSH_JOB, {
+        userId: input.userId,
+        title: input.title,
+        body: input.body,
+        ...(input.linkPath ? { linkPath: input.linkPath } : {}),
+      });
+    }
 
     if (!definition.channels.includes('EMAIL')) return;
     if (!(await this.wants(input.userId, input.type, 'EMAIL'))) return;

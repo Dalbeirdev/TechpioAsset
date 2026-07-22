@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "TechpioAsset",
+    "slug": "techpioasset",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "techpioasset",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.techpio.asset",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan QR codes and barcodes, and photograph assets and invoices.",
+        "NSFaceIDUsageDescription": "Unlock the app with Face ID."
+      }
+    },
+    "android": {
+      "package": "com.techpio.asset",
+      "permissions": ["CAMERA", "USE_BIOMETRIC", "POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        { "cameraPermission": "Scan asset QR codes and barcodes, and capture invoices." }
+      ],
+      "expo-local-authentication",
+      "expo-notifications"
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:3001"
+    }
+  }
+}
