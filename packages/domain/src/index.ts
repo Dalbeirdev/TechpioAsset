@@ -5,3 +5,4 @@ export * from './verification-status';
 export * from './money';
 export * from './tracking';
 export * from './permissions';
+export * from './workflow';

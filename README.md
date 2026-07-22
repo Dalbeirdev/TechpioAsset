@@ -6,10 +6,12 @@ Enterprise asset-management platform covering IT equipment, furniture, kitchen a
 office supplies, invoices, employee requests, assignments, returns, maintenance, costs and audit
 history.
 
-> **Status: Phase 1 (Core) complete.** Authentication, RBAC, assets, assignment and return, and the
-> app shell are working and tested; requests, approvals and notifications arrive in Phase 2. See
-> [PLAN.md](./PLAN.md) for the seven-phase plan, and the phase reports for what is verified versus
-> outstanding: [Phase 0](./docs/phase-0-report.md) · [Phase 1](./docs/phase-1-report.md).
+> **Status: Phase 2 (Requests) complete.** Authentication, RBAC, assets, assignment and return,
+> configurable approval workflows, onboarding/offboarding and notifications are working and tested;
+> invoices and AI extraction arrive in Phase 3. See [PLAN.md](./PLAN.md) for the seven-phase plan,
+> and the phase reports for what is verified versus outstanding:
+> [Phase 0](./docs/phase-0-report.md) · [Phase 1](./docs/phase-1-report.md) ·
+> [Phase 2](./docs/phase-2-report.md).
 
 ---
 
@@ -176,9 +178,15 @@ docs/        Architecture, RBAC matrix, phase reports
   statuses, each with an exhaustively tested transition table.
 - **AI never approves anything.** `VERIFIED` and `REJECTED` require an authenticated human reviewer;
   the domain layer throws `AutomatedApprovalError` otherwise.
-- **Mock providers announce themselves.** Storage, AI, mail and push all sit behind interfaces. When
-  a mock is active, `/health/ready` reports `mocked` and responses carry `meta.simulated` — a
-  simulated result is never presented as a real one.
+- **Mock providers announce themselves.** Storage, AI, mail, push and the job queue all sit behind
+  interfaces. When a mock is active, `/health/ready` reports `mocked` and responses carry
+  `meta.simulated` — a simulated result is never presented as a real one. Simulated email is written
+  to `.local-mail` as openable `.eml` files rather than discarded.
+- **Approval chains are data.** Workflow definitions, steps, approvers and cost thresholds live in
+  the database and are read at runtime, so a Super Admin can reconfigure routing without a deploy.
+  Exactly one step is `PENDING` at a time; later steps queue as `WAITING`.
+- **Background jobs run in-process by default.** No Redis needed for development. Set
+  `QUEUE_PROVIDER=bullmq` for a durable queue — in-process jobs do not survive a restart.
 
 ## External service setup
 

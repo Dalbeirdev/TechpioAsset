@@ -21,6 +21,9 @@ export const ACCOUNTS = {
   auditor: 'auditor@techpioasset.dev',
   employee: 'employee@techpioasset.dev',
   employee2: 'employee2@techpioasset.dev',
+  // Used by the offboarding suite, which assigns and returns assets; keeping it
+  // separate stops that churn interfering with the scope assertions elsewhere.
+  employee3: 'employee3@techpioasset.dev',
 } as const;
 
 export type AccountKey = keyof typeof ACCOUNTS;

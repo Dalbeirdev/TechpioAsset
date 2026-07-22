@@ -11,9 +11,10 @@ export default [
     },
   },
   {
-    files: ['prisma/**/*.ts'],
+    files: ['prisma/**/*.ts', 'scripts/**/*.mjs'],
     rules: {
-      // The seed script reports progress to the operator; that is its output.
+      // Seed and operator scripts report progress to the console; that is their
+      // entire output, not stray debugging.
       'no-console': 'off',
     },
   },

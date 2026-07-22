@@ -75,6 +75,10 @@ export const envSchema = z
     SMTP_USER: z.string().optional(),
     SMTP_PASSWORD: z.string().optional(),
 
+    // in-process runs jobs in this process (no Redis required, not durable);
+    // bullmq uses REDIS_URL and survives restarts.
+    QUEUE_PROVIDER: z.enum(['in-process', 'bullmq']).default('in-process'),
+
     PUSH_PROVIDER: z.enum(['mock', 'expo']).default('mock'),
     EXPO_ACCESS_TOKEN: z.string().optional(),
 
@@ -114,6 +118,13 @@ export const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['AZURE_DOC_INTELLIGENCE_ENDPOINT'],
         message: 'Endpoint and key are required when AI_PROVIDER=azure',
+      });
+    }
+    if (env.QUEUE_PROVIDER === 'bullmq' && !env.REDIS_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['REDIS_URL'],
+        message: 'Required when QUEUE_PROVIDER=bullmq',
       });
     }
     if (env.MAIL_PROVIDER === 'smtp' && !env.SMTP_HOST) {

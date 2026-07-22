@@ -20,3 +20,6 @@ allowBuilds:
   '@embedded-postgres/windows-x64': true
   # Native transform binary; used by Vitest to emit decorator metadata for Nest.
   '@swc/core': true
+  # Optional native accelerator for BullMQ's msgpack serialisation. Denied: it is
+  # a pure-JS-fallback optimisation, and the queue is not on a hot path here.
+  msgpackr-extract: false

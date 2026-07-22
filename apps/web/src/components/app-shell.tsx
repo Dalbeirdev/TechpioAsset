@@ -21,6 +21,7 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/cn';
 import { ProfileMenu } from './profile-menu';
+import { NotificationBell } from './notification-bell';
 import { ThemeToggle } from './theme-toggle';
 
 interface NavItem {
@@ -35,7 +36,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
   { href: '/assets', label: 'Assets', Icon: Boxes, permission: PERMISSIONS.ASSETS_READ },
   { href: '/my-assets', label: 'My assets', Icon: Package },
-  { href: '/my-requests', label: 'My requests', Icon: ClipboardList },
+  { href: '/requests', label: 'Requests', Icon: ClipboardList },
   { href: '/people', label: 'People', Icon: Users, permission: PERMISSIONS.EMPLOYEES_READ },
   {
     href: '/maintenance',
@@ -133,6 +134,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className="h-9 w-44 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] pl-8 text-sm md:w-60"
             />
           </div>
+          <NotificationBell />
           <ThemeToggle />
           <Link
             href="/help"

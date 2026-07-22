@@ -10,6 +10,11 @@ import { HealthModule } from './health/health.module.js';
 import { AssetsModule } from './assets/assets.module.js';
 import { OrgModule } from './org/org.module.js';
 import { UsersModule } from './users/users.module.js';
+import { RequestsModule } from './requests/requests.module.js';
+import { LifecycleModule } from './lifecycle/lifecycle.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import { MailModule } from './providers/mail/mail.module.js';
+import { QueueModule } from './providers/queue/queue.module.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter.js';
@@ -32,11 +37,16 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     }),
     PrismaModule,
     AuditModule,
+    MailModule,
+    QueueModule,
+    NotificationsModule,
     AuthModule,
     HealthModule,
     UsersModule,
     OrgModule,
     AssetsModule,
+    RequestsModule,
+    LifecycleModule,
   ],
   providers: [
     // Order matters: throttle before authenticating (so an unauthenticated flood

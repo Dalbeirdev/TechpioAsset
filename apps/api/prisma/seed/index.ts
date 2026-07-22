@@ -12,6 +12,7 @@ import {
 } from '@techpioasset/domain';
 import { CATEGORY_SEED } from './catalogue.js';
 import { seedDemo } from './demo.js';
+import { seedWorkflows } from './workflows.js';
 
 // Run via `pnpm seed`, which sets the working directory to apps/api.
 loadEnv({ path: path.resolve(process.cwd(), '../../.env') });
@@ -233,6 +234,7 @@ async function main(): Promise<void> {
   await seedRoles(companyId, permissionIds);
   await seedCategories(companyId);
   await seedAiConfiguration(companyId);
+  await seedWorkflows(prisma, companyId);
 
   // Demonstration accounts share one published password. Loading them into a
   // production database would hand out administrator access, so this is refused

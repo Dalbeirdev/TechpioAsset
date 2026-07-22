@@ -8,6 +8,7 @@ import { getRequestContext } from '../common/request-context.js';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { MailProvider } from '../providers/mail/mail.provider.js';
 import { MfaService } from './mfa.service.js';
 import { PasswordService } from './password.service.js';
 import { TokenService } from './token.service.js';
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly tokens: TokenService,
     private readonly mfa: MfaService,
     private readonly audit: AuditService,
+    private readonly mail: MailProvider,
     private readonly config: AppConfig,
   ) {}
 
@@ -288,8 +290,31 @@ export class AuthService {
       return {};
     }
     const token = await this.issueVerificationToken(user.id, 'PASSWORD_RESET');
-    // Phase 2 delivers this by email. Until the mail provider exists the token is
-    // returned to the caller only in development, never in production.
+    const link = `${this.config.get('WEB_URL')}/reset-password?token=${token}`;
+
+    // Sent through the provider interface: real SMTP in production, an .eml file
+    // on disk in development. A failure must not change the response, or the
+    // difference between "sent" and "not sent" would leak whether the address
+    // exists.
+    try {
+      await this.mail.send({
+        to: user.email,
+        subject: 'Reset your TechpioAsset password',
+        text: [
+          'Someone asked to reset the password for this TechpioAsset account.',
+          '',
+          `Reset it here: ${link}`,
+          '',
+          'The link is valid for 30 minutes and can be used once.',
+          'If this was not you, no action is needed — the password is unchanged.',
+        ].join('\n'),
+      });
+    } catch (error) {
+      this.logger.error(`Password reset email failed to send: ${(error as Error).message}`);
+    }
+
+    // Outside production the token is also returned so the flow is testable
+    // without opening the message. Never in production.
     return this.config.isProduction ? {} : { token };
   }
 

@@ -127,6 +127,11 @@ enum RequestPriority {
 }
 
 enum ApprovalDecision {
+  /// Queued behind an earlier step. Not yet on anyone's desk, and deliberately
+  /// distinct from PENDING: without the distinction every future approver sees a
+  /// request in their inbox the moment it is submitted.
+  WAITING
+  /// Currently awaiting this step's approver. At most one per request.
   PENDING
   APPROVED
   REJECTED
@@ -526,7 +531,8 @@ model Role {
   company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   permissions RolePermission[]
   users       UserRole[]
-  workflowSteps WorkflowStep[] @relation("StepApproverRole")
+  workflowSteps WorkflowStep[]    @relation("StepApproverRole")
+  approvalSteps RequestApproval[] @relation("ApprovalApproverRole")
 
   @@unique([companyId, key])
   @@index([deletedAt])
@@ -1595,7 +1601,7 @@ model RequestApproval {
   approverRoleId String?
   approverId   String?
 
-  decision   ApprovalDecision @default(PENDING)
+  decision   ApprovalDecision @default(WAITING)
   decidedAt  DateTime?
   comment    String?
   slaDueAt   DateTime?
@@ -1605,9 +1611,13 @@ model RequestApproval {
 
   request  AssetRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   approver User?        @relation("ApprovalApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  /// Needed so an "awaiting my decision" query can traverse from the step to the
+  /// role's current holders rather than resolving them in application code.
+  approverRole Role?    @relation("ApprovalApproverRole", fields: [approverRoleId], references: [id], onDelete: SetNull)
 
   @@unique([requestId, stepOrder])
   @@index([approverId, decision])
+  @@index([approverRoleId, decision])
   @@map("request_approvals")
 }
 
