@@ -1312,6 +1312,9 @@ model Invoice {
   invoiceNumber String
   vendorId      String
   purchaseOrderId String?
+  /// PO number as printed on the invoice, kept even before a PurchaseOrder row
+  /// is matched — vendors cite it as free text and verification reconciles on it.
+  poNumber        String?
 
   invoiceDate  DateTime
   purchaseDate DateTime?

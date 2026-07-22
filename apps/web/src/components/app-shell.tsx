@@ -7,11 +7,13 @@ import {
   Boxes,
   CircleHelp,
   ClipboardList,
+  Cpu,
   LayoutDashboard,
   Menu,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
+  Receipt,
   Search,
   Users,
   Wrench,
@@ -37,6 +39,7 @@ const NAV: NavItem[] = [
   { href: '/assets', label: 'Assets', Icon: Boxes, permission: PERMISSIONS.ASSETS_READ },
   { href: '/my-assets', label: 'My assets', Icon: Package },
   { href: '/requests', label: 'Requests', Icon: ClipboardList },
+  { href: '/invoices', label: 'Invoices', Icon: Receipt, permission: PERMISSIONS.INVOICES_READ },
   { href: '/people', label: 'People', Icon: Users, permission: PERMISSIONS.EMPLOYEES_READ },
   {
     href: '/maintenance',
@@ -44,6 +47,7 @@ const NAV: NavItem[] = [
     Icon: Wrench,
     permission: PERMISSIONS.MAINTENANCE_READ,
   },
+  { href: '/settings/ai', label: 'AI settings', Icon: Cpu, permission: PERMISSIONS.AI_CONFIGURE },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

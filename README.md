@@ -6,12 +6,13 @@ Enterprise asset-management platform covering IT equipment, furniture, kitchen a
 office supplies, invoices, employee requests, assignments, returns, maintenance, costs and audit
 history.
 
-> **Status: Phase 2 (Requests) complete.** Authentication, RBAC, assets, assignment and return,
-> configurable approval workflows, onboarding/offboarding and notifications are working and tested;
-> invoices and AI extraction arrive in Phase 3. See [PLAN.md](./PLAN.md) for the seven-phase plan,
-> and the phase reports for what is verified versus outstanding:
-> [Phase 0](./docs/phase-0-report.md) · [Phase 1](./docs/phase-1-report.md) ·
-> [Phase 2](./docs/phase-2-report.md).
+> **Status: Phase 3 (Invoices & AI) complete.** Authentication, RBAC, assets, requests and approval
+> workflows, invoice upload with private storage, a deterministic verification engine, an AI provider
+> abstraction with a split-screen review UI, and Super Admin AI configuration are working and tested;
+> the mobile app arrives in Phase 4. See [PLAN.md](./PLAN.md) for the seven-phase plan, and the phase
+> reports for what is verified versus outstanding: [Phase 0](./docs/phase-0-report.md) ·
+> [Phase 1](./docs/phase-1-report.md) · [Phase 2](./docs/phase-2-report.md) ·
+> [Phase 3](./docs/phase-3-report.md).
 
 ---
 
@@ -177,7 +178,13 @@ docs/        Architecture, RBAC matrix, phase reports
 - **Status transitions are data-driven state machines** — 18 asset, 16 request and 16 verification
   statuses, each with an exhaustively tested transition table.
 - **AI never approves anything.** `VERIFIED` and `REJECTED` require an authenticated human reviewer;
-  the domain layer throws `AutomatedApprovalError` otherwise.
+  the domain layer throws `AutomatedApprovalError` otherwise. AI only _extracts_ — every financial
+  and quantity check runs in a pure, exhaustively-tested deterministic engine, never AI.
+- **AI-off means no outbound call.** Every upload passes through the AI gate before a provider is
+  touched; with AI disabled, uploads and manual entry still work and verification still runs. An
+  integration test spies the provider and asserts zero calls.
+- **Invoice documents are never public.** Stored under opaque keys, served only via signed, expiring,
+  permission-checked URLs. Uploads are validated by magic bytes, not the declared MIME type.
 - **Mock providers announce themselves.** Storage, AI, mail, push and the job queue all sit behind
   interfaces. When a mock is active, `/health/ready` reports `mocked` and responses carry
   `meta.simulated` — a simulated result is never presented as a real one. Simulated email is written
