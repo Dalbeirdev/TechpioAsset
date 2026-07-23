@@ -51,6 +51,14 @@ export default function LoginPage() {
       .catch(() => setSsoEnabled(false));
   }, []);
 
+  // The SSO callback redirects here with ?error= when sign-in fails.
+  useEffect(() => {
+    const error = new URLSearchParams(window.location.search).get('error');
+    if (error === 'sso' || error === 'sso_state') {
+      setFormError('Single sign-on failed. Try again, or sign in with your email and password.');
+    }
+  }, []);
+
   async function onSubmit(values: LoginValues) {
     setFormError(null);
     try {

@@ -140,24 +140,35 @@ export class AuthController {
     res.clearCookie(SSO_NONCE_COOKIE, { path: '/api/v1/auth' });
 
     if (!this.sso.enabled) throw new AppError('NOT_FOUND', 'SSO is not enabled');
+
+    // The callback is a browser navigation, so failures redirect to the login
+    // page with an error hint rather than dumping problem+json into the address
+    // bar. state/nonce problems and a bad or unregistered identity all land here.
+    const loginUrl = `${this.webAppUrl()}/login`;
     if (!code || !state || !expectedState || state !== expectedState || !nonce) {
-      throw new AppError('UNAUTHENTICATED', 'Invalid or expired SSO state');
+      res.redirect(`${loginUrl}?error=sso_state`);
+      return;
     }
 
-    const profile = await this.sso.exchangeCode({
-      code,
-      redirectUri: this.ssoRedirectUri(),
-      nonce,
-    });
-    const result = await this.auth.loginWithSso({
-      email: profile.email,
-      subject: profile.subject,
-    });
-
-    // Same refresh-cookie handshake as password login: the web app's boot calls
-    // /auth/refresh with this cookie and comes up authenticated.
-    this.setRefreshCookie(res, result.refreshToken);
-    res.redirect(this.webAppUrl());
+    try {
+      const profile = await this.sso.exchangeCode({
+        code,
+        redirectUri: this.ssoRedirectUri(),
+        nonce,
+      });
+      const result = await this.auth.loginWithSso({
+        email: profile.email,
+        subject: profile.subject,
+      });
+      // Same refresh-cookie handshake as password login: the web app's boot
+      // calls /auth/refresh with this cookie and comes up authenticated.
+      this.setRefreshCookie(res, result.refreshToken);
+      res.redirect(this.webAppUrl());
+    } catch {
+      // No registered account, a verification failure, or a token exchange error
+      // — all are "sign-in failed" to the user; details are logged server-side.
+      res.redirect(`${loginUrl}?error=sso`);
+    }
   }
 
   @Post('refresh')
