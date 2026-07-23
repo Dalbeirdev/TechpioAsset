@@ -107,6 +107,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen">
+      {/* Bypass blocks (WCAG 2.4.1): the first Tab lands here so a keyboard user
+          can jump past the header and nav straight to the page content. Visually
+          hidden until focused. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-[var(--radius-control)] focus:bg-[var(--color-brand)] focus:px-3 focus:py-2 focus:text-sm focus:text-[var(--color-brand-contrast)]"
+      >
+        Skip to main content
+      </a>
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 lg:px-4">
         <button
           type="button"
@@ -201,7 +210,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <main className="min-w-0 flex-1 px-4 py-6 lg:px-6">{children}</main>
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-4 py-6 lg:px-6">
+          {children}
+        </main>
       </div>
     </div>
   );

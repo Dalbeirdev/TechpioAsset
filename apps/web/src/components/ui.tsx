@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { cloneElement, forwardRef, isValidElement, type ReactElement } from 'react';
 import { cn } from '@/lib/cn';
 
 /** Minimal primitives shared across Phase 1 screens. */
@@ -80,14 +80,22 @@ export function Field({
   children: React.ReactNode;
 }) {
   const describedBy = error ? `${htmlFor}-error` : hint ? `${htmlFor}-hint` : undefined;
+  // aria-describedby and aria-invalid must sit on the control itself, not a
+  // wrapper, or a screen reader will not announce the hint/error when the field
+  // is focused. Inject them here so no caller has to remember (WCAG 3.3.1).
+  const control =
+    isValidElement(children) && describedBy
+      ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+          'aria-describedby': describedBy,
+          ...(error ? { 'aria-invalid': true } : {}),
+        })
+      : children;
   return (
     <div className="grid gap-1.5">
       <label htmlFor={htmlFor} className="text-sm font-medium">
         {label}
       </label>
-      {/* aria-describedby is wired here rather than on each caller so the error
-          is announced by screen readers without anyone remembering to do it. */}
-      <div aria-describedby={describedBy}>{children}</div>
+      {control}
       {hint && !error ? (
         <p id={`${htmlFor}-hint`} className="text-xs text-[var(--color-content-subtle)]">
           {hint}

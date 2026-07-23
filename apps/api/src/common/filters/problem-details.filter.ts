@@ -18,6 +18,7 @@ import {
 import { IllegalTransitionError, AutomatedApprovalError } from '@techpioasset/domain';
 import { AppError } from '../errors/app-error.js';
 import { getRequestContext } from '../request-context.js';
+import { redactSecrets } from '../logging/redact.js';
 
 const PROBLEM_BASE = 'https://techpioasset.dev/errors';
 
@@ -80,14 +81,17 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       ...(errors?.length ? { errors } : {}),
     };
 
-    const logContext = {
+    // Redact before logging: internal context is developer-controlled, but a
+    // defect could route a credential through it, and the URL can carry a query
+    // string. This is the last line of defence per spec section 20.
+    const logContext = redactSecrets({
       requestId: problem.requestId,
       correlationId: ctx?.correlationId,
       method: request?.method,
       path: request?.url,
       code,
       ...internal,
-    };
+    });
 
     if (logLevel === 'error') {
       this.logger.error(

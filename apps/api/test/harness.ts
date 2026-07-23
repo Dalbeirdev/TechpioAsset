@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { Test } from '@nestjs/testing';
-import cookieParser from 'cookie-parser';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { AuthUser } from '@techpioasset/contracts';
 import { AppModule } from '../src/app.module.js';
+import { applySecurityMiddleware } from '../src/bootstrap/security.js';
 
 loadEnv({ path: path.resolve(process.cwd(), '../../.env') });
 
@@ -42,7 +42,7 @@ export interface Session {
 export async function createTestApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
-  app.use(cookieParser());
+  applySecurityMiddleware(app);
   app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready'] });
   await app.init();
   return app;

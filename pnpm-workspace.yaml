@@ -3,6 +3,12 @@ packages:
   - 'packages/*'
   - 'e2e'
 
+# Security remediation (Phase 6 audit). sharp <0.35.0 inherits libvips CVEs
+# (CVE-2026-33327/33328/35590/35591); Next.js pins an older range transitively,
+# so force the patched line. This is the one advisory reaching runtime code.
+overrides:
+  'sharp@<0.35.0': '>=0.35.0'
+
 # pnpm blocks dependency lifecycle scripts by default. These need them:
 # esbuild fetches its platform binary, Prisma generates its client and engines.
 allowBuilds:
