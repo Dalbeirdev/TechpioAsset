@@ -44,6 +44,7 @@
     "cookie-parser": "^1.4.7",
     "decimal.js": "^10.4.3",
     "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
     "jose": "^6.2.4",

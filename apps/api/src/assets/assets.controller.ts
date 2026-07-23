@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  MaxFileSizeValidator,
+  Param,
+  ParseFilePipe,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   assetListQuerySchema,
@@ -16,13 +29,42 @@ import {
 } from '@techpioasset/contracts';
 import { PERMISSIONS, type AssetStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
+import { AppError } from '../common/errors/app-error.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AssetsService } from './assets.service.js';
+import { AssetImportService } from './asset-import.service.js';
 
 @ApiTags('Assets')
 @Controller('assets')
 export class AssetsController {
-  constructor(private readonly assets: AssetsService) {}
+  constructor(
+    private readonly assets: AssetsService,
+    private readonly imports: AssetImportService,
+  ) {}
+
+  @Post('import')
+  @RequirePermissions(PERMISSIONS.ASSETS_IMPORT)
+  @ApiOperation({
+    summary: 'Bulk-import assets from an Excel sheet',
+    description:
+      'Upserts assets by serial number and creates any referenced employees as ' +
+      'no-login records. Returns a summary of what was created, updated and skipped.',
+  })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  async import(
+    @CurrentUser() actor: AuthUser,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: 15 * 1024 * 1024 })],
+        fileIsRequired: true,
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    if (!file?.buffer) throw new AppError('FILE_REJECTED', 'No file was received');
+    const rows = await this.imports.parseWorkbook(file.buffer);
+    return this.imports.importRows(actor, rows);
+  }
 
   @Get()
   @RequirePermissions(PERMISSIONS.ASSETS_READ)

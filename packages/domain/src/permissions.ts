@@ -122,7 +122,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_ASSIGN,
     P.ASSETS_RETURN,
     P.ASSETS_TRANSFER,
-    P.ASSETS_COST_READ,
+    // Asset price is visible to Finance and Super Admin only.
     P.INVENTORY_READ,
     P.INVENTORY_ADJUST,
     // Invoice capture ("scan a bill") is Finance + Super Admin only; IT keeps
@@ -170,7 +170,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_ASSIGN,
     P.ASSETS_RETURN,
     P.ASSETS_TRANSFER,
-    P.ASSETS_COST_READ,
+    // Asset price is visible to Finance and Super Admin only.
     P.INVENTORY_READ,
     P.INVENTORY_ADJUST,
     // Invoice capture ("scan a bill") is Finance + Super Admin only.
@@ -230,7 +230,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
 
   AUDITOR: [
     P.ASSETS_READ,
-    P.ASSETS_COST_READ,
+    // Asset price is Finance + Super Admin only (per product decision), so the
+    // read-only auditor no longer sees costs or the financial spend reports.
     P.INVENTORY_READ,
     P.INVOICES_READ,
     P.VENDORS_READ,
