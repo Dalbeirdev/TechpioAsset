@@ -86,11 +86,13 @@ describe('maintenance lifecycle (spec section 14)', () => {
     expect(auditorView.status).toBe(200);
     expect(auditorView.body.data).not.toHaveProperty('serviceCost');
 
-    // A cost-visible role (Super Admin) still sees it.
-    const adminView = await api(app)
+    // Finance holds read-only maintenance access precisely so repair spend is
+    // visible to the cost-owning role.
+    const financeView = await api(app)
       .get(`/api/v1/maintenance/${created.body.data.id}`)
-      .set(auth(s.superAdmin));
-    expect(adminView.body.data).toHaveProperty('serviceCost');
+      .set(auth(s.finance));
+    expect(financeView.status).toBe(200);
+    expect(financeView.body.data).toHaveProperty('serviceCost');
   });
 
   it('requires maintenance:manage to create', async () => {

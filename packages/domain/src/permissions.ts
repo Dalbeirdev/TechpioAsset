@@ -194,6 +194,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_READ,
     P.ASSETS_COST_READ,
     P.INVENTORY_READ,
+    // Read-only: repair and service costs are financial data, so Finance can
+    // see maintenance records — running repairs stays with IT (maintenance:manage).
+    P.MAINTENANCE_READ,
     P.INVOICES_READ,
     P.INVOICES_UPLOAD,
     P.INVOICES_CORRECT_EXTRACTION,
