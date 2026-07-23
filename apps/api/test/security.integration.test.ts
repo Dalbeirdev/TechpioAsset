@@ -140,6 +140,35 @@ describe('upload validation rejects hostile files at the HTTP layer (section 8)'
   });
 });
 
+describe('scan-a-bill is restricted to Finance and Super Admin', () => {
+  // A minimal valid PDF so a permitted role gets past the permission guard and
+  // into the (successful) upload path.
+  const PDF = Buffer.from('%PDF-1.7\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF', 'ascii');
+
+  it.each(['itAdmin', 'officeAdmin', 'hr', 'employee'] as AccountKey[])(
+    'blocks %s from uploading an invoice (403)',
+    async (role) => {
+      const res = await api(app)
+        .post('/api/v1/invoices/upload')
+        .set(auth(s[role]))
+        .attach('file', PDF, { filename: 'bill.pdf', contentType: 'application/pdf' });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    },
+  );
+
+  it.each(['finance', 'superAdmin'] as AccountKey[])(
+    'allows %s to upload an invoice',
+    async (role) => {
+      const res = await api(app)
+        .post('/api/v1/invoices/upload')
+        .set(auth(s[role]))
+        .attach('file', PDF, { filename: 'bill.pdf', contentType: 'application/pdf' });
+      expect(res.status).toBe(201);
+    },
+  );
+});
+
 describe('no sensitive value leaks in responses (section 20)', () => {
   it('never returns a password hash from the profile endpoint', async () => {
     const res = await api(app).get('/api/v1/auth/me').set(auth(s.employee));

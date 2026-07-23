@@ -125,9 +125,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_COST_READ,
     P.INVENTORY_READ,
     P.INVENTORY_ADJUST,
+    // Invoice capture ("scan a bill") is Finance + Super Admin only; IT keeps
+    // read-only visibility because assets link to their purchase invoices.
     P.INVOICES_READ,
-    P.INVOICES_UPLOAD,
-    P.INVOICES_CORRECT_EXTRACTION,
     P.VENDORS_READ,
     P.PURCHASE_ORDERS_READ,
     P.REQUESTS_CREATE,
@@ -140,7 +140,6 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.MAINTENANCE_MANAGE,
     P.REPORTS_READ,
     P.REPORTS_EXPORT,
-    P.AI_REVIEW_RESULTS,
     P.AUDIT_READ,
     P.QR_GENERATE,
     P.QR_PRINT,
@@ -174,8 +173,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_COST_READ,
     P.INVENTORY_READ,
     P.INVENTORY_ADJUST,
-    P.INVOICES_UPLOAD,
-    P.INVOICES_CORRECT_EXTRACTION,
+    // Invoice capture ("scan a bill") is Finance + Super Admin only.
     P.VENDORS_READ,
     P.PURCHASE_ORDERS_READ,
     P.REQUESTS_CREATE,
@@ -188,7 +186,6 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.MAINTENANCE_MANAGE,
     P.REPORTS_READ,
     P.REPORTS_EXPORT,
-    P.AI_REVIEW_RESULTS,
     P.QR_GENERATE,
     P.QR_PRINT,
   ],

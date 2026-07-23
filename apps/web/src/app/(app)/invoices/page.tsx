@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Upload } from 'lucide-react';
 import { VERIFICATION_STATUS_TOKENS } from '@techpioasset/ui-tokens';
-import type { VerificationStatus } from '@techpioasset/domain';
+import { PERMISSIONS, type VerificationStatus } from '@techpioasset/domain';
 import { apiFetchPage } from '@/lib/api-client';
+import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
 
@@ -24,6 +25,10 @@ interface InvoiceRow {
 
 function InvoicesTable() {
   const [page, setPage] = useState(1);
+  const { can } = useAuth();
+  // Scanning/uploading a bill is a Finance (and Super Admin) capability; others
+  // with read access still see the ledger but not the capture action.
+  const canUpload = can(PERMISSIONS.INVOICES_UPLOAD);
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['invoices', page],
@@ -36,16 +41,20 @@ function InvoicesTable() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Invoices</h1>
           <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-            Upload a document for AI extraction, or enter one manually.
+            {canUpload
+              ? 'Scan a bill or enter it manually, then verify against the record.'
+              : 'Bills captured by Finance, verified against asset and purchase records.'}
           </p>
         </div>
-        <Link
-          href="/invoices/upload"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-medium text-[var(--color-brand-contrast)] hover:bg-[var(--color-brand-hover)]"
-        >
-          <Upload aria-hidden="true" className="size-4" />
-          Upload invoice
-        </Link>
+        {canUpload ? (
+          <Link
+            href="/invoices/upload"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-medium text-[var(--color-brand-contrast)] hover:bg-[var(--color-brand-hover)]"
+          >
+            <Upload aria-hidden="true" className="size-4" />
+            Scan a bill
+          </Link>
+        ) : null}
       </header>
 
       <Card>
@@ -60,7 +69,11 @@ function InvoicesTable() {
         ) : data.data.length === 0 ? (
           <EmptyState
             title="No invoices yet"
-            description="Upload your first invoice to get started."
+            description={
+              canUpload
+                ? 'Scan your first bill to get started.'
+                : 'No bills have been captured yet.'
+            }
           />
         ) : (
           <div className="overflow-x-auto">
