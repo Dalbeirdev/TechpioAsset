@@ -24,9 +24,12 @@ const REPORTS = [
   { type: 'MAINTENANCE_COST', label: 'Maintenance cost', financial: true },
 ] as const;
 
+const PAGE_SIZE = 25;
+
 export default function ReportsPage() {
   const { can } = useAuth();
   const [type, setType] = useState<(typeof REPORTS)[number]['type']>('ASSET_INVENTORY');
+  const [page, setPage] = useState(1);
   const canSeeCost = can(PERMISSIONS.ASSETS_COST_READ);
   const canExport = can(PERMISSIONS.REPORTS_EXPORT);
 
@@ -71,7 +74,10 @@ export default function ReportsPage() {
             <span className="font-medium text-[var(--color-content-muted)]">Report</span>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value as typeof type)}
+              onChange={(e) => {
+                setType(e.target.value as typeof type);
+                setPage(1);
+              }}
               className="h-10 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-sm"
             >
               {available.map((r) => (
@@ -123,7 +129,7 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
-                {data.rows.slice(0, 200).map((row, index) => (
+                {data.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((row, index) => (
                   <tr key={index} className="hover:bg-[var(--color-surface-sunken)]">
                     {data.columns.map((col) => (
                       <td
@@ -139,14 +145,40 @@ export default function ReportsPage() {
                 ))}
               </tbody>
             </table>
-            {data.rows.length > 200 ? (
-              <p className="px-4 py-3 text-xs text-[var(--color-content-subtle)]">
-                Showing the first 200 rows. Export for the full report.
+            {data.rows.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-[var(--color-content-subtle)]">
+                No data for this report.
               </p>
             ) : null}
           </div>
         )}
       </Card>
+
+      {data && data.rows.length > PAGE_SIZE ? (
+        <nav aria-label="Report pagination" className="flex items-center justify-between text-sm">
+          <p className="text-[var(--color-content-subtle)]">
+            Page {page} of {Math.ceil(data.rows.length / PAGE_SIZE)} · {data.rows.length} rows
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 py-1.5 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={page >= Math.ceil(data.rows.length / PAGE_SIZE)}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 py-1.5 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </nav>
+      ) : null}
     </div>
   );
 }
