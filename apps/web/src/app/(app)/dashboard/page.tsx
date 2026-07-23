@@ -332,12 +332,14 @@ export default function DashboardPage() {
                 : `${total.toLocaleString()} assets under management · ${critical + underRepair} need attention.`}
           </p>
         </div>
-        <Link
-          href="/assets/new"
-          className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-[var(--color-brand-hover)] hover:shadow-md"
-        >
-          <Plus className="size-4" /> Add asset
-        </Link>
+        {can(PERMISSIONS.ASSETS_CREATE) ? (
+          <Link
+            href="/assets/new"
+            className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-[var(--color-brand-hover)] hover:shadow-md"
+          >
+            <Plus className="size-4" /> Add asset
+          </Link>
+        ) : null}
       </header>
 
       {/* KPIs */}
