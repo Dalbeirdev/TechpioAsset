@@ -18,8 +18,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import { ASSET_STATUS_TOKENS } from '@techpioasset/ui-tokens';
-import type { AssetStatus } from '@techpioasset/domain';
-import { apiFetchPage } from '@/lib/api-client';
+import { PERMISSIONS, type AssetStatus } from '@techpioasset/domain';
+import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
@@ -123,14 +123,27 @@ const QUICK_ACTIONS = [
   },
 ];
 
+interface SpendReport {
+  rows: { name: string; count: number; total: number }[];
+}
+
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
+  const canSeeSpend = can(PERMISSIONS.ASSETS_COST_READ);
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['dashboard-assets'],
     // Scoped like everything else, so each role's dashboard reflects only what
     // that role may see.
     queryFn: () => apiFetchPage<AssetRow>('/assets?pageSize=100'),
+  });
+
+  // Total spend by category — server-aggregated over ALL assets, and only ever
+  // requested for roles that may see cost (Finance / Super Admin).
+  const spend = useQuery({
+    queryKey: ['dashboard-spend'],
+    enabled: canSeeSpend,
+    queryFn: () => apiFetch<SpendReport>('/reports?type=SPENDING_BY_CATEGORY'),
   });
 
   if (isPending) {
@@ -320,7 +333,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <Link
-          href="/assets"
+          href="/assets/new"
           className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-[var(--color-brand-hover)] hover:shadow-md"
         >
           <Plus className="size-4" /> Add asset
@@ -372,6 +385,52 @@ export default function DashboardPage() {
           sub="damaged / lost / stolen"
         />
       </section>
+
+      {/* Total spend — Finance / Super Admin only */}
+      {canSeeSpend && spend.data && spend.data.rows.length > 0 ? (
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="text-[15px] font-semibold">Total spend</h3>
+              <p className="text-xs text-[var(--color-content-subtle)]">
+                Purchase cost on record, by equipment category
+              </p>
+              <p className="mt-2 text-[28px] font-bold tracking-tight tabular-nums">
+                {spend.data.rows
+                  .reduce((sum, r) => sum + r.total, 0)
+                  .toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+            <div className="grid min-w-[260px] flex-1 gap-1.5 sm:max-w-md">
+              {spend.data.rows.slice(0, 5).map((r) => {
+                const grand = spend.data.rows.reduce((s, x) => s + x.total, 0) || 1;
+                const pctOf = Math.round((r.total / grand) * 100);
+                return (
+                  <div key={r.name} className="grid grid-cols-[1fr_auto] items-center gap-x-3">
+                    <div className="flex items-center justify-between text-[13px]">
+                      <span className="text-[var(--color-content-muted)]">
+                        {r.name}{' '}
+                        <span className="text-xs text-[var(--color-content-subtle)]">
+                          · {r.count}
+                        </span>
+                      </span>
+                      <span className="font-semibold tabular-nums">
+                        {r.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                    <div className="col-span-2 h-1.5 rounded-full bg-[var(--color-surface-sunken)]">
+                      <div
+                        className="h-full rounded-full bg-[var(--color-brand)]"
+                        style={{ width: `${pctOf}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Charts row A */}
       <section className="grid gap-4 lg:grid-cols-3">

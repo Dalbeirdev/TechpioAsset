@@ -211,6 +211,12 @@ export class AssetsService {
       await this.assertSerialAvailable(actor, input.serialNumber, input.duplicateExceptionReason);
     }
 
+    // Only cost-visible roles (Finance / Super Admin) may record a price; anyone
+    // else registering an asset simply leaves it for Finance to price later.
+    if (input.purchaseCost !== undefined && input.purchaseCost !== null && !canSeeCost(actor)) {
+      throw new AppError('FORBIDDEN', 'Only Finance can set an asset price');
+    }
+
     const asset = await this.prisma.client.asset.create({
       data: {
         companyId: actor.companyId,
@@ -263,6 +269,60 @@ export class AssetsService {
     return asset;
   }
 
+  /**
+   * Price rules (product decision):
+   * - Only cost-visible roles (Finance / Super Admin) may touch a price.
+   * - Once recorded it is write-once: Finance cannot change it. Only a Super
+   *   Admin (permissions:manage) may correct a genuine mistake, audit-logged.
+   */
+  private assertPriceChangeAllowed(actor: AuthUser, before: { purchaseCost?: unknown }): void {
+    if (!canSeeCost(actor)) {
+      throw new AppError('FORBIDDEN', 'Only Finance can set an asset price');
+    }
+    const hadCost = before.purchaseCost !== null && before.purchaseCost !== undefined;
+    const isSuperAdmin = actor.permissions.includes(PERMISSIONS.PERMISSIONS_MANAGE);
+    if (hadCost && !isSuperAdmin) {
+      throw new AppError('FORBIDDEN', 'The price is already recorded and cannot be changed', {
+        detail: 'Prices are entered once. Ask a Super Admin if a correction is needed.',
+      });
+    }
+  }
+
+  /**
+   * Records an asset's price. A deliberately narrow write so Finance can price
+   * an asset without holding the general assets:update permission — pricing is
+   * their whole write surface, and it is write-once (see above).
+   */
+  async setPrice(actor: AuthUser, id: string, input: { purchaseCost: string; currency?: string }) {
+    const before = await this.loadForWrite(actor, id);
+    this.assertPriceChangeAllowed(actor, before as { purchaseCost?: unknown });
+
+    const after = await this.prisma.client.asset.update({
+      where: { id },
+      data: {
+        purchaseCost: new Prisma.Decimal(input.purchaseCost),
+        ...(input.currency ? { currency: input.currency } : {}),
+        updatedById: actor.id,
+        version: { increment: 1 },
+      },
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.ASSET_COST_CHANGED,
+      entityType: 'Asset',
+      entityId: id,
+      previousValues: {
+        purchaseCost: String((before as { purchaseCost?: unknown }).purchaseCost ?? ''),
+      },
+      newValues: { purchaseCost: input.purchaseCost },
+    });
+
+    void after;
+    return this.findOne(actor, id);
+  }
+
   async update(actor: AuthUser, id: string, input: UpdateAssetInput) {
     const before = await this.loadForWrite(actor, id);
 
@@ -281,6 +341,13 @@ export class AssetsService {
     // there is no back door around the transition rules.
     if (input.status && input.status !== before.status) {
       assertTransition(assetStatusMachine, before.status as AssetStatus, input.status);
+    }
+
+    // Price changes never ride along a general edit — they go through setPrice,
+    // which enforces the write-once rule. This closes the back door where a role
+    // with assets:update but no cost visibility could alter a price blind.
+    if (input.purchaseCost !== undefined) {
+      this.assertPriceChangeAllowed(actor, before as { purchaseCost?: unknown });
     }
 
     const { version: _ignored, purchaseCost, ...rest } = input;

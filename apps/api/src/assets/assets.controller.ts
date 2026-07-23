@@ -19,6 +19,7 @@ import {
   changeAssetStatusSchema,
   createAssetSchema,
   returnAssetSchema,
+  setAssetPriceSchema,
   updateAssetSchema,
   type AssetListQuery,
   type AssignAssetInput,
@@ -114,6 +115,22 @@ export class AssetsController {
     @Body(zodBody(updateAssetSchema)) body: UpdateAssetInput,
   ) {
     return this.assets.update(actor, id, body);
+  }
+
+  @Patch(':id/price')
+  @RequirePermissions(PERMISSIONS.ASSETS_COST_READ)
+  @ApiOperation({
+    summary: 'Record an asset price (write-once)',
+    description:
+      'Finance records a price once; after that it is locked and only a Super Admin ' +
+      'may correct it. Every price write is audit-logged.',
+  })
+  setPrice(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(setAssetPriceSchema)) body: { purchaseCost: string; currency?: string },
+  ) {
+    return this.assets.setPrice(actor, id, body);
   }
 
   @Post(':id/status')

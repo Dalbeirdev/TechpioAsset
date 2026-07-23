@@ -77,14 +77,20 @@ describe('maintenance lifecycle (spec section 14)', () => {
       .set(auth(s.itAdmin))
       .send({ serviceCost: '89.00', restoreAsset: true });
 
-    // Employee can read maintenance? No — needs maintenance:read. HR has none either.
-    // Manager holds no maintenance:read, so use auditor (read, no... auditor has maintenance:read).
+    // The auditor can read maintenance but — since price became a Finance /
+    // Super Admin capability — no longer holds cost visibility, so the service
+    // cost must be absent from their view.
     const auditorView = await api(app)
       .get(`/api/v1/maintenance/${created.body.data.id}`)
       .set(auth(s.auditor));
     expect(auditorView.status).toBe(200);
-    // Auditor holds assets:cost:read, so cost is present for them.
-    expect(auditorView.body.data).toHaveProperty('serviceCost');
+    expect(auditorView.body.data).not.toHaveProperty('serviceCost');
+
+    // A cost-visible role (Super Admin) still sees it.
+    const adminView = await api(app)
+      .get(`/api/v1/maintenance/${created.body.data.id}`)
+      .set(auth(s.superAdmin));
+    expect(adminView.body.data).toHaveProperty('serviceCost');
   });
 
   it('requires maintenance:manage to create', async () => {

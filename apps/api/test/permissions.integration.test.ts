@@ -202,21 +202,21 @@ describe('employee isolation (spec section 3)', () => {
   });
 });
 
-describe('cost visibility (spec section 3: HR without financial permission)', () => {
-  it.each(['superAdmin', 'itAdmin', 'finance', 'officeAdmin', 'auditor'] as AccountKey[])(
-    '%s sees purchase cost',
+describe('cost visibility (product decision: price is Finance + Super Admin only)', () => {
+  it.each(['superAdmin', 'finance'] as AccountKey[])('%s sees purchase cost', async (role) => {
+    const response = await api(app).get('/api/v1/assets?pageSize=1').set(auth(sessions[role]));
+    expect(response.body.data[0]).toHaveProperty('purchaseCost');
+  });
+
+  it.each(['hr', 'manager', 'employee', 'itAdmin', 'officeAdmin', 'auditor'] as AccountKey[])(
+    '%s does not',
     async (role) => {
       const response = await api(app).get('/api/v1/assets?pageSize=1').set(auth(sessions[role]));
-      expect(response.body.data[0]).toHaveProperty('purchaseCost');
+      if (response.body.data.length === 0) return;
+      expect(response.body.data[0]).not.toHaveProperty('purchaseCost');
+      expect(response.body.data[0]).not.toHaveProperty('currentValue');
     },
   );
-
-  it.each(['hr', 'manager', 'employee'] as AccountKey[])('%s does not', async (role) => {
-    const response = await api(app).get('/api/v1/assets?pageSize=1').set(auth(sessions[role]));
-    if (response.body.data.length === 0) return;
-    expect(response.body.data[0]).not.toHaveProperty('purchaseCost');
-    expect(response.body.data[0]).not.toHaveProperty('currentValue');
-  });
 
   it('does not leak cost through the detail endpoint either', async () => {
     const mine = await api(app).get('/api/v1/assets?pageSize=1').set(auth(sessions.employee));

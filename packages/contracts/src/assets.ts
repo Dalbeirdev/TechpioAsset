@@ -63,6 +63,13 @@ export const updateAssetSchema = createAssetSchema.partial().extend({
 });
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
 
+/** Finance records a price once; the server locks it afterwards. */
+export const setAssetPriceSchema = z.object({
+  purchaseCost: moneyString,
+  currency: z.string().length(3).toUpperCase().optional(),
+});
+export type SetAssetPriceInput = z.infer<typeof setAssetPriceSchema>;
+
 export const assetListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),

@@ -4,8 +4,14 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { FileSpreadsheet, Plus } from 'lucide-react';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
-import { ASSET_STATUSES, type AssetCondition, type AssetStatus } from '@techpioasset/domain';
+import {
+  ASSET_STATUSES,
+  PERMISSIONS,
+  type AssetCondition,
+  type AssetStatus,
+} from '@techpioasset/domain';
 import { apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
@@ -33,7 +39,7 @@ interface AssetRow {
 
 function AssetsTable() {
   const params = useSearchParams();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [status, setStatus] = useState<string>('');
   const [page, setPage] = useState(1);
   const q = params.get('q') ?? '';
@@ -65,24 +71,44 @@ function AssetsTable() {
           </p>
         </div>
 
-        <label className="grid gap-1 text-xs">
-          <span className="font-medium text-[var(--color-content-muted)]">Status</span>
-          <select
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value);
-              setPage(1);
-            }}
-            className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
-          >
-            <option value="">All statuses</option>
-            {ASSET_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {ASSET_STATUS_TOKENS[value].label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium text-[var(--color-content-muted)]">Status</span>
+            <select
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+              className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+            >
+              <option value="">All statuses</option>
+              {ASSET_STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {ASSET_STATUS_TOKENS[value].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {can(PERMISSIONS.ASSETS_IMPORT) ? (
+            <Link
+              href="/assets/import"
+              className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+            >
+              <FileSpreadsheet aria-hidden="true" className="size-4" />
+              Import Excel
+            </Link>
+          ) : null}
+          {can(PERMISSIONS.ASSETS_CREATE) ? (
+            <Link
+              href="/assets/new"
+              className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-3 text-sm font-semibold text-[var(--color-brand-contrast)] hover:bg-[var(--color-brand-hover)]"
+            >
+              <Plus aria-hidden="true" className="size-4" />
+              Add asset
+            </Link>
+          ) : null}
+        </div>
       </header>
 
       <Card>
