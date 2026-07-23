@@ -26,6 +26,10 @@ export default function ProfileScreen() {
   }, []);
 
   async function registerForPush() {
+    // Push tokens are device-only; the browser build (for laptop review) has no
+    // Expo push token, so skip registration rather than throwing on web.
+    if (Platform.OS === 'web') return;
+
     const settings = await Notifications.getPermissionsAsync();
     let granted = settings.granted;
     if (!granted) {

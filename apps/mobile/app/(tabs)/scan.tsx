@@ -1,7 +1,8 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, Text, useColorScheme, View } from 'react-native';
+import { Platform, Pressable, Text, useColorScheme, View } from 'react-native';
+import { NativeOnlyNotice } from '../../src/components/native-only-notice';
 import { useSession } from '../../src/providers/session';
 import { colors } from '../../src/theme';
 
@@ -24,6 +25,17 @@ export default function ScanScreen() {
   // Guard so a single physical scan does not fire many lookups while the camera
   // keeps reporting the same code frame after frame.
   const handling = useRef(false);
+
+  // The browser build (react-native-web, for laptop review) has no device
+  // camera flow; show a notice rather than a webcam prompt.
+  if (Platform.OS === 'web') {
+    return (
+      <NativeOnlyNotice
+        title="Scanning needs the device camera"
+        message="QR and barcode scanning uses the phone camera, which isn't available when the app runs in a browser."
+      />
+    );
+  }
 
   async function onScanned(code: string) {
     if (handling.current) return;

@@ -1,9 +1,10 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, Text, useColorScheme, View } from 'react-native';
+import { Alert, Platform, Pressable, Text, useColorScheme, View } from 'react-native';
 import { ulid } from '../../src/lib/ulid';
 import { OfflineQueue } from '../../src/lib/offline-queue';
 import { SqliteStore } from '../../src/lib/sqlite-store';
+import { NativeOnlyNotice } from '../../src/components/native-only-notice';
 import { useSession } from '../../src/providers/session';
 import { colors } from '../../src/theme';
 import type { OperationResult, QueueStatus } from '@techpioasset/domain';
@@ -38,6 +39,17 @@ export default function InventoryScreen() {
   useEffect(() => {
     void refreshPending();
   }, [refreshPending]);
+
+  // Offline inventory is a camera-driven, on-device stocktake; the browser build
+  // (for laptop review) has neither, so show a notice instead.
+  if (Platform.OS === 'web') {
+    return (
+      <NativeOnlyNotice
+        title="Offline inventory needs a device"
+        message="Physical inventory captures scans with the phone camera into an on-device offline queue, which isn't available in a browser."
+      />
+    );
+  }
 
   async function startSession() {
     const session = await api.request<{ id: string }>('/mobile/inventory/sessions', {
