@@ -3,6 +3,9 @@ import type { ProblemDetails } from '@techpioasset/contracts';
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const BASE = `${API_URL}/api/v1`;
 
+/** API origin + version prefix, for full-page navigations like the SSO redirect. */
+export const apiBaseUrl = BASE;
+
 export class ApiError extends Error {
   constructor(
     readonly problem: ProblemDetails,

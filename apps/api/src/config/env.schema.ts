@@ -43,6 +43,14 @@ export const envSchema = z
 
     RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().min(1).default(60),
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
+    // memory keeps counters in-process (fine for a single instance); redis shares
+    // them across instances so the limit holds behind a load balancer.
+    RATE_LIMIT_STORAGE: z.enum(['memory', 'redis']).default('memory'),
+
+    // Reference-data cache. memory is per-process; redis is shared and survives
+    // a restart. Both honour CACHE_TTL_SECONDS.
+    CACHE_PROVIDER: z.enum(['memory', 'redis']).default('memory'),
+    CACHE_TTL_SECONDS: z.coerce.number().int().min(1).default(60),
 
     STORAGE_PROVIDER: z.enum(['local', 'azure', 's3']).default('local'),
     STORAGE_LOCAL_PATH: z.string().default('.local-storage'),

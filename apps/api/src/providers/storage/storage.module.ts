@@ -2,12 +2,15 @@ import { Global, Module } from '@nestjs/common';
 import { AppConfig } from '../../config/config.module.js';
 import { StorageProvider } from './storage.provider.js';
 import { LocalStorageProvider } from './local-storage.provider.js';
+import { AzureBlobStorageProvider } from './azure-blob-storage.provider.js';
+import { S3StorageProvider } from './s3-storage.provider.js';
 
 /**
- * Only the local provider is wired for now. Azure Blob and S3 implementations
- * conform to the same StorageProvider interface and are selected here by
- * STORAGE_PROVIDER once their SDKs and credentials are supplied — no call site
- * changes, because everything depends on the abstract class.
+ * The storage provider is chosen by STORAGE_PROVIDER. All three implement the
+ * same StorageProvider interface, so no call site changes when the deployment
+ * switches from local dev storage to Azure Blob or S3. Each real provider throws
+ * in its constructor if selected without the credentials it needs, so a
+ * misconfiguration fails fast at boot rather than on the first upload.
  */
 @Global()
 @Module({
@@ -17,14 +20,9 @@ import { LocalStorageProvider } from './local-storage.provider.js';
       useFactory: (config: AppConfig): StorageProvider => {
         switch (config.get('STORAGE_PROVIDER')) {
           case 'azure':
+            return new AzureBlobStorageProvider(config);
           case 's3':
-            // Guarded rather than silently falling back: shipping to production
-            // with STORAGE_PROVIDER=azure but the local provider running would be
-            // a data-durability incident waiting to happen.
-            throw new Error(
-              `STORAGE_PROVIDER=${config.get('STORAGE_PROVIDER')} is not yet wired. ` +
-                'Implement the corresponding StorageProvider and register it here.',
-            );
+            return new S3StorageProvider(config);
           default:
             return new LocalStorageProvider(config);
         }

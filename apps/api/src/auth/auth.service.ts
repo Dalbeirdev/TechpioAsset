@@ -138,6 +138,63 @@ export class AuthService {
     };
   }
 
+  /**
+   * Completes a single sign-on: the external identity provider has already
+   * authenticated the user, so here we only authorise. The email must map to an
+   * existing, active account — SSO never provisions new users (spec: only
+   * registered users). No password or MFA is checked; the IdP owns that.
+   */
+  async loginWithSso(input: { email: string; subject: string }): Promise<LoginResult> {
+    const ctx = getRequestContext();
+    const user = await this.prisma.client.user.findFirst({
+      where: { email: input.email },
+      include: { profile: true, roles: { include: { role: true } } },
+    });
+
+    if (!user) {
+      throw new AppError('FORBIDDEN', 'No account is registered for this identity', {
+        detail: 'Ask an administrator to create your account before signing in with SSO.',
+      });
+    }
+    if (user.status === UserStatus.SUSPENDED || user.status === UserStatus.DEACTIVATED) {
+      throw new AppError('FORBIDDEN', 'Account is not active', {
+        detail: 'This account has been suspended. Contact an administrator.',
+      });
+    }
+
+    await this.prisma.client.user.update({
+      where: { id: user.id },
+      data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
+    });
+
+    const authUser = await this.buildAuthUser(user.id);
+    const issued = await this.tokens.issue({
+      userId: user.id,
+      companyId: user.companyId,
+      permissions: authUser.permissions,
+      scope: authUser.scope,
+      ipAddress: ctx?.ipAddress,
+      userAgent: ctx?.userAgent,
+    });
+
+    await this.audit.record({
+      companyId: user.companyId,
+      actorId: user.id,
+      action: AuditAction.LOGIN,
+      entityType: 'User',
+      entityId: user.id,
+      newValues: { method: 'SSO', subject: input.subject },
+    });
+
+    return {
+      kind: 'tokens',
+      accessToken: issued.accessToken,
+      expiresIn: issued.expiresIn,
+      refreshToken: issued.refreshToken,
+      user: authUser,
+    };
+  }
+
   private async registerFailedAttempt(
     userId: string,
     companyId: string,

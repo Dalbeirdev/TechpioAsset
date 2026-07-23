@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ShieldCheck } from 'lucide-react';
-import { ApiError } from '@/lib/api-client';
+import { ApiError, apiFetch, apiBaseUrl } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card } from '@/components/ui';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,7 @@ export default function LoginPage() {
   const { login, status } = useAuth();
   const [needsMfa, setNeedsMfa] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -42,6 +43,13 @@ export default function LoginPage() {
   useEffect(() => {
     if (status === 'authenticated') router.replace('/dashboard');
   }, [status, router]);
+
+  // Only show the SSO button when the server reports Entra ID is configured.
+  useEffect(() => {
+    apiFetch<{ enabled: boolean }>('/auth/sso/available')
+      .then((r) => setSsoEnabled(r.enabled))
+      .catch(() => setSsoEnabled(false));
+  }, []);
 
   async function onSubmit(values: LoginValues) {
     setFormError(null);
@@ -163,6 +171,28 @@ export default function LoginPage() {
               </Button>
             </form>
           </Form>
+
+          {ssoEnabled && !needsMfa ? (
+            <>
+              <div className="my-4 flex items-center gap-3 text-xs text-[var(--color-content-subtle)]">
+                <span className="h-px flex-1 bg-[var(--color-border)]" />
+                or
+                <span className="h-px flex-1 bg-[var(--color-border)]" />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={() => {
+                  // Full-page navigation: the browser follows the OIDC redirect
+                  // chain and returns to the app authenticated via the refresh cookie.
+                  window.location.href = `${apiBaseUrl}/auth/sso/entra`;
+                }}
+              >
+                Continue with Microsoft
+              </Button>
+            </>
+          ) : null}
         </Card>
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-[var(--color-content-subtle)]">

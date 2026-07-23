@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Req, Res } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { Throttle } from '@nestjs/throttler';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
@@ -17,9 +18,12 @@ import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { AppConfig } from '../config/config.module.js';
 import { AuthService } from './auth.service.js';
 import { TokenService } from './token.service.js';
+import { SsoProvider } from '../providers/sso/sso.provider.js';
 import { CurrentUser, Public } from './decorators.js';
 
 const REFRESH_COOKIE = 'techpioasset_refresh';
+const SSO_STATE_COOKIE = 'techpioasset_sso_state';
+const SSO_NONCE_COOKIE = 'techpioasset_sso_nonce';
 
 /**
  * Login attempts per minute per IP. Far tighter than the global limit: this is
@@ -38,6 +42,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly tokens: TokenService,
     private readonly config: AppConfig,
+    private readonly sso: SsoProvider,
   ) {}
 
   /**
@@ -77,6 +82,82 @@ export class AuthController {
 
     this.setRefreshCookie(res, result.refreshToken);
     return { accessToken: result.accessToken, expiresIn: result.expiresIn, user: result.user };
+  }
+
+  /** Where Entra returns the browser after authenticating. */
+  private ssoRedirectUri(): string {
+    return `${this.config.get('API_URL')}/api/v1/auth/sso/entra/callback`;
+  }
+
+  /** The web app to land on after a successful SSO sign-in. */
+  private webAppUrl(): string {
+    return this.config.get('CORS_ORIGINS')[0] ?? this.config.get('API_URL');
+  }
+
+  @Get('sso/available')
+  @Public()
+  @ApiOperation({ summary: 'Whether single sign-on is configured' })
+  ssoAvailable(): { enabled: boolean; provider: string } {
+    return { enabled: this.sso.enabled, provider: this.sso.name };
+  }
+
+  @Get('sso/entra')
+  @Public()
+  @ApiOperation({ summary: 'Begin Microsoft Entra ID single sign-on' })
+  ssoStart(@Res() res: Response): void {
+    if (!this.sso.enabled) throw new AppError('NOT_FOUND', 'SSO is not enabled');
+
+    // state defeats CSRF on the callback; nonce binds the id_token to this
+    // attempt. Both are kept in short-lived httpOnly cookies, never a server store.
+    const state = randomBytes(16).toString('hex');
+    const nonce = randomBytes(16).toString('hex');
+    const cookieOptions = {
+      httpOnly: true,
+      secure: this.config.isProduction,
+      sameSite: 'lax' as const,
+      path: '/api/v1/auth',
+      maxAge: 10 * 60 * 1000,
+    };
+    res.cookie(SSO_STATE_COOKIE, state, cookieOptions);
+    res.cookie(SSO_NONCE_COOKIE, nonce, cookieOptions);
+    res.redirect(this.sso.authorizationUrl({ state, nonce, redirectUri: this.ssoRedirectUri() }));
+  }
+
+  @Get('sso/entra/callback')
+  @Public()
+  @ApiOperation({ summary: 'Microsoft Entra ID SSO callback' })
+  async ssoCallback(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Query('code') code?: string,
+    @Query('state') state?: string,
+  ): Promise<void> {
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const expectedState = cookies?.[SSO_STATE_COOKIE];
+    const nonce = cookies?.[SSO_NONCE_COOKIE];
+    // One-shot: clear the CSRF/nonce cookies whatever happens next.
+    res.clearCookie(SSO_STATE_COOKIE, { path: '/api/v1/auth' });
+    res.clearCookie(SSO_NONCE_COOKIE, { path: '/api/v1/auth' });
+
+    if (!this.sso.enabled) throw new AppError('NOT_FOUND', 'SSO is not enabled');
+    if (!code || !state || !expectedState || state !== expectedState || !nonce) {
+      throw new AppError('UNAUTHENTICATED', 'Invalid or expired SSO state');
+    }
+
+    const profile = await this.sso.exchangeCode({
+      code,
+      redirectUri: this.ssoRedirectUri(),
+      nonce,
+    });
+    const result = await this.auth.loginWithSso({
+      email: profile.email,
+      subject: profile.subject,
+    });
+
+    // Same refresh-cookie handshake as password login: the web app's boot calls
+    // /auth/refresh with this cookie and comes up authenticated.
+    this.setRefreshCookie(res, result.refreshToken);
+    res.redirect(this.webAppUrl());
   }
 
   @Post('refresh')

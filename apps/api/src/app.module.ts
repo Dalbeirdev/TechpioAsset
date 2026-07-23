@@ -1,6 +1,7 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ConfigService } from '@nestjs/config';
 import { AppConfigModule } from './config/config.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -22,10 +23,12 @@ import { ReportsModule } from './reports/reports.module.js';
 import { ScheduledModule } from './scheduled/scheduled.module.js';
 import { MailModule } from './providers/mail/mail.module.js';
 import { QueueModule } from './providers/queue/queue.module.js';
+import { CacheModule } from './providers/cache/cache.module.js';
 import { StorageModule } from './providers/storage/storage.module.js';
 import { AiModule } from './providers/ai/ai.module.js';
 import { PushModule } from './providers/push/push.module.js';
 import { ChatModule } from './providers/chat/chat.module.js';
+import { SsoModule } from './providers/sso/sso.module.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter.js';
@@ -44,16 +47,23 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
             limit: Number(config.get('RATE_LIMIT_MAX') ?? 120),
           },
         ],
+        // A shared Redis store so the limit is enforced across instances behind a
+        // load balancer; in-memory (the default) is correct for a single node.
+        ...(config.get('RATE_LIMIT_STORAGE') === 'redis'
+          ? { storage: new ThrottlerStorageRedisService(String(config.get('REDIS_URL'))) }
+          : {}),
       }),
     }),
     PrismaModule,
     AuditModule,
     MailModule,
     QueueModule,
+    CacheModule,
     StorageModule,
     AiModule,
     PushModule,
     ChatModule,
+    SsoModule,
     AiConfigModule,
     NotificationsModule,
     AuthModule,

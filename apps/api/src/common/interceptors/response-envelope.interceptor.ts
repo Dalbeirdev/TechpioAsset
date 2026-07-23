@@ -34,7 +34,13 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
         // returning its body.
         const response = context.switchToHttp().getResponse<{
           getHeader?: (name: string) => unknown;
+          headersSent?: boolean;
         }>();
+        // A handler that manages the response itself (a redirect, a stream) has
+        // already sent headers; never try to envelope over it.
+        if (response.headersSent) {
+          return payload;
+        }
         const disposition = response.getHeader?.('content-disposition');
         if (typeof disposition === 'string' && disposition.includes('attachment')) {
           return payload;
