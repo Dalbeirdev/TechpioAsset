@@ -17,17 +17,24 @@
     },
     "android": {
       "package": "com.techpio.asset",
-      "permissions": ["CAMERA", "USE_BIOMETRIC", "POST_NOTIFICATIONS"]
+      "permissions": [
+        "CAMERA",
+        "USE_BIOMETRIC",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
       [
         "expo-camera",
-        { "cameraPermission": "Scan asset QR codes and barcodes, and capture invoices." }
+        {
+          "cameraPermission": "Scan asset QR codes and barcodes, and capture invoices."
+        }
       ],
       "expo-local-authentication",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-sqlite"
     ],
     "extra": {
       "apiUrl": "http://localhost:3001"

@@ -33,7 +33,14 @@ interface SessionState {
 
 const SessionContext = createContext<SessionState | null>(null);
 const tokenStore = new SecureTokenStore();
-const apiUrl = (Constants.expoConfig?.extra?.apiUrl as string) ?? 'http://localhost:3001';
+// On a physical device `localhost` is the phone itself, so the API host must be
+// the dev machine's LAN IP. EXPO_PUBLIC_API_URL (inlined by Metro at build time)
+// lets a device run point at it without editing committed config; the app.json
+// value and the localhost fallback keep simulator/web runs working unchanged.
+const apiUrl =
+  process.env.EXPO_PUBLIC_API_URL ??
+  (Constants.expoConfig?.extra?.apiUrl as string) ??
+  'http://localhost:3001';
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
