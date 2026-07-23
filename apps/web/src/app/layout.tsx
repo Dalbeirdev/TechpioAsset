@@ -31,7 +31,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Status tone palette, generated from @techpioasset/ui-tokens. */}
         <style dangerouslySetInnerHTML={{ __html: buildToneCss() }} />
       </head>
-      <body>
+      {/* Browser extensions (ColorZilla, Grammarly, etc.) inject attributes onto
+          <body> before React hydrates; suppressHydrationWarning on <html> only
+          covers one level, so <body> needs its own to silence that false mismatch. */}
+      <body suppressHydrationWarning>
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-[var(--color-brand)] focus:px-3 focus:py-2 focus:text-[var(--color-brand-contrast)]"
