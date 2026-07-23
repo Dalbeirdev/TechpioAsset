@@ -8,6 +8,7 @@ import { apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton, StatTile } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
+import { StatusBarChart } from '@/components/charts/status-bar-chart';
 
 interface AssetRow {
   id: string;
@@ -62,6 +63,16 @@ export default function DashboardPage() {
     (['UNDER_REPAIR', 'DAMAGED', 'LOST', 'STOLEN'] as AssetStatus[]).includes(a.status),
   );
 
+  // Status distribution for the chart; only statuses actually present, coloured
+  // by their shared tone so the chart matches the badges elsewhere.
+  const statusData = (Object.keys(ASSET_STATUS_TOKENS) as AssetStatus[])
+    .map((status) => ({
+      label: ASSET_STATUS_TOKENS[status].label,
+      count: byStatus(status),
+      fill: `var(--tone-${ASSET_STATUS_TOKENS[status].tone}-solid)`,
+    }))
+    .filter((d) => d.count > 0);
+
   return (
     <div className="grid gap-6">
       <header>
@@ -87,6 +98,19 @@ export default function DashboardPage() {
           tone={needsAttention.length > 0 ? 'warning' : 'neutral'}
           hint="Under repair, damaged, lost or stolen"
         />
+      </section>
+
+      <section aria-label="Assets by status">
+        <Card>
+          <div className="border-b border-[var(--color-border)] px-4 py-3">
+            <h2 className="text-sm font-semibold">Assets by status</h2>
+          </div>
+          {statusData.length === 0 ? (
+            <EmptyState title="No assets yet" description="Nothing to chart." />
+          ) : (
+            <StatusBarChart data={statusData} />
+          )}
+        </Card>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">

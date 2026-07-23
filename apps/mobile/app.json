@@ -17,11 +17,7 @@
     },
     "android": {
       "package": "com.techpio.asset",
-      "permissions": [
-        "CAMERA",
-        "USE_BIOMETRIC",
-        "POST_NOTIFICATIONS"
-      ]
+      "permissions": ["CAMERA", "USE_BIOMETRIC", "POST_NOTIFICATIONS"]
     },
     "plugins": [
       "expo-router",

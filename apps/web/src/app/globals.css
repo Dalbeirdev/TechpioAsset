@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
 
 /* Theme is class-driven so next-themes can set it explicitly and the user's
    choice survives a reload, rather than following the OS only. */
@@ -23,6 +24,34 @@
 
   --radius-card: 0.75rem;
   --radius-control: 0.5rem;
+
+  /* shadcn/ui semantic tokens, mapped onto the palette above so shadcn
+     components inherit the existing look. Dark overrides live in `.dark`. */
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0f172a;
+  --color-primary: #1d4ed8;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f1f5f9;
+  --color-secondary-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #0f172a;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-input: #cbd5e1;
+  --color-ring: #2563eb;
+
+  /* Chart series (Recharts). Distinct, AA-legible hues. */
+  --color-chart-1: #2563eb;
+  --color-chart-2: #16a34a;
+  --color-chart-3: #f59e0b;
+  --color-chart-4: #9333ea;
+  --color-chart-5: #dc2626;
 }
 
 /* Surface tokens for the dark scheme. Tone tokens (status badge colours) are
@@ -41,6 +70,32 @@
   --color-brand-hover: #93c5fd;
   --color-brand-contrast: #0b1120;
   --color-focus: #60a5fa;
+
+  /* shadcn/ui semantic tokens — dark scheme. */
+  --color-background: #0b1120;
+  --color-foreground: #e2e8f0;
+  --color-card: #0f172a;
+  --color-card-foreground: #e2e8f0;
+  --color-popover: #0f172a;
+  --color-popover-foreground: #e2e8f0;
+  --color-primary: #60a5fa;
+  --color-primary-foreground: #0b1120;
+  --color-secondary: #1e293b;
+  --color-secondary-foreground: #e2e8f0;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-accent: #1e293b;
+  --color-accent-foreground: #e2e8f0;
+  --color-destructive: #f87171;
+  --color-destructive-foreground: #0b1120;
+  --color-input: #334155;
+  --color-ring: #60a5fa;
+
+  --color-chart-1: #60a5fa;
+  --color-chart-2: #4ade80;
+  --color-chart-3: #fbbf24;
+  --color-chart-4: #c084fc;
+  --color-chart-5: #f87171;
 }
 
 @layer base {

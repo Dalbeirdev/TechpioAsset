@@ -1,70 +1,52 @@
 import { cloneElement, forwardRef, isValidElement, type ReactElement } from 'react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { Button as ShadButton, type ButtonProps as ShadButtonProps } from '@/components/ui/button';
+import { Input as ShadInput } from '@/components/ui/input';
 
-/** Minimal primitives shared across Phase 1 screens. */
+/**
+ * Shared primitives. Button and Input are now backed by shadcn/ui; this module
+ * keeps the app's historical ergonomics (variant names, a `loading` prop, and a
+ * two-size scale) so existing callers do not change, while the underlying
+ * components are the shadcn ones.
+ */
 
-const BUTTON_VARIANTS = {
-  primary:
-    'bg-[var(--color-brand)] text-[var(--color-brand-contrast)] hover:bg-[var(--color-brand-hover)]',
-  secondary:
-    'border border-[var(--color-border-strong)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-sunken)]',
-  ghost: 'hover:bg-[var(--color-surface-sunken)]',
-  danger: 'bg-[var(--tone-critical-solid)] text-white hover:opacity-90',
+// The app's variant vocabulary mapped onto shadcn's.
+const VARIANT_MAP = {
+  primary: 'default',
+  secondary: 'secondary',
+  ghost: 'ghost',
+  danger: 'destructive',
 } as const;
 
 export const Button = forwardRef<
   HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: keyof typeof BUTTON_VARIANTS;
+  Omit<ShadButtonProps, 'variant' | 'size'> & {
+    variant?: keyof typeof VARIANT_MAP;
     size?: 'sm' | 'md';
     loading?: boolean;
   }
 >(function Button(
-  { className, variant = 'primary', size = 'md', loading, disabled, children, ...props },
+  { variant = 'primary', size = 'md', loading, disabled, children, ...props },
   ref,
 ) {
   return (
-    <button
+    <ShadButton
       ref={ref}
+      variant={VARIANT_MAP[variant]}
+      size={size === 'sm' ? 'sm' : 'default'}
       // Disabled while loading so a double-click cannot submit twice.
       disabled={disabled ?? loading}
       aria-busy={loading || undefined}
-      className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] font-medium transition-colors',
-        'disabled:cursor-not-allowed disabled:opacity-60',
-        size === 'sm' ? 'h-8 px-3 text-sm' : 'h-10 px-4 text-sm',
-        BUTTON_VARIANTS[variant],
-        className,
-      )}
       {...props}
     >
-      {loading ? (
-        <span
-          aria-hidden="true"
-          className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
-        />
-      ) : null}
+      {loading ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : null}
       {children}
-    </button>
+    </ShadButton>
   );
 });
 
-export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  function Input({ className, ...props }, ref) {
-    return (
-      <input
-        ref={ref}
-        className={cn(
-          'h-10 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)]',
-          'bg-[var(--color-surface)] px-3 text-sm placeholder:text-[var(--color-content-subtle)]',
-          'disabled:opacity-60',
-          className,
-        )}
-        {...props}
-      />
-    );
-  },
-);
+export const Input = ShadInput;
 
 export function Field({
   label,
