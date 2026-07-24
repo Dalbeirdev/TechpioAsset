@@ -232,6 +232,11 @@ export class LifecycleService {
       },
     });
 
+    // Completing an offboarding means the person has left: disable their login so
+    // a former employee can't sign in. Skipped only for the two cases where it
+    // would be unsafe — disabling yourself, or removing the last active admin.
+    const deactivated = await this.deactivateLeaver(actor, task.subjectUserId);
+
     await this.audit.record({
       companyId: actor.companyId,
       actorId: actor.id,
@@ -242,11 +247,54 @@ export class LifecycleService {
         status: 'COMPLETED',
         outstandingAtCompletion: outstanding.length,
         exception: exceptionReason ?? null,
+        accountDeactivated: deactivated,
       },
       reason: exceptionReason,
     });
 
     return this.getTask(actor, taskId);
+  }
+
+  /**
+   * Deactivates a departing employee's account. Returns false without touching
+   * anything when it would be unsafe: the actor offboarding themselves, or the
+   * subject being the last active Super Admin (which would lock the company out).
+   */
+  private async deactivateLeaver(actor: AuthUser, subjectUserId: string): Promise<boolean> {
+    if (subjectUserId === actor.id) return false;
+
+    const subject = await this.prisma.client.user.findFirst({
+      where: { id: subjectUserId, companyId: actor.companyId },
+      select: { status: true, roles: { select: { role: { select: { key: true } } } } },
+    });
+    if (!subject || subject.status === 'DEACTIVATED') return false;
+
+    const isSuperAdmin = subject.roles.some((r) => r.role.key === 'SUPER_ADMIN');
+    if (isSuperAdmin) {
+      const activeSuperAdmins = await this.prisma.client.user.count({
+        where: {
+          companyId: actor.companyId,
+          status: 'ACTIVE',
+          roles: { some: { role: { key: 'SUPER_ADMIN' } } },
+        },
+      });
+      if (activeSuperAdmins <= 1) return false;
+    }
+
+    await this.prisma.client.user.update({
+      where: { id: subjectUserId },
+      data: { status: 'DEACTIVATED' },
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: subjectUserId,
+      previousValues: { status: subject.status },
+      newValues: { status: 'DEACTIVATED', reason: 'Offboarding completed' },
+    });
+    return true;
   }
 
   // ───────────────────────────────────────────────────────────────────────────

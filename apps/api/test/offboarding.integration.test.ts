@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
 /**
@@ -19,6 +19,15 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+});
+
+// Completing an offboarding now deactivates the subject (employee3). Restore it
+// so this shared account stays ACTIVE for the rest of the suite.
+afterEach(async () => {
+  await api(app)
+    .patch(`/api/v1/users/${s.employee3.user.id}/status`)
+    .set(auth(s.superAdmin))
+    .send({ status: 'ACTIVE' });
 });
 
 /** Creates and assigns a fresh asset, so the test never fights shared seed stock. */
@@ -111,6 +120,12 @@ describe('offboarding completion gate (spec section 13)', () => {
     expect(completed.status, JSON.stringify(completed.body)).toBe(201);
     expect(completed.body.data.status).toBe('COMPLETED');
     expect(completed.body.data.completedAt).toBeTruthy();
+
+    // The leaver's account is disabled so they can no longer sign in.
+    const subject = await api(app)
+      .get(`/api/v1/users/${s.employee3.user.id}`)
+      .set(auth(s.superAdmin));
+    expect(subject.body.data.status).toBe('DEACTIVATED');
   });
 
   it('allows completion with a documented exception, and records who approved it', async () => {

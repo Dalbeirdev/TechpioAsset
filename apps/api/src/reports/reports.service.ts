@@ -104,7 +104,8 @@ export class ReportsService {
         condition: a.condition,
         office: a.office?.name ?? '',
         assignee: a.assignedUser?.email ?? '',
-        ...(showCost ? { cost: a.purchaseCost ? Number(a.purchaseCost) : 0 } : {}),
+        // null (not 0) so an unpriced asset reads as "not recorded", never "free".
+        ...(showCost ? { cost: a.purchaseCost ? Number(a.purchaseCost) : null } : {}),
       })),
     };
   }
@@ -197,7 +198,7 @@ export class ReportsService {
           assetTag: a.assetTag,
           name: a.name,
           method: a.depreciationMethod,
-          cost: a.purchaseCost ? Number(a.purchaseCost) : 0,
+          cost: a.purchaseCost ? Number(a.purchaseCost) : null,
           depreciation: Number(result.accumulatedDepreciation),
           current: Number(result.currentValue),
         };

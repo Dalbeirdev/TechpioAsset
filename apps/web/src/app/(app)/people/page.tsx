@@ -8,6 +8,7 @@ import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { useConfirm } from '@/providers/confirm-provider';
+import { useFocusTrap } from '@/lib/use-focus-trap';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
@@ -56,6 +57,7 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
 
   const [roleKeys, setRoleKeys] = useState<string[]>(user.roles.map((r) => r.role.key));
   const [error, setError] = useState<string | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -126,7 +128,7 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
         className="w-full max-w-md p-5"
         // Stop backdrop clicks inside the card from closing the modal.
       >
-        <div onClick={(e) => e.stopPropagation()}>
+        <div ref={trapRef} onClick={(e) => e.stopPropagation()}>
           <h2 className="text-[15px] font-semibold">Manage {name}</h2>
           <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">{user.email}</p>
 

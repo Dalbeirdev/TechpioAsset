@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
+import { useFocusTrap } from '@/lib/use-focus-trap';
 
 interface ConfirmOptions {
   title: string;
@@ -26,6 +27,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [opts, setOpts] = useState<ConfirmOptions | null>(null);
   const resolver = useRef<((v: boolean) => void) | null>(null);
   const confirmBtn = useRef<HTMLButtonElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(!!opts);
 
   const confirm = useCallback<ConfirmFn>((options) => {
     setOpts(options);
@@ -63,7 +65,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           onClick={() => close(false)}
         >
           <Card className="w-full max-w-sm p-5">
-            <div onClick={(e) => e.stopPropagation()}>
+            <div ref={trapRef} onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start gap-3">
                 {opts.destructive ? (
                   <div className="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--tone-critical-bg)]">
