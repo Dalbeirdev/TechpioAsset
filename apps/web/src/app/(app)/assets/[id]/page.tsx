@@ -3,7 +3,7 @@
 import { use, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Lock } from 'lucide-react';
+import { ArrowLeft, Lock, Pencil } from 'lucide-react';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import { PERMISSIONS, type AssetCondition, type AssetStatus } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
@@ -112,6 +112,15 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight">{data.name}</h1>
           <StatusBadge token={ASSET_STATUS_TOKENS[data.status]} size="sm" />
+          {can(PERMISSIONS.ASSETS_UPDATE) ? (
+            <Link
+              href={`/assets/${id}/edit`}
+              className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+            >
+              <Pencil aria-hidden="true" className="size-4" />
+              Edit
+            </Link>
+          ) : null}
         </div>
         <p className="mt-1 text-sm text-[var(--color-content-subtle)]">
           {data.assetTag}

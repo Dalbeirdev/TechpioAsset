@@ -1,15 +1,25 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
-import { PERMISSIONS, type RequestStatus } from '@techpioasset/domain';
+import { REQUEST_TYPES } from '@techpioasset/contracts';
+import { PERMISSIONS, REQUEST_STATUSES, type RequestStatus } from '@techpioasset/domain';
 import { apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
+
+function titleCase(value: string): string {
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
 
 interface RequestRow {
   id: string;
@@ -29,16 +39,33 @@ function RequestsTable() {
   const { can } = useAuth();
   const [awaitingMe, setAwaitingMe] = useState(false);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState('');
+  const [type, setType] = useState('');
+
+  // Debounce the search box so we query once the user pauses, not per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(search.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const params = new URLSearchParams({ page: String(page), pageSize: '25' });
   if (awaitingMe) params.set('awaitingMe', 'true');
+  if (q) params.set('q', q);
+  if (status) params.set('status', status);
+  if (type) params.set('type', type);
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['requests', awaitingMe, page],
+    queryKey: ['requests', awaitingMe, page, q, status, type],
     queryFn: () => apiFetchPage<RequestRow>(`/requests?${params.toString()}`),
   });
 
   const canApprove = can(PERMISSIONS.REQUESTS_APPROVE);
+  const hasFilters = q !== '' || status !== '' || type !== '';
 
   return (
     <div className="grid gap-4">
@@ -94,6 +121,73 @@ function RequestsTable() {
         </div>
       </header>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--color-content-subtle)]"
+          />
+          <Input
+            type="search"
+            aria-label="Search requests"
+            placeholder="Search by number, item or reason…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        <select
+          aria-label="Filter by status"
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(1);
+          }}
+          className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+        >
+          <option value="">All statuses</option>
+          {REQUEST_STATUSES.map((value) => (
+            <option key={value} value={value}>
+              {REQUEST_STATUS_TOKENS[value].label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          aria-label="Filter by type"
+          value={type}
+          onChange={(e) => {
+            setType(e.target.value);
+            setPage(1);
+          }}
+          className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+        >
+          <option value="">All types</option>
+          {REQUEST_TYPES.map((value) => (
+            <option key={value} value={value}>
+              {titleCase(value)}
+            </option>
+          ))}
+        </select>
+
+        {hasFilters ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setSearch('');
+              setQ('');
+              setStatus('');
+              setType('');
+              setPage(1);
+            }}
+          >
+            Clear
+          </Button>
+        ) : null}
+      </div>
+
       <Card>
         {isPending ? (
           <div className="grid gap-2 p-4">
@@ -105,11 +199,19 @@ function RequestsTable() {
           <ErrorState title="Could not load requests" detail={(error as Error).message} />
         ) : data.data.length === 0 ? (
           <EmptyState
-            title={awaitingMe ? 'Nothing awaiting you' : 'No requests yet'}
+            title={
+              hasFilters
+                ? 'No matching requests'
+                : awaitingMe
+                  ? 'Nothing awaiting you'
+                  : 'No requests yet'
+            }
             description={
-              awaitingMe
-                ? 'Requests appear here when they reach a step you approve.'
-                : 'Raise a request for equipment, furniture or supplies.'
+              hasFilters
+                ? 'No requests match these filters. Try clearing them.'
+                : awaitingMe
+                  ? 'Requests appear here when they reach a step you approve.'
+                  : 'Raise a request for equipment, furniture or supplies.'
             }
           />
         ) : (
