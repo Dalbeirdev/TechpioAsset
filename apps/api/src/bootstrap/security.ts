@@ -36,8 +36,19 @@ export function applyCors(app: INestApplication, config: AppConfig): void {
     // and the origin list must stay explicit - never a wildcard.
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Client-Type'],
-    exposedHeaders: ['X-Request-Id', 'X-Correlation-Id'],
+    // X-Refresh-Token is how a native/mobile client (which has no cookie jar)
+    // sends the stored refresh token and reads the rotated one back. Native fetch
+    // ignores CORS, but the browser-based mobile build ("laptop review") needs it
+    // both allowed on the request and exposed on the response, or refresh and
+    // biometric unlock silently fail there.
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Correlation-Id',
+      'X-Client-Type',
+      'X-Refresh-Token',
+    ],
+    exposedHeaders: ['X-Request-Id', 'X-Correlation-Id', 'X-Refresh-Token'],
     maxAge: 600,
   });
 }
