@@ -99,13 +99,15 @@ export class AssetsService {
     } satisfies Prisma.AssetSelect;
   }
 
-  async list(actor: AuthUser, query: AssetListQuery) {
-    // Scope and caller-supplied filters are ANDed, never merged.
-    //
-    // Spreading them into one object let a later key silently replace an earlier
-    // one: `?assignedUserId=<someone else>` overwrote the scope's own
-    // `assignedUserId`, and an employee could read another employee's assets.
-    // An integration test caught it. AND cannot be overridden by construction.
+  /**
+   * Scope and caller-supplied filters, ANDed (never merged).
+   *
+   * Spreading them into one object let a later key silently replace an earlier
+   * one: `?assignedUserId=<someone else>` overwrote the scope's own
+   * `assignedUserId`, and an employee could read another employee's assets. An
+   * integration test caught it. AND cannot be overridden by construction.
+   */
+  private listWhere(actor: AuthUser, query: AssetListQuery): Prisma.AssetWhereInput {
     const filters: Prisma.AssetWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
@@ -126,8 +128,11 @@ export class AssetsService {
           }
         : {}),
     };
+    return { AND: [assetScopeFilter(actor), filters] };
+  }
 
-    const where: Prisma.AssetWhereInput = { AND: [assetScopeFilter(actor), filters] };
+  async list(actor: AuthUser, query: AssetListQuery) {
+    const where = this.listWhere(actor, query);
 
     return paginate(query, {
       count: () => this.prisma.client.asset.count({ where }),
@@ -140,6 +145,67 @@ export class AssetsService {
           select: this.selection(actor),
         }),
     });
+  }
+
+  /**
+   * All assets matching the list filters, flattened for CSV export. Honours the
+   * caller's scope and cost visibility; capped so an export can't become an
+   * unbounded scan. Cost is a column only when the caller may see it.
+   */
+  async exportRows(
+    actor: AuthUser,
+    query: AssetListQuery,
+  ): Promise<{ columns: { key: string; label: string }[]; rows: Record<string, string>[] }> {
+    const where = this.listWhere(actor, query);
+    const showCost = canSeeCost(actor);
+    const assets = await this.prisma.client.asset.findMany({
+      where,
+      take: 10_000,
+      orderBy: { assetTag: 'asc' },
+      select: this.selection(actor),
+    });
+
+    const columns = [
+      { key: 'assetTag', label: 'Asset tag' },
+      { key: 'name', label: 'Name' },
+      { key: 'category', label: 'Category' },
+      { key: 'status', label: 'Status' },
+      { key: 'condition', label: 'Condition' },
+      { key: 'serialNumber', label: 'Serial number' },
+      { key: 'office', label: 'Office' },
+      { key: 'assignedTo', label: 'Assigned to' },
+      ...(showCost ? [{ key: 'purchaseCost', label: 'Purchase cost' }] : []),
+    ];
+
+    const rows = assets.map((a) => {
+      const holder = (a as { assignedUser?: { email?: string } | null }).assignedUser;
+      const cost = (a as { purchaseCost?: unknown }).purchaseCost;
+      return {
+        assetTag: a.assetTag,
+        name: a.name,
+        category: (a as { category?: { name?: string } | null }).category?.name ?? '',
+        status: a.status,
+        condition: a.condition,
+        serialNumber: a.serialNumber ?? '',
+        office: (a as { office?: { name?: string } | null }).office?.name ?? '',
+        assignedTo: holder?.email ?? '',
+        ...(showCost ? { purchaseCost: cost != null ? String(cost) : '' } : {}),
+      };
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.DATA_EXPORTED,
+      entityType: 'Asset',
+      entityId: 'export',
+      newValues: {
+        rows: rows.length,
+        filters: { q: query.q ?? null, status: query.status ?? null },
+      },
+    });
+
+    return { columns, rows };
   }
 
   /** 404 rather than 403 outside scope - see UsersService.findOne for why. */

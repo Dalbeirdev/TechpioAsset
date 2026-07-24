@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   setUserRolesSchema,
@@ -11,6 +12,7 @@ import {
 } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
+import { toCsv } from '../common/csv.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { UsersService } from './users.service.js';
 
@@ -24,6 +26,24 @@ export class UsersController {
   @ApiOperation({ summary: 'List users visible to the caller, optionally filtered by role' })
   list(@CurrentUser() actor: AuthUser, @Query(zodBody(userListQuerySchema)) query: UserListQuery) {
     return this.users.list(actor, query);
+  }
+
+  // Declared before ':id' so the static path wins the route match.
+  @Get('export')
+  @RequirePermissions(PERMISSIONS.EMPLOYEES_READ)
+  @ApiOperation({ summary: 'Export the current people view as CSV' })
+  async export(
+    @CurrentUser() actor: AuthUser,
+    @Query(zodBody(userListQuerySchema)) query: UserListQuery,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { columns, rows } = await this.users.exportRows(actor, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="people-${new Date().toISOString().slice(0, 10)}.csv"`,
+      'Cache-Control': 'private, no-store',
+    });
+    return toCsv(columns, rows);
   }
 
   @Get(':id')

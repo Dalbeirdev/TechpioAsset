@@ -8,11 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { toCsv } from '../common/csv.js';
 import {
   assetListQuerySchema,
   assignAssetSchema,
@@ -82,6 +85,28 @@ export class AssetsController {
     @Query(zodBody(assetListQuerySchema)) query: AssetListQuery,
   ) {
     return this.assets.list(actor, query);
+  }
+
+  // Declared before ':id' so the static path wins the route match.
+  @Get('export')
+  @RequirePermissions(PERMISSIONS.ASSETS_READ)
+  @ApiOperation({
+    summary: 'Export the current asset view as CSV',
+    description:
+      'Honours the same filters and scope as the list; cost is a column only with access.',
+  })
+  async export(
+    @CurrentUser() actor: AuthUser,
+    @Query(zodBody(assetListQuerySchema)) query: AssetListQuery,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { columns, rows } = await this.assets.exportRows(actor, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="assets-${new Date().toISOString().slice(0, 10)}.csv"`,
+      'Cache-Control': 'private, no-store',
+    });
+    return toCsv(columns, rows);
   }
 
   @Get('by-qr/:token')

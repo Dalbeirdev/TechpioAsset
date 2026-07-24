@@ -52,7 +52,11 @@ export class RequestsService {
     items: { select: { id: true, description: true, quantity: true } },
   } satisfies Prisma.AssetRequestSelect;
 
-  async list(actor: AuthUser, query: RequestListQuery) {
+  /**
+   * ANDed, never spread — a caller-supplied filter must not widen scope. Same
+   * reasoning as AssetsService.list.
+   */
+  private listWhere(actor: AuthUser, query: RequestListQuery): Prisma.AssetRequestWhereInput {
     const filters: Prisma.AssetRequestWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.type ? { type: query.type } : {}),
@@ -87,12 +91,11 @@ export class RequestsService {
           }
         : {}),
     };
+    return { AND: [requestScopeFilter(actor), filters] };
+  }
 
-    // ANDed, never spread - a caller-supplied filter must not be able to widen
-    // scope. Same reasoning as AssetsService.list.
-    const where: Prisma.AssetRequestWhereInput = {
-      AND: [requestScopeFilter(actor), filters],
-    };
+  async list(actor: AuthUser, query: RequestListQuery) {
+    const where = this.listWhere(actor, query);
 
     return paginate(query, {
       count: () => this.prisma.client.assetRequest.count({ where }),
@@ -105,6 +108,52 @@ export class RequestsService {
           select: this.listSelect,
         }),
     });
+  }
+
+  /** All requests matching the list filters, flattened for CSV export (scoped, capped). */
+  async exportRows(actor: AuthUser, query: RequestListQuery) {
+    const where = this.listWhere(actor, query);
+    const requests = await this.prisma.client.assetRequest.findMany({
+      where,
+      take: 10_000,
+      orderBy: { createdAt: 'desc' },
+      select: this.listSelect,
+    });
+
+    const name = (p: { profile: { firstName: string; lastName: string } | null; email: string }) =>
+      p.profile ? `${p.profile.firstName} ${p.profile.lastName}` : p.email;
+
+    const columns = [
+      { key: 'requestNumber', label: 'Request' },
+      { key: 'type', label: 'Type' },
+      { key: 'status', label: 'Status' },
+      { key: 'priority', label: 'Priority' },
+      { key: 'requester', label: 'Requester' },
+      { key: 'items', label: 'Items' },
+      { key: 'estimatedCost', label: 'Estimated cost' },
+      { key: 'createdAt', label: 'Created' },
+    ];
+    const rows = requests.map((r) => ({
+      requestNumber: r.requestNumber,
+      type: r.type,
+      status: r.status,
+      priority: r.priority,
+      requester: name(r.requester),
+      items: r.items.map((i) => `${i.description} ×${i.quantity}`).join('; '),
+      estimatedCost: r.estimatedCost != null ? String(r.estimatedCost) : '',
+      createdAt: r.createdAt.toISOString().slice(0, 10),
+    }));
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.DATA_EXPORTED,
+      entityType: 'AssetRequest',
+      entityId: 'export',
+      newValues: { rows: rows.length },
+    });
+
+    return { columns, rows };
   }
 
   async findOne(actor: AuthUser, id: string) {

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
@@ -13,6 +14,7 @@ import {
 } from '@techpioasset/contracts';
 import { PERMISSIONS, type RequestStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
+import { toCsv } from '../common/csv.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { RequestsService } from './requests.service.js';
 
@@ -37,6 +39,24 @@ export class RequestsController {
     @Query(zodBody(requestListQuerySchema)) query: RequestListQuery,
   ) {
     return this.requests.list(actor, query);
+  }
+
+  // Declared before ':id' so the static path wins the route match.
+  @Get('export')
+  @RequirePermissions(PERMISSIONS.REQUESTS_READ)
+  @ApiOperation({ summary: 'Export the current requests view as CSV' })
+  async export(
+    @CurrentUser() actor: AuthUser,
+    @Query(zodBody(requestListQuerySchema)) query: RequestListQuery,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { columns, rows } = await this.requests.exportRows(actor, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="requests-${new Date().toISOString().slice(0, 10)}.csv"`,
+      'Cache-Control': 'private, no-store',
+    });
+    return toCsv(columns, rows);
   }
 
   @Get('types')

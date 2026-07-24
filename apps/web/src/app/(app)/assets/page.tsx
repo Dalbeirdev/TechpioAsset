@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileSpreadsheet, Plus, X } from 'lucide-react';
+import { Download, FileSpreadsheet, Plus, X } from 'lucide-react';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import {
   ASSET_STATUSES,
@@ -14,6 +14,7 @@ import {
 } from '@techpioasset/domain';
 import type { BulkActionResult } from '@techpioasset/contracts';
 import { apiFetch, apiFetchPage } from '@/lib/api-client';
+import { downloadCsv } from '@/lib/download-csv';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { useConfirm } from '@/providers/confirm-provider';
@@ -157,6 +158,24 @@ function AssetsTable() {
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            onClick={async () => {
+              const params = new URLSearchParams();
+              if (q) params.set('q', q);
+              if (status) params.set('status', status);
+              const ok = await downloadCsv(
+                `/assets/export${params.toString() ? `?${params}` : ''}`,
+                'assets.csv',
+              );
+              if (ok) toast.success('Export downloaded');
+              else toast.error('Could not export');
+            }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+          >
+            <Download aria-hidden="true" className="size-4" />
+            Export
+          </button>
           {can(PERMISSIONS.ASSETS_IMPORT) ? (
             <Link
               href="/assets/import"

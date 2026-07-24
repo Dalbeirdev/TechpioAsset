@@ -17,9 +17,9 @@ export class UsersService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(actor: AuthUser, query: UserListQuery) {
-    // ANDed, never spread - see AssetsService.list for why.
-    const where = {
+  /** Scope + filters, ANDed (never spread — see AssetsService.list for why). */
+  private listWhere(actor: AuthUser, query: UserListQuery) {
+    return {
       AND: [
         userScopeFilter(actor),
         query.q
@@ -37,6 +37,10 @@ export class UsersService {
         query.role ? { roles: { some: { role: { key: query.role } } } } : {},
       ],
     };
+  }
+
+  async list(actor: AuthUser, query: UserListQuery) {
+    const where = this.listWhere(actor, query);
 
     return paginate(query, {
       count: () => this.prisma.client.user.count({ where }),
@@ -70,6 +74,63 @@ export class UsersService {
           },
         }),
     });
+  }
+
+  /** All users matching the list filters, flattened for CSV export (scoped, capped). */
+  async exportRows(actor: AuthUser, query: UserListQuery) {
+    const where = this.listWhere(actor, query);
+    const users = await this.prisma.client.user.findMany({
+      where,
+      take: 10_000,
+      orderBy: { email: 'asc' },
+      select: {
+        email: true,
+        status: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true,
+            employeeNumber: true,
+            jobTitle: true,
+            department: { select: { name: true } },
+            office: { select: { name: true } },
+          },
+        },
+        roles: { select: { role: { select: { name: true } } } },
+      },
+    });
+
+    const columns = [
+      { key: 'name', label: 'Name' },
+      { key: 'email', label: 'Email' },
+      { key: 'employeeNumber', label: 'Employee number' },
+      { key: 'jobTitle', label: 'Job title' },
+      { key: 'department', label: 'Department' },
+      { key: 'office', label: 'Office' },
+      { key: 'roles', label: 'Roles' },
+      { key: 'status', label: 'Status' },
+    ];
+    const rows = users.map((u) => ({
+      name: u.profile ? `${u.profile.firstName} ${u.profile.lastName}` : '',
+      email: u.email,
+      employeeNumber: u.profile?.employeeNumber ?? '',
+      jobTitle: u.profile?.jobTitle ?? '',
+      department: u.profile?.department?.name ?? '',
+      office: u.profile?.office?.name ?? '',
+      roles: u.roles.map((r) => r.role.name).join('; '),
+      status: u.status,
+    }));
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.DATA_EXPORTED,
+      entityType: 'User',
+      entityId: 'export',
+      newValues: { rows: rows.length },
+    });
+
+    return { columns, rows };
   }
 
   /**

@@ -2,13 +2,14 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, Settings2 } from 'lucide-react';
+import { Download, Search, Settings2 } from 'lucide-react';
 import { PERMISSIONS, SYSTEM_ROLES } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { useConfirm } from '@/providers/confirm-provider';
 import { useFocusTrap } from '@/lib/use-focus-trap';
+import { downloadCsv } from '@/lib/download-csv';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
@@ -223,6 +224,7 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
 
 function PeopleTable() {
   const { can } = useAuth();
+  const toast = useToast();
   const canManage = can(PERMISSIONS.USERS_MANAGE) || can(PERMISSIONS.ROLES_MANAGE);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -305,6 +307,24 @@ function PeopleTable() {
             Clear
           </Button>
         ) : null}
+        <button
+          type="button"
+          onClick={async () => {
+            const p = new URLSearchParams();
+            if (q) p.set('q', q);
+            if (role) p.set('role', role);
+            const ok = await downloadCsv(
+              `/users/export${p.toString() ? `?${p}` : ''}`,
+              'people.csv',
+            );
+            if (ok) toast.success('Export downloaded');
+            else toast.error('Could not export');
+          }}
+          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+        >
+          <Download aria-hidden="true" className="size-4" />
+          Export
+        </button>
       </div>
 
       <Card>

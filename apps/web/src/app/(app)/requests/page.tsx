@@ -3,12 +3,14 @@
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Search } from 'lucide-react';
+import { Download, Plus, Search } from 'lucide-react';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
 import { REQUEST_TYPES } from '@techpioasset/contracts';
 import { PERMISSIONS, REQUEST_STATUSES, type RequestStatus } from '@techpioasset/domain';
 import { apiFetchPage } from '@/lib/api-client';
+import { downloadCsv } from '@/lib/download-csv';
 import { useAuth } from '@/providers/auth-provider';
+import { useToast } from '@/providers/toast-provider';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
@@ -37,6 +39,7 @@ interface RequestRow {
 
 function RequestsTable() {
   const { can } = useAuth();
+  const toast = useToast();
   const [awaitingMe, setAwaitingMe] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -186,6 +189,25 @@ function RequestsTable() {
             Clear
           </Button>
         ) : null}
+        <button
+          type="button"
+          onClick={async () => {
+            const p = new URLSearchParams();
+            if (q) p.set('q', q);
+            if (status) p.set('status', status);
+            if (type) p.set('type', type);
+            const ok = await downloadCsv(
+              `/requests/export${p.toString() ? `?${p}` : ''}`,
+              'requests.csv',
+            );
+            if (ok) toast.success('Export downloaded');
+            else toast.error('Could not export');
+          }}
+          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+        >
+          <Download aria-hidden="true" className="size-4" />
+          Export
+        </button>
       </div>
 
       <Card>
