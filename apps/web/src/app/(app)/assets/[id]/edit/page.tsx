@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect } from 'react';
+import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -71,35 +71,29 @@ type EditValues = z.infer<typeof editSchema>;
 
 const toDateInput = (value: string | null): string => (value ? value.slice(0, 10) : '');
 
-export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+/**
+ * The actual form. It only mounts once the asset, categories and offices are all
+ * loaded, and initialises with defaultValues — so every Select's options and its
+ * selected value appear together (resetting a Select before its options exist
+ * leaves it showing the placeholder).
+ */
+function EditAssetForm({
+  id,
+  asset,
+  categories,
+  offices,
+}: {
+  id: string;
+  asset: AssetDetail;
+  categories: Category[];
+  offices: Office[];
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const {
-    data: asset,
-    isPending,
-    isError,
-    error,
-  } = useQuery({
-    queryKey: ['asset', id],
-    queryFn: () => apiFetch<AssetDetail>(`/assets/${id}`),
-  });
-  const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => apiFetch<Category[]>('/categories'),
-  });
-  const { data: offices } = useQuery({
-    queryKey: ['offices'],
-    queryFn: () => apiFetch<Office[]>('/offices'),
-  });
-
-  const form = useForm<EditValues>({ resolver: zodResolver(editSchema) });
-
-  // Populate the form once the asset loads.
-  useEffect(() => {
-    if (!asset) return;
-    form.reset({
+  const form = useForm<EditValues>({
+    resolver: zodResolver(editSchema),
+    defaultValues: {
       name: asset.name,
       assetTag: asset.assetTag,
       categoryId: asset.category?.id ?? '',
@@ -112,10 +106,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       warrantyEndDate: toDateInput(asset.warrantyEndDate),
       condition: asset.condition,
       status: asset.status,
-    });
-  }, [asset, form]);
+    },
+  });
 
-  const selectedCategory = categories?.find((c) => c.id === form.watch('categoryId'));
+  const selectedCategory = categories.find((c) => c.id === form.watch('categoryId'));
 
   const save = useMutation({
     mutationFn: async (values: EditValues) => {
@@ -134,7 +128,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
           warrantyEndDate: values.warrantyEndDate || null,
           condition: values.condition,
           status: values.status,
-          version: asset?.version,
+          version: asset.version,
         },
       });
     },
@@ -158,18 +152,6 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
       }
     },
   });
-
-  if (isPending) {
-    return (
-      <div className="mx-auto grid max-w-2xl gap-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-96" />
-      </div>
-    );
-  }
-  if (isError) {
-    return <ErrorState title="Could not load the asset" detail={(error as Error).message} />;
-  }
 
   return (
     <div className="mx-auto grid max-w-2xl gap-4">
@@ -226,7 +208,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {(categories ?? []).map((c) => (
+                        {categories.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name}
                           </SelectItem>
@@ -323,7 +305,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {(offices ?? []).map((o) => (
+                        {offices.map((o) => (
                           <SelectItem key={o.id} value={o.id}>
                             {o.name}
                           </SelectItem>
@@ -439,5 +421,46 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         </form>
       </Form>
     </div>
+  );
+}
+
+export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+
+  const assetQuery = useQuery({
+    queryKey: ['asset', id],
+    queryFn: () => apiFetch<AssetDetail>(`/assets/${id}`),
+  });
+  const categoriesQuery = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => apiFetch<Category[]>('/categories'),
+  });
+  const officesQuery = useQuery({
+    queryKey: ['offices'],
+    queryFn: () => apiFetch<Office[]>('/offices'),
+  });
+
+  if (assetQuery.isError) {
+    return (
+      <ErrorState title="Could not load the asset" detail={(assetQuery.error as Error).message} />
+    );
+  }
+  // Wait for all three: the form initialises from them and must not mount early.
+  if (!assetQuery.data || !categoriesQuery.data || !officesQuery.data) {
+    return (
+      <div className="mx-auto grid max-w-2xl gap-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
+
+  return (
+    <EditAssetForm
+      id={id}
+      asset={assetQuery.data}
+      categories={categoriesQuery.data}
+      offices={officesQuery.data}
+    />
   );
 }
