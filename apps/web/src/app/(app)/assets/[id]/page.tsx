@@ -3,7 +3,7 @@
 import { use, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Lock, Pencil } from 'lucide-react';
+import { Lock, Pencil } from 'lucide-react';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import { PERMISSIONS, type AssetCondition, type AssetStatus } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
@@ -12,6 +12,7 @@ import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 
 interface AssetDetail {
   id: string;
@@ -107,12 +108,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="mx-auto grid max-w-3xl gap-4">
       <div>
-        <Link
-          href="/assets"
-          className="inline-flex items-center gap-1.5 text-sm text-[var(--color-content-muted)] hover:text-[var(--color-content)]"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" /> All assets
-        </Link>
+        <Breadcrumbs items={[{ label: 'Assets', href: '/assets' }, { label: data.assetTag }]} />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight">{data.name}</h1>
           <StatusBadge token={ASSET_STATUS_TOKENS[data.status]} size="sm" />

@@ -11,6 +11,7 @@ import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Input } from '@/components/ui/input';
 import {
   Form,
@@ -159,6 +160,13 @@ function EditAssetForm({
   return (
     <div className="mx-auto grid max-w-2xl gap-4">
       <header>
+        <Breadcrumbs
+          items={[
+            { label: 'Assets', href: '/assets' },
+            { label: asset.assetTag, href: `/assets/${id}` },
+            { label: 'Edit' },
+          ]}
+        />
         <h1 className="text-xl font-semibold tracking-tight">Edit asset</h1>
         <p className="mt-1 text-sm text-[var(--color-content-muted)]">
           {asset.assetTag} · {asset.name}. The price is managed separately and is not editable here.

@@ -11,6 +11,7 @@ import type {
 } from '@techpioasset/contracts';
 import {
   assertTransition,
+  IllegalTransitionError,
   assetStatusMachine,
   ASSET_STATUSES_ASSIGNABLE,
   PERMISSIONS,
@@ -406,6 +407,41 @@ export class AssetsService {
 
     await this.recordConditionLog(id, before, after, reason);
     return this.findOne(actor, id);
+  }
+
+  /**
+   * Applies one status change to many assets. Each asset runs through the same
+   * validated single-asset path, so scope, the state machine, and audit logging
+   * are identical to changing them one by one. Failures (e.g. an illegal
+   * transition for one asset) are collected per-id rather than aborting the whole
+   * batch — the caller sees exactly what went through and what didn't.
+   */
+  async changeStatusBulk(
+    actor: AuthUser,
+    ids: string[],
+    status: AssetStatus,
+    reason?: string,
+  ): Promise<{ succeeded: string[]; failed: { id: string; reason: string }[] }> {
+    const succeeded: string[] = [];
+    const failed: { id: string; reason: string }[] = [];
+
+    // De-duplicate so a repeated id can't be double-counted.
+    for (const id of [...new Set(ids)]) {
+      try {
+        await this.changeStatus(actor, id, status, reason);
+        succeeded.push(id);
+      } catch (error) {
+        failed.push({
+          id,
+          reason:
+            error instanceof AppError || error instanceof IllegalTransitionError
+              ? error.message
+              : 'Could not update this asset',
+        });
+      }
+    }
+
+    return { succeeded, failed };
   }
 
   // ───────────────────────────────────────────────────────────────────────────

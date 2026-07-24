@@ -107,3 +107,17 @@ export const changeAssetStatusSchema = z.object({
   status: assetStatusEnum,
   reason: z.string().trim().max(500).optional(),
 });
+
+/** Apply one status change to many assets at once (bulk action). */
+export const bulkChangeStatusSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'Select at least one asset').max(200),
+  status: assetStatusEnum,
+  reason: z.string().trim().max(500).optional(),
+});
+export type BulkChangeStatusInput = z.infer<typeof bulkChangeStatusSchema>;
+
+/** Per-asset outcome of a bulk operation, so partial failures surface clearly. */
+export interface BulkActionResult {
+  succeeded: string[];
+  failed: { id: string; reason: string }[];
+}

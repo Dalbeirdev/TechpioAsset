@@ -10,6 +10,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 
 interface Approval {
   id: string;
@@ -136,6 +137,9 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="mx-auto grid max-w-4xl gap-4">
+      <Breadcrumbs
+        items={[{ label: 'Requests', href: '/requests' }, { label: data.requestNumber }]}
+      />
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">

@@ -16,7 +16,9 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   assetListQuerySchema,
   assignAssetSchema,
+  bulkChangeStatusSchema,
   changeAssetStatusSchema,
+  type BulkChangeStatusInput,
   createAssetSchema,
   returnAssetSchema,
   setAssetPriceSchema,
@@ -131,6 +133,22 @@ export class AssetsController {
     @Body(zodBody(setAssetPriceSchema)) body: { purchaseCost: string; currency?: string },
   ) {
     return this.assets.setPrice(actor, id, body);
+  }
+
+  // Declared before ':id/status' so the static path wins the route match.
+  @Post('bulk/status')
+  @RequirePermissions(PERMISSIONS.ASSETS_UPDATE)
+  @ApiOperation({
+    summary: 'Change status on many assets at once',
+    description:
+      'Each asset is validated individually against the state machine; the response ' +
+      'lists what succeeded and what did not, so partial failures are explicit.',
+  })
+  changeStatusBulk(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(bulkChangeStatusSchema)) body: BulkChangeStatusInput,
+  ) {
+    return this.assets.changeStatusBulk(actor, body.ids, body.status, body.reason);
   }
 
   @Post(':id/status')
