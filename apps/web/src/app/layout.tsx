@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from 'next';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/providers/auth-provider';
 import { QueryProvider } from '@/providers/query-provider';
+import { ToastProvider } from '@/providers/toast-provider';
+import { ConfirmProvider } from '@/providers/confirm-provider';
 import { buildToneCss } from '@/lib/tone-css';
 import './globals.css';
 
@@ -44,7 +46,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <QueryProvider>
             <AuthProvider>
-              <div id="main">{children}</div>
+              <ToastProvider>
+                <ConfirmProvider>
+                  <div id="main">{children}</div>
+                </ConfirmProvider>
+              </ToastProvider>
             </AuthProvider>
           </QueryProvider>
         </ThemeProvider>

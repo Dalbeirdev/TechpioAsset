@@ -6,6 +6,8 @@ import { Search, Settings2 } from 'lucide-react';
 import { PERMISSIONS, SYSTEM_ROLES } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
+import { useToast } from '@/providers/toast-provider';
+import { useConfirm } from '@/providers/confirm-provider';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
@@ -45,9 +47,12 @@ function roleLabel(key: string): string {
 function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { can, user: me } = useAuth();
+  const toast = useToast();
+  const confirm = useConfirm();
   const canRoles = can(PERMISSIONS.ROLES_MANAGE);
   const canStatus = can(PERMISSIONS.USERS_MANAGE);
   const isSelf = me?.id === user.id;
+  const name = user.profile ? `${user.profile.firstName} ${user.profile.lastName}` : user.email;
 
   const [roleKeys, setRoleKeys] = useState<string[]>(user.roles.map((r) => r.role.key));
   const [error, setError] = useState<string | null>(null);
@@ -61,18 +66,21 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['people'] });
   };
-  const onError = (caught: unknown) =>
-    setError(
+  const onError = (caught: unknown) => {
+    const message =
       caught instanceof ApiError
         ? (caught.problem.detail ?? caught.problem.title)
-        : 'Something went wrong.',
-    );
+        : 'Something went wrong.';
+    setError(message);
+    toast.error(message);
+  };
 
   const saveRoles = useMutation({
     mutationFn: () => apiFetch(`/users/${user.id}/roles`, { method: 'PATCH', body: { roleKeys } }),
     onSuccess: () => {
       setError(null);
       invalidate();
+      toast.success(`${name}'s roles updated`);
       onClose();
     },
     onError,
@@ -81,18 +89,29 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   const setStatus = useMutation({
     mutationFn: (status: string) =>
       apiFetch(`/users/${user.id}/status`, { method: 'PATCH', body: { status } }),
-    onSuccess: () => {
+    onSuccess: (_data, status) => {
       setError(null);
       invalidate();
+      toast.success(status === 'ACTIVE' ? `${name} activated` : `${name} deactivated`);
       onClose();
     },
     onError,
   });
 
+  // Deactivating removes someone's access — gate it behind an explicit confirm.
+  const deactivate = async () => {
+    const ok = await confirm({
+      title: `Deactivate ${name}?`,
+      body: 'They will lose access immediately and cannot sign in until reactivated. Their records and asset history are kept.',
+      confirmLabel: 'Deactivate',
+      destructive: true,
+    });
+    if (ok) setStatus.mutate('DEACTIVATED');
+  };
+
   const toggleRole = (key: string) =>
     setRoleKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
-  const name = user.profile ? `${user.profile.firstName} ${user.profile.lastName}` : user.email;
   const busy = saveRoles.isPending || setStatus.isPending;
 
   return (
@@ -166,12 +185,7 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                     </Button>
                   ) : null}
                   {user.status !== 'DEACTIVATED' ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() => setStatus.mutate('DEACTIVATED')}
-                    >
+                    <Button size="sm" variant="danger" disabled={busy} onClick={deactivate}>
                       Deactivate
                     </Button>
                   ) : null}

@@ -7,6 +7,7 @@ import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
 import { PERMISSIONS, type RequestStatus } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
+import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
 
@@ -87,6 +88,7 @@ function personName(
 export default function RequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { can } = useAuth();
+  const toast = useToast();
   const queryClient = useQueryClient();
 
   const [comment, setComment] = useState('');
@@ -103,19 +105,22 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
         method: 'POST',
         body: { decision, ...(comment ? { comment } : {}) },
       }),
-    onSuccess: async () => {
+    onSuccess: async (_data, decision) => {
       setComment('');
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: ['request', id] });
       await queryClient.invalidateQueries({ queryKey: ['requests'] });
       await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      toast.success(decision === 'APPROVED' ? 'Request approved' : 'Request rejected');
     },
-    onError: (caught) =>
-      setActionError(
+    onError: (caught) => {
+      const message =
         caught instanceof ApiError
           ? (caught.problem.detail ?? caught.problem.title)
-          : 'Could not record the decision.',
-      ),
+          : 'Could not record the decision.';
+      setActionError(message);
+      toast.error(message);
+    },
   });
 
   if (isPending) return <Skeleton className="h-96" />;

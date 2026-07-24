@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { ASSET_STATUSES, ASSET_CONDITIONS } from '@techpioasset/domain';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import {
@@ -90,6 +91,7 @@ function EditAssetForm({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
@@ -134,6 +136,7 @@ function EditAssetForm({
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['asset', id] });
+      toast.success('Asset updated');
       router.push(`/assets/${id}`);
     },
     onError: (caught) => {

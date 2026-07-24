@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { useToast } from '@/providers/toast-provider';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card } from '@/components/ui';
 import { Input } from '@/components/ui/input';
@@ -62,6 +63,7 @@ type AssetValues = z.infer<typeof assetSchema>;
 export default function NewAssetPage() {
   const router = useRouter();
   const { can } = useAuth();
+  const toast = useToast();
   // Price is a Finance / Super Admin field; everyone else never sees it and
   // Finance records it once (it locks after saving).
   const canSetPrice = can(PERMISSIONS.ASSETS_COST_READ);
@@ -116,7 +118,10 @@ export default function NewAssetPage() {
         },
       });
     },
-    onSuccess: (created) => router.push(`/assets/${created.id}`),
+    onSuccess: (created) => {
+      toast.success('Asset created');
+      router.push(`/assets/${created.id}`);
+    },
     onError: (caught) => {
       if (caught instanceof ApiError) {
         for (const [path, message] of Object.entries(caught.fieldErrors)) {

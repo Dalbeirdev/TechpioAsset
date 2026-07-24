@@ -41,6 +41,11 @@ const pg = new EmbeddedPostgres({
   password: settings.password,
   port: settings.port,
   persistent: true,
+  // Force UTF-8 storage. Without this, initdb on Windows inherits the OS locale
+  // (e.g. WIN1252) and every multi-byte character - accented names, non-Latin
+  // scripts, emoji - fails to insert with a 500. locale=C keeps collation
+  // portable and deterministic across developer machines.
+  initdbFlags: ['--encoding=UTF8', '--locale=C'],
   onLog: () => {},
 });
 

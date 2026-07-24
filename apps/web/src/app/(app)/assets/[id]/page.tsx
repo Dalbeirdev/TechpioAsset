@@ -8,6 +8,7 @@ import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import { PERMISSIONS, type AssetCondition, type AssetStatus } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
+import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
@@ -58,6 +59,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const { can } = useAuth();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const canSeeCost = can(PERMISSIONS.ASSETS_COST_READ);
   const [price, setPrice] = useState('');
   const [priceError, setPriceError] = useState<string | null>(null);
@@ -73,13 +75,15 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     onSuccess: () => {
       setPriceError(null);
       void queryClient.invalidateQueries({ queryKey: ['asset', id] });
+      toast.success('Price recorded and locked');
     },
     onError: (caught) => {
-      setPriceError(
+      const message =
         caught instanceof ApiError
           ? (caught.problem.detail ?? caught.problem.title)
-          : 'Could not record the price.',
-      );
+          : 'Could not record the price.';
+      setPriceError(message);
+      toast.error(message);
     },
   });
 
