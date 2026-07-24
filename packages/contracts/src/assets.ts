@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ASSET_STATUSES, ASSET_CONDITIONS, TRACKING_TYPES } from '@techpioasset/domain';
+import { moneyString } from './money.js';
 
 /** Asset contracts (spec sections 5, 6, 12). */
 
@@ -8,9 +9,6 @@ export const assetConditionEnum = z.enum(ASSET_CONDITIONS);
 export const trackingTypeEnum = z.enum(TRACKING_TYPES);
 
 /** Money arrives as a string so it never round-trips through IEEE-754. */
-const moneyString = z
-  .string()
-  .regex(/^-?\d{1,12}(\.\d{1,2})?$/, 'Enter an amount with at most two decimal places');
 
 const optionalDate = z.coerce.date().optional().nullable();
 

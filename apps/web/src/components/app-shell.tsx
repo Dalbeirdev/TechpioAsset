@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Receipt,
+  ScrollText,
   Search,
   Users,
   Wrench,
@@ -49,6 +50,7 @@ const NAV: NavItem[] = [
     permission: PERMISSIONS.MAINTENANCE_READ,
   },
   { href: '/reports', label: 'Reports', Icon: BarChart3, permission: PERMISSIONS.REPORTS_READ },
+  { href: '/audit', label: 'Audit log', Icon: ScrollText, permission: PERMISSIONS.AUDIT_READ },
   { href: '/settings/ai', label: 'AI settings', Icon: Cpu, permission: PERMISSIONS.AI_CONFIGURE },
 ];
 

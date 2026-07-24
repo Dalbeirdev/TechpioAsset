@@ -1,11 +1,8 @@
 import { z } from 'zod';
 import { MAINTENANCE_STATUSES } from '@techpioasset/domain';
+import { moneyString } from './money.js';
 
 /** Maintenance contracts (spec section 14). */
-
-const moneyString = z
-  .string()
-  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'Enter an amount with at most two decimal places');
 
 export const maintenanceTypeEnum = z.enum([
   'SCHEDULED',

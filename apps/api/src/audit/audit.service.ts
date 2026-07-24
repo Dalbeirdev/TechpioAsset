@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { AuditAction, Prisma } from '@prisma/client';
+import { AuditAction, type Prisma } from '@prisma/client';
+import type { AuditQuery, AuthUser } from '@techpioasset/contracts';
 import { getRequestContext } from '../common/request-context.js';
+import { paginate } from '../common/paginate.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export interface AuditEntry {
@@ -95,6 +97,57 @@ export class AuditService {
       ...entry,
       previousValues: previousValues as Prisma.InputJsonValue,
       newValues: newValues as Prisma.InputJsonValue,
+    });
+  }
+
+  /**
+   * Reads the trail, newest first, scoped to the caller's company and narrowed by
+   * the optional filters. Read-only by construction — this class has no way to
+   * amend or delete an entry.
+   */
+  async list(actor: AuthUser, query: AuditQuery) {
+    const where: Prisma.AuditLogWhereInput = {
+      companyId: actor.companyId,
+      ...(query.action ? { action: query.action as AuditAction } : {}),
+      ...(query.entityType ? { entityType: query.entityType } : {}),
+      ...(query.entityId ? { entityId: query.entityId } : {}),
+      ...(query.actorId ? { actorId: query.actorId } : {}),
+      ...(query.from || query.to
+        ? {
+            createdAt: {
+              ...(query.from ? { gte: query.from } : {}),
+              ...(query.to ? { lte: query.to } : {}),
+            },
+          }
+        : {}),
+    };
+
+    return paginate(query, {
+      count: () => this.prisma.client.auditLog.count({ where }),
+      findMany: ({ skip, take }) =>
+        this.prisma.client.auditLog.findMany({
+          where,
+          skip,
+          take,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            action: true,
+            entityType: true,
+            entityId: true,
+            previousValues: true,
+            newValues: true,
+            reason: true,
+            createdAt: true,
+            actor: {
+              select: {
+                id: true,
+                email: true,
+                profile: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+        }),
     });
   }
 }

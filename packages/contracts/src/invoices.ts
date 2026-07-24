@@ -1,10 +1,7 @@
 import { z } from 'zod';
+import { moneyString } from './money.js';
 
 /** Invoice contracts (spec sections 8, 9). */
-
-const moneyString = z
-  .string()
-  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'Enter an amount with at most two decimal places');
 
 export const invoiceLineInputSchema = z.object({
   lineNumber: z.number().int().positive(),
