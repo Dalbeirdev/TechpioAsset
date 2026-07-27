@@ -42,10 +42,10 @@ export default function ApprovalsScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const page = await api.request<{ data: ApprovalRow[] }>(
-        '/requests?awaitingMe=true&pageSize=50',
-      );
-      setRows(page.data ?? []);
+      // The API client unwraps the response envelope's `data`, so a list
+      // endpoint ({ data: [...], meta }) resolves to the array itself.
+      const rows = await api.request<ApprovalRow[]>('/requests?awaitingMe=true&pageSize=50');
+      setRows(rows ?? []);
     } finally {
       setLoading(false);
     }

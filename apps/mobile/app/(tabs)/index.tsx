@@ -28,11 +28,12 @@ export default function MyAssetsScreen() {
     if (!user) return;
     setLoading(true);
     try {
-      const page = await api.request<{ data: AssetRow[] }>(
+      // api.request unwraps the envelope's `data`, so a list endpoint resolves
+      // to the array itself.
+      const rows = await api.request<AssetRow[]>(
         `/assets?assignedUserId=${user.id}&pageSize=100`,
       );
-      // The list endpoint returns the envelope; api.request unwraps one `data`.
-      setAssets((page as unknown as { data: AssetRow[] }).data ?? (page as unknown as AssetRow[]));
+      setAssets(rows ?? []);
     } finally {
       setLoading(false);
     }

@@ -37,8 +37,10 @@ export default function RequestsScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const page = await api.request<{ data: RequestRow[] }>('/requests?pageSize=50');
-      setRows((page as unknown as { data: RequestRow[] }).data ?? []);
+      // api.request unwraps the envelope's `data`, so a list endpoint resolves
+      // to the array itself.
+      const rows = await api.request<RequestRow[]>('/requests?pageSize=50');
+      setRows(rows ?? []);
     } finally {
       setLoading(false);
     }

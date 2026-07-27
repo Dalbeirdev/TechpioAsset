@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "eas-build-post-install": "cd ../.. && pnpm --filter \"@techpioasset/mobile^...\" build"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",
@@ -21,6 +22,7 @@
     "expo": "~52.0.0",
     "expo-camera": "~16.0.0",
     "expo-constants": "~17.0.0",
+    "expo-linking": "~7.0.5",
     "expo-local-authentication": "~15.0.0",
     "expo-notifications": "~0.29.0",
     "expo-router": "~4.0.0",
