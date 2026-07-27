@@ -89,15 +89,23 @@ export class ApiClient {
 
   async request<T>(
     path: string,
-    options: { method?: string; body?: unknown; skipRefresh?: boolean } = {},
+    options: {
+      method?: string;
+      body?: unknown;
+      /** Multipart body for file uploads; Content-Type is left unset so the
+       * runtime writes the correct boundary. */
+      formData?: FormData;
+      skipRefresh?: boolean;
+    } = {},
   ): Promise<T> {
     const response = await fetch(`${this.base}${path}`, {
-      method: options.method ?? 'GET',
+      method: options.method ?? (options.formData ? 'POST' : 'GET'),
       headers: {
         ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
       },
       ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      ...(options.formData ? { body: options.formData } : {}),
     });
 
     if (response.status === 401 && !options.skipRefresh) {

@@ -29,6 +29,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="capture"
+        options={{
+          title: 'Capture bill',
+          href: can(PERMISSIONS.INVOICES_UPLOAD) ? undefined : null,
+        }}
+      />
+      <Tabs.Screen
         name="scan"
         options={{ title: 'Scan', href: can(PERMISSIONS.ASSETS_READ) ? undefined : null }}
       />
