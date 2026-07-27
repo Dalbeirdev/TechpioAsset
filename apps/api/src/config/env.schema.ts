@@ -68,10 +68,15 @@ export const envSchema = z
     S3_ACCESS_KEY_ID: z.string().optional(),
     S3_SECRET_ACCESS_KEY: z.string().optional(),
 
-    AI_PROVIDER: z.enum(['mock', 'azure']).default('mock'),
+    AI_PROVIDER: z.enum(['mock', 'azure', 'anthropic']).default('mock'),
     AI_ENABLED: booleanish.default('false'),
     AZURE_DOC_INTELLIGENCE_ENDPOINT: z.string().optional(),
     AZURE_DOC_INTELLIGENCE_KEY: z.string().optional(),
+    // Anthropic (Claude) document extraction. The key is a secret with no
+    // default (spec section 20). The model defaults to the current flagship;
+    // set it to a cheaper model (e.g. claude-haiku-4-5) to trade accuracy for cost.
+    ANTHROPIC_API_KEY: z.string().optional(),
+    ANTHROPIC_MODEL: z.string().default('claude-opus-5'),
     AI_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
     AI_MONTHLY_BUDGET_USD: z.coerce.number().min(0).optional(),
 
@@ -133,6 +138,13 @@ export const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['AZURE_DOC_INTELLIGENCE_ENDPOINT'],
         message: 'Endpoint and key are required when AI_PROVIDER=azure',
+      });
+    }
+    if (env.AI_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ANTHROPIC_API_KEY'],
+        message: 'Required when AI_PROVIDER=anthropic',
       });
     }
     if (env.QUEUE_PROVIDER === 'bullmq' && !env.REDIS_URL) {
