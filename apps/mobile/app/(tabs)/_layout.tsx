@@ -22,6 +22,13 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: 'My assets' }} />
       <Tabs.Screen name="requests" options={{ title: 'Requests' }} />
       <Tabs.Screen
+        name="approvals"
+        options={{
+          title: 'Approvals',
+          href: can(PERMISSIONS.REQUESTS_APPROVE) ? undefined : null,
+        }}
+      />
+      <Tabs.Screen
         name="scan"
         options={{ title: 'Scan', href: can(PERMISSIONS.ASSETS_READ) ? undefined : null }}
       />
