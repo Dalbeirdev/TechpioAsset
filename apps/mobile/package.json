@@ -20,6 +20,7 @@
     "@techpioasset/domain": "workspace:*",
     "@techpioasset/ui-tokens": "workspace:*",
     "expo": "~52.0.0",
+    "expo-asset": "~11.0.5",
     "expo-camera": "~16.0.0",
     "expo-constants": "~17.0.0",
     "expo-linking": "~7.0.5",
