@@ -13,8 +13,9 @@ const icon =
   );
 
 /**
- * Bottom tab navigation (spec section 2). Tabs are shown by permission,
- * mirroring the web sidebar; the API enforces each permission regardless.
+ * Bottom tab navigation. Five core tabs stay on the bar; everything else lives
+ * under "More" (hidden tab screens, reached from the More menu). Tabs are shown
+ * by permission, mirroring the web sidebar; the API enforces each regardless.
  */
 export default function TabsLayout() {
   const { status, user } = useSession();
@@ -23,6 +24,7 @@ export default function TabsLayout() {
   if (status !== 'authenticated' || !user) return <Redirect href="/login" />;
 
   const can = (permission: string) => user.permissions.includes(permission);
+  const gate = (permission: string) => (can(permission) ? undefined : null);
 
   return (
     <Tabs
@@ -45,9 +47,10 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: c.background },
       }}
     >
+      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: icon('home-outline') }} />
       <Tabs.Screen
-        name="index"
-        options={{ title: 'Home', tabBarIcon: icon('home-outline') }}
+        name="assets"
+        options={{ title: 'Assets', tabBarIcon: icon('cube-outline'), href: gate(PERMISSIONS.ASSETS_READ) }}
       />
       <Tabs.Screen
         name="requests"
@@ -58,37 +61,16 @@ export default function TabsLayout() {
         options={{
           title: 'Approvals',
           tabBarIcon: icon('checkmark-done-outline'),
-          href: can(PERMISSIONS.REQUESTS_APPROVE) ? undefined : null,
+          href: gate(PERMISSIONS.REQUESTS_APPROVE),
         }}
       />
-      <Tabs.Screen
-        name="capture"
-        options={{
-          title: 'Capture',
-          tabBarIcon: icon('receipt-outline'),
-          href: can(PERMISSIONS.INVOICES_UPLOAD) ? undefined : null,
-        }}
-      />
-      <Tabs.Screen
-        name="scan"
-        options={{
-          title: 'Scan',
-          tabBarIcon: icon('scan-outline'),
-          href: can(PERMISSIONS.ASSETS_READ) ? undefined : null,
-        }}
-      />
-      <Tabs.Screen
-        name="inventory"
-        options={{
-          title: 'Inventory',
-          tabBarIcon: icon('cube-outline'),
-          href: can(PERMISSIONS.INVENTORY_ADJUST) ? undefined : null,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{ title: 'Profile', tabBarIcon: icon('person-circle-outline') }}
-      />
+      <Tabs.Screen name="more" options={{ title: 'More', tabBarIcon: icon('grid-outline') }} />
+
+      {/* Reached from the More menu — hidden from the bar. */}
+      <Tabs.Screen name="capture" options={{ title: 'Capture bill', href: null }} />
+      <Tabs.Screen name="scan" options={{ title: 'Scan', href: null }} />
+      <Tabs.Screen name="inventory" options={{ title: 'Inventory', href: null }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile', href: null }} />
     </Tabs>
   );
 }

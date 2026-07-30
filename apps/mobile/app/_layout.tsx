@@ -30,6 +30,12 @@ export default function RootLayout() {
           <Stack.Screen name="asset/[id]" options={{ headerShown: true, title: 'Asset' }} />
           <Stack.Screen name="request/[id]" options={{ headerShown: true, title: 'Request' }} />
           <Stack.Screen name="scan" options={{ headerShown: true, title: 'Scan' }} />
+          <Stack.Screen name="invoices" options={{ headerShown: true, title: 'Invoices' }} />
+          <Stack.Screen name="maintenance" options={{ headerShown: true, title: 'Maintenance' }} />
+          <Stack.Screen name="people" options={{ headerShown: true, title: 'People' }} />
+          <Stack.Screen name="reports" options={{ headerShown: true, title: 'Reports' }} />
+          <Stack.Screen name="audit" options={{ headerShown: true, title: 'Audit log' }} />
+          <Stack.Screen name="settings" options={{ headerShown: true, title: 'AI settings' }} />
         </Stack>
       </SessionProvider>
     </SafeAreaProvider>
