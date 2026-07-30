@@ -1,20 +1,16 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Text, View } from 'react-native';
 import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  useColorScheme,
-  View,
-} from 'react-native';
-import { REQUEST_STATUS_TOKENS, TONE_PALETTE_DARK, TONE_PALETTE_LIGHT } from '@techpioasset/ui-tokens';
+  REQUEST_STATUS_TOKENS,
+  TONE_PALETTE_DARK,
+  TONE_PALETTE_LIGHT,
+} from '@techpioasset/ui-tokens';
 import type { RequestStatus } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
-import { colors } from '../../src/theme';
+import { useTheme, type Scheme } from '../../src/theme';
 import { personName, formatMoney } from '../../src/lib/format';
+import { Button, Card, Field, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
 
 interface ApprovalStep {
   id: string;
@@ -50,20 +46,12 @@ interface RequestDetail {
   canDecide: boolean;
 }
 
-/**
- * Request detail with approve / reject (spec section 12).
- *
- * The Approve and Reject actions are only shown when the API reports
- * `canDecide` — holding requests:approve is not enough; the server confirms the
- * caller is the approver for the step the request is currently waiting on. Each
- * action is a single POST /requests/:id/decision the API authorises again.
- */
+/** Request detail with approve / reject (spec section 12). */
 export default function RequestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useSession();
   const router = useRouter();
-  const scheme = useColorScheme() ?? 'light';
-  const c = colors[scheme];
+  const { c, scheme, spacing } = useTheme();
   const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
 
   const [request, setRequest] = useState<RequestDetail | null>(null);
@@ -81,8 +69,6 @@ export default function RequestDetailScreen() {
 
   async function decide(decision: 'APPROVED' | 'REJECTED') {
     if (!request) return;
-    // Rejection is consequential and needs a reason; approval may carry an
-    // optional note.
     if (decision === 'REJECTED' && comment.trim().length === 0) {
       Alert.alert('Add a reason', 'Please note why you are rejecting this request.');
       return;
@@ -95,9 +81,7 @@ export default function RequestDetailScreen() {
       });
       Alert.alert(
         decision === 'APPROVED' ? 'Approved' : 'Rejected',
-        decision === 'APPROVED'
-          ? 'The request moves to the next step.'
-          : 'The requester has been notified.',
+        decision === 'APPROVED' ? 'The request moves to the next step.' : 'The requester has been notified.',
       );
       router.back();
     } catch {
@@ -119,177 +103,122 @@ export default function RequestDetailScreen() {
   const tone = palette[REQUEST_STATUS_TOKENS[request.status].tone];
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: c.background }}
-      contentContainerStyle={{ padding: 20 }}
-    >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: c.text, fontSize: 20, fontWeight: '700' }}>
-          {request.requestNumber}
-        </Text>
-        <View
-          style={{ backgroundColor: tone.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}
-        >
-          <Text style={{ color: tone.fg, fontSize: 13 }}>
-            {REQUEST_STATUS_TOKENS[request.status].label}
-          </Text>
+    <Screen scroll>
+      <Card style={{ marginBottom: spacing.xl }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ color: c.text, fontSize: 18, fontWeight: '800' }}>{request.requestNumber}</Text>
+          <StatusPill label={REQUEST_STATUS_TOKENS[request.status].label} bg={tone.bg} fg={tone.fg} />
         </View>
-      </View>
-
-      <View style={{ marginTop: 18, gap: 6 }}>
-        <Row c={c} label="Requested by" value={personName(request.requester)} />
-        {request.beneficiary && request.beneficiary.email !== request.requester?.email ? (
-          <Row c={c} label="For" value={personName(request.beneficiary)} />
-        ) : null}
-        <Row c={c} label="Priority" value={request.priority} />
-        {request.estimatedCost ? (
-          <Row c={c} label="Estimated cost" value={formatMoney(request.estimatedCost, request.currency)} />
-        ) : null}
-        {request.requiredBy ? (
-          <Row c={c} label="Required by" value={new Date(request.requiredBy).toLocaleDateString()} />
-        ) : null}
-      </View>
-
-      <Section c={c} title="Reason" />
-      <Text style={{ color: c.text, fontSize: 14, lineHeight: 20 }}>{request.businessReason}</Text>
-
-      <Section c={c} title="Items" />
-      {request.items.map((item) => (
-        <View
-          key={item.id}
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            borderBottomWidth: 1,
-            borderBottomColor: c.border,
-            paddingVertical: 8,
-          }}
-        >
-          <Text style={{ color: c.text, fontSize: 14, flex: 1 }}>
-            {item.quantity > 1 ? `${item.quantity}× ` : ''}
-            {item.description}
-          </Text>
-          {item.estimatedCost ? (
-            <Text style={{ color: c.muted, fontSize: 13 }}>
-              {formatMoney(item.estimatedCost, request.currency)}
-            </Text>
+        <View style={{ marginTop: spacing.md, gap: 8 }}>
+          <Row label="Requested by" value={personName(request.requester)} />
+          {request.beneficiary && request.beneficiary.email !== request.requester?.email ? (
+            <Row label="For" value={personName(request.beneficiary)} />
+          ) : null}
+          <Row label="Priority" value={request.priority} />
+          {request.estimatedCost ? (
+            <Row label="Estimated cost" value={formatMoney(request.estimatedCost, request.currency)} />
+          ) : null}
+          {request.requiredBy ? (
+            <Row label="Required by" value={new Date(request.requiredBy).toLocaleDateString()} />
           ) : null}
         </View>
-      ))}
+      </Card>
 
-      <Section c={c} title="Approval chain" />
-      {request.approvals.map((step) => (
-        <View
-          key={step.id}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}
-        >
+      <SectionTitle>Reason</SectionTitle>
+      <Card style={{ marginBottom: spacing.xl }}>
+        <Text style={{ color: c.text, fontSize: 14, lineHeight: 21 }}>{request.businessReason}</Text>
+      </Card>
+
+      <SectionTitle>Items</SectionTitle>
+      <Card style={{ padding: 0, marginBottom: spacing.xl }}>
+        {request.items.map((item, i) => (
           <View
+            key={item.id}
             style={{
-              width: 10,
-              height: 10,
-              borderRadius: 999,
-              backgroundColor: decisionColor(step.decision, scheme),
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+              borderBottomWidth: i === request.items.length - 1 ? 0 : 1,
+              borderBottomColor: c.border,
             }}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: c.text, fontSize: 14 }}>{step.stepName}</Text>
-            {step.approver ? (
-              <Text style={{ color: c.muted, fontSize: 12 }}>{personName(step.approver)}</Text>
-            ) : null}
-            {step.comment ? (
-              <Text style={{ color: c.muted, fontSize: 12, fontStyle: 'italic' }}>
-                “{step.comment}”
+          >
+            <Text style={{ color: c.text, fontSize: 14, flex: 1 }}>
+              {item.quantity > 1 ? `${item.quantity}× ` : ''}
+              {item.description}
+            </Text>
+            {item.estimatedCost ? (
+              <Text style={{ color: c.muted, fontSize: 13 }}>
+                {formatMoney(item.estimatedCost, request.currency)}
               </Text>
             ) : null}
           </View>
-          <Text style={{ color: c.muted, fontSize: 12 }}>{decisionLabel(step.decision)}</Text>
-        </View>
-      ))}
+        ))}
+      </Card>
+
+      <SectionTitle>Approval chain</SectionTitle>
+      <Card style={{ marginBottom: spacing.xl }}>
+        {request.approvals.map((step, i) => (
+          <View
+            key={step.id}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingVertical: 10,
+              borderBottomWidth: i === request.approvals.length - 1 ? 0 : 1,
+              borderBottomColor: c.border,
+            }}
+          >
+            <View
+              style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: decisionColor(step.decision, scheme) }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: c.text, fontSize: 14, fontWeight: '600' }}>{step.stepName}</Text>
+              {step.approver ? (
+                <Text style={{ color: c.muted, fontSize: 12 }}>{personName(step.approver)}</Text>
+              ) : null}
+              {step.comment ? (
+                <Text style={{ color: c.muted, fontSize: 12, fontStyle: 'italic' }}>“{step.comment}”</Text>
+              ) : null}
+            </View>
+            <Text style={{ color: c.muted, fontSize: 12, fontWeight: '600' }}>{decisionLabel(step.decision)}</Text>
+          </View>
+        ))}
+      </Card>
 
       {request.canDecide ? (
-        <View style={{ marginTop: 24 }}>
-          <TextInput
-            placeholder="Comment (required to reject)"
-            placeholderTextColor={c.muted}
+        <Card>
+          <Field
+            label="Comment (required to reject)"
+            placeholder="Add a note…"
             value={comment}
             onChangeText={setComment}
             multiline
-            style={{
-              borderWidth: 1,
-              borderColor: c.border,
-              borderRadius: 10,
-              padding: 12,
-              color: c.text,
-              minHeight: 60,
-              marginBottom: 12,
-            }}
           />
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable
-              onPress={() => void decide('REJECTED')}
-              disabled={busy}
-              style={{
-                flex: 1,
-                borderRadius: 10,
-                padding: 14,
-                borderWidth: 1,
-                borderColor: '#ef4444',
-              }}
-            >
-              <Text style={{ color: '#ef4444', textAlign: 'center', fontWeight: '600' }}>
-                Reject
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void decide('APPROVED')}
-              disabled={busy}
-              style={{ flex: 1, borderRadius: 10, padding: 14, backgroundColor: c.brand }}
-            >
-              {busy ? (
-                <ActivityIndicator color={c.brandText} />
-              ) : (
-                <Text style={{ color: c.brandText, textAlign: 'center', fontWeight: '600' }}>
-                  Approve
-                </Text>
-              )}
-            </Pressable>
+          <View style={{ flexDirection: 'row', gap: spacing.md }}>
+            <Button label="Reject" variant="danger" onPress={() => void decide('REJECTED')} disabled={busy} style={{ flex: 1 }} />
+            <Button label="Approve" icon="checkmark" onPress={() => void decide('APPROVED')} loading={busy} style={{ flex: 1 }} />
           </View>
-        </View>
+        </Card>
       ) : null}
-    </ScrollView>
+    </Screen>
   );
 }
 
-function Row({ c, label, value }: { c: (typeof colors)['light']; label: string; value: string }) {
+function Row({ label, value }: { label: string; value: string }) {
+  const { c } = useTheme();
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={{ color: c.muted }}>{label}</Text>
-      <Text style={{ color: c.text, fontWeight: '500', flexShrink: 1, textAlign: 'right' }}>
+      <Text style={{ color: c.muted, fontSize: 14 }}>{label}</Text>
+      <Text style={{ color: c.text, fontWeight: '600', flexShrink: 1, textAlign: 'right', fontSize: 14 }}>
         {value}
       </Text>
     </View>
   );
 }
 
-function Section({ c, title }: { c: (typeof colors)['light']; title: string }) {
-  return (
-    <Text
-      style={{
-        color: c.muted,
-        fontSize: 12,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-        marginTop: 22,
-        marginBottom: 8,
-      }}
-    >
-      {title}
-    </Text>
-  );
-}
-
-function decisionColor(decision: ApprovalStep['decision'], scheme: 'light' | 'dark'): string {
+function decisionColor(decision: ApprovalStep['decision'], scheme: Scheme): string {
   const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
   if (decision === 'APPROVED') return palette.success.solid;
   if (decision === 'REJECTED') return palette.critical.solid;

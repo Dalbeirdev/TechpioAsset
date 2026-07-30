@@ -1,9 +1,11 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, Text, View } from 'react-native';
 import type { AssetCondition, AssetStatus } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
-import { colors, statusColor, statusLabel } from '../../src/theme';
+import { useTheme, statusColor, statusLabel } from '../../src/theme';
+import { Button, Card, IconBadge, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
 
 interface AssetDetail {
   id: string;
@@ -17,18 +19,11 @@ interface AssetDetail {
   assignments: { id: string; returnedAt: string | null; acknowledgedAt: string | null }[];
 }
 
-/**
- * Asset detail — the screen a QR scan opens (spec section 15).
- *
- * Shows the authorised record, and offers the employee actions the spec lists:
- * confirm receipt, report damage, request repair. Each is a single API call the
- * server authorises; the screen only surfaces what the current user may do.
- */
+/** Asset detail — the screen a QR scan opens (spec section 15). */
 export default function AssetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api } = useSession();
-  const scheme = useColorScheme() ?? 'light';
-  const c = colors[scheme];
+  const { c, scheme, spacing } = useTheme();
 
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [busy, setBusy] = useState(false);
@@ -74,100 +69,68 @@ export default function AssetDetailScreen() {
   }
 
   if (!asset) {
-    return <View style={{ flex: 1, backgroundColor: c.background }} />;
+    return (
+      <View style={{ flex: 1, backgroundColor: c.background, justifyContent: 'center' }}>
+        <ActivityIndicator color={c.brand} />
+      </View>
+    );
   }
 
   const tone = statusColor(asset.status, scheme);
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: c.background }}
-      contentContainerStyle={{ padding: 20 }}
-    >
-      <Text style={{ color: c.text, fontSize: 22, fontWeight: '700' }}>{asset.name}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
-        <View
-          style={{
-            backgroundColor: tone.bg,
-            borderRadius: 999,
-            paddingHorizontal: 10,
-            paddingVertical: 3,
-          }}
-        >
-          <Text style={{ color: tone.fg, fontSize: 13 }}>{statusLabel(asset.status)}</Text>
+    <Screen scroll>
+      <Card style={{ marginBottom: spacing.xl }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <IconBadge icon="hardware-chip-outline" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.text, fontSize: 18, fontWeight: '800' }}>{asset.name}</Text>
+            <Text style={{ color: c.muted, fontSize: 13, marginTop: 2 }}>{asset.assetTag}</Text>
+          </View>
         </View>
-      </View>
+        <View style={{ marginTop: spacing.md }}>
+          <StatusPill label={statusLabel(asset.status)} bg={tone.bg} fg={tone.fg} />
+        </View>
+      </Card>
 
-      <View style={{ marginTop: 20, gap: 6 }}>
-        <Detail c={c} label="Asset tag" value={asset.assetTag} />
-        {asset.serialNumber ? <Detail c={c} label="Serial" value={asset.serialNumber} /> : null}
+      <SectionTitle>Details</SectionTitle>
+      <Card style={{ padding: 0, marginBottom: spacing.xl }}>
+        {asset.serialNumber ? <DetailRow label="Serial" value={asset.serialNumber} /> : null}
         {asset.brand || asset.model ? (
-          <Detail
-            c={c}
-            label="Model"
-            value={[asset.brand, asset.model].filter(Boolean).join(' ')}
-          />
+          <DetailRow label="Model" value={[asset.brand, asset.model].filter(Boolean).join(' ')} />
         ) : null}
-        <Detail c={c} label="Condition" value={asset.condition} />
-      </View>
+        <DetailRow label="Condition" value={asset.condition} last />
+      </Card>
 
-      <View style={{ marginTop: 28, gap: 10 }}>
-        {openAssignment && !openAssignment.acknowledgedAt ? (
-          <Action c={c} label="Confirm receipt" onPress={confirmReceipt} disabled={busy} primary />
-        ) : null}
-        <Action c={c} label="Report damage" onPress={reportDamage} disabled={busy} />
-      </View>
-    </ScrollView>
+      {openAssignment && !openAssignment.acknowledgedAt ? (
+        <Button
+          label="Confirm receipt"
+          icon="checkmark-circle-outline"
+          onPress={confirmReceipt}
+          loading={busy}
+          style={{ marginBottom: spacing.md }}
+        />
+      ) : null}
+      <Button label="Report damage" icon="warning-outline" variant="danger" onPress={reportDamage} disabled={busy} />
+    </Screen>
   );
 }
 
-function Detail({
-  c,
-  label,
-  value,
-}: {
-  c: (typeof colors)['light'];
-  label: string;
-  value: string;
-}) {
+function DetailRow({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
+  const { c } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={{ color: c.muted }}>{label}</Text>
-      <Text style={{ color: c.text, fontWeight: '500' }}>{value}</Text>
-    </View>
-  );
-}
-
-function Action({
-  c,
-  label,
-  onPress,
-  disabled,
-  primary,
-}: {
-  c: (typeof colors)['light'];
-  label: string;
-  onPress: () => void;
-  disabled: boolean;
-  primary?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
+    <View
       style={{
-        borderRadius: 10,
-        padding: 14,
-        backgroundColor: primary ? c.brand : c.surface,
-        borderWidth: primary ? 0 : 1,
-        borderColor: c.border,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: c.border,
       }}
     >
-      <Text
-        style={{ color: primary ? c.brandText : c.text, textAlign: 'center', fontWeight: '600' }}
-      >
-        {label}
-      </Text>
-    </Pressable>
+      <Text style={{ color: c.muted, fontSize: 14 }}>{label}</Text>
+      <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>{value}</Text>
+    </View>
   );
 }

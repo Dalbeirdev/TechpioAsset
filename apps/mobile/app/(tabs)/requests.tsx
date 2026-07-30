@@ -1,18 +1,24 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
+import { FlatList, RefreshControl, Text, View } from 'react-native';
 import {
-  FlatList,
-  Pressable,
-  RefreshControl,
-  Text,
-  TextInput,
-  useColorScheme,
-  View,
-} from 'react-native';
-import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
-import { TONE_PALETTE_DARK, TONE_PALETTE_LIGHT } from '@techpioasset/ui-tokens';
+  REQUEST_STATUS_TOKENS,
+  TONE_PALETTE_DARK,
+  TONE_PALETTE_LIGHT,
+} from '@techpioasset/ui-tokens';
 import type { RequestStatus } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
-import { colors } from '../../src/theme';
+import { useTheme } from '../../src/theme';
+import {
+  Button,
+  Card,
+  Chevron,
+  EmptyState,
+  Field,
+  IconBadge,
+  SectionTitle,
+  StatusPill,
+} from '../../src/components/ui';
 
 interface RequestRow {
   id: string;
@@ -21,11 +27,11 @@ interface RequestRow {
   businessReason: string;
 }
 
-/** Employee requests: list own requests and raise a new one. */
+/** Employee requests: raise a new one and track your own. */
 export default function RequestsScreen() {
   const { api } = useSession();
-  const scheme = useColorScheme() ?? 'light';
-  const c = colors[scheme];
+  const router = useRouter();
+  const { c, scheme, spacing } = useTheme();
   const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
 
   const [rows, setRows] = useState<RequestRow[]>([]);
@@ -37,10 +43,8 @@ export default function RequestsScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // api.request unwraps the envelope's `data`, so a list endpoint resolves
-      // to the array itself.
-      const rows = await api.request<RequestRow[]>('/requests?pageSize=50');
-      setRows(rows ?? []);
+      const data = await api.request<RequestRow[]>('/requests?pageSize=50');
+      setRows(data ?? []);
     } finally {
       setLoading(false);
     }
@@ -50,8 +54,10 @@ export default function RequestsScreen() {
     void load();
   }, [load]);
 
+  const canSubmit = reason.trim().length >= 10 && item.trim().length > 0;
+
   async function submit() {
-    if (reason.trim().length < 10 || item.trim().length === 0) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
       const created = await api.request<{ id: string }>('/requests', {
@@ -72,94 +78,61 @@ export default function RequestsScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.background }}>
-      <View
-        style={{
-          padding: 16,
-          borderBottomWidth: 1,
-          borderBottomColor: c.border,
-          backgroundColor: c.surface,
-        }}
-      >
-        <Text style={{ color: c.text, fontWeight: '600', marginBottom: 8 }}>New request</Text>
-        <TextInput
-          placeholder="What do you need?"
-          placeholderTextColor={c.muted}
-          value={item}
-          onChangeText={setItem}
-          style={{
-            borderWidth: 1,
-            borderColor: c.border,
-            borderRadius: 8,
-            padding: 10,
-            color: c.text,
-            marginBottom: 8,
-          }}
-        />
-        <TextInput
-          placeholder="Why? (at least 10 characters)"
-          placeholderTextColor={c.muted}
-          value={reason}
-          onChangeText={setReason}
-          multiline
-          style={{
-            borderWidth: 1,
-            borderColor: c.border,
-            borderRadius: 8,
-            padding: 10,
-            color: c.text,
-            minHeight: 60,
-          }}
-        />
-        <Pressable
-          onPress={submit}
-          disabled={submitting}
-          style={{ marginTop: 8, backgroundColor: c.brand, borderRadius: 8, padding: 12 }}
-        >
-          <Text style={{ color: c.brandText, textAlign: 'center', fontWeight: '600' }}>Submit</Text>
-        </Pressable>
-      </View>
-
-      <FlatList
-        data={rows}
-        keyExtractor={(r) => r.id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-        contentContainerStyle={{ padding: 16 }}
-        renderItem={({ item: row }) => {
-          const tone = palette[REQUEST_STATUS_TOKENS[row.status].tone];
-          return (
-            <View
-              style={{
-                backgroundColor: c.surface,
-                borderColor: c.border,
-                borderWidth: 1,
-                borderRadius: 10,
-                padding: 12,
-                marginBottom: 8,
-              }}
-            >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ color: c.text, fontWeight: '600' }}>{row.requestNumber}</Text>
-                <View
-                  style={{
-                    backgroundColor: tone.bg,
-                    borderRadius: 999,
-                    paddingHorizontal: 8,
-                    paddingVertical: 2,
-                  }}
-                >
-                  <Text style={{ color: tone.fg, fontSize: 12 }}>
-                    {REQUEST_STATUS_TOKENS[row.status].label}
-                  </Text>
-                </View>
-              </View>
-              <Text style={{ color: c.muted, fontSize: 12, marginTop: 4 }} numberOfLines={1}>
+    <FlatList
+      style={{ flex: 1, backgroundColor: c.background }}
+      data={rows}
+      keyExtractor={(r) => r.id}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+      ListHeaderComponent={
+        <View style={{ marginBottom: spacing.xl }}>
+          <Card>
+            <Text style={{ color: c.text, fontWeight: '700', fontSize: 16, marginBottom: spacing.md }}>
+              New request
+            </Text>
+            <Field label="What do you need?" placeholder="e.g. Laptop docking station" value={item} onChangeText={setItem} />
+            <Field
+              label="Business reason"
+              placeholder="At least 10 characters"
+              value={reason}
+              onChangeText={setReason}
+              multiline
+              style={undefined}
+            />
+            <Button label="Submit request" icon="send" onPress={submit} loading={submitting} disabled={!canSubmit} />
+          </Card>
+          <View style={{ height: spacing.xl }} />
+          <SectionTitle>Your requests</SectionTitle>
+        </View>
+      }
+      ListEmptyComponent={
+        loading ? null : (
+          <Card>
+            <EmptyState icon="document-text-outline" title="No requests yet" message="Requests you raise will appear here." />
+          </Card>
+        )
+      }
+      renderItem={({ item: row }) => {
+        const tone = palette[REQUEST_STATUS_TOKENS[row.status].tone];
+        return (
+          <Card
+            onPress={() => router.push(`/request/${row.id}`)}
+            style={{ marginBottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}
+          >
+            <IconBadge icon="document-text-outline" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: c.text, fontWeight: '700', fontSize: 15 }}>{row.requestNumber}</Text>
+              <Text style={{ color: c.muted, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
                 {row.businessReason}
               </Text>
+              <View style={{ marginTop: 8 }}>
+                <StatusPill label={REQUEST_STATUS_TOKENS[row.status].label} bg={tone.bg} fg={tone.fg} />
+              </View>
             </View>
-          );
-        }}
-      />
-    </View>
+            <Chevron />
+          </Card>
+        );
+      }}
+    />
   );
 }

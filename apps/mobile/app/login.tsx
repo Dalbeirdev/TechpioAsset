@@ -1,21 +1,21 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, TextInput, useColorScheme, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSession } from '../src/providers/session';
-import { colors } from '../src/theme';
+import { useTheme } from '../src/theme';
+import { Button, Card, Field } from '../src/components/ui';
 
 /**
- * Login screen with MFA and biometric unlock.
- *
- * When the device has a stored session (status 'locked'), the screen leads with a
- * biometric unlock button and only falls back to email/password if that fails or
- * the user chooses to sign in as someone else.
+ * Login screen with MFA and biometric unlock. When the device has a stored
+ * session (status 'locked') it leads with biometric unlock, falling back to
+ * email/password.
  */
 export default function LoginScreen() {
   const router = useRouter();
   const { login, unlockWithBiometrics, status } = useSession();
-  const scheme = useColorScheme() ?? 'light';
-  const c = colors[scheme];
+  const { c, spacing } = useTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,83 +49,98 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.background, padding: 24, justifyContent: 'center' }}>
-      <Text style={{ color: c.text, fontSize: 26, fontWeight: '700' }}>TechpioAsset</Text>
-      <Text style={{ color: c.muted, marginTop: 4, marginBottom: 28 }}>
-        Manage Assets. Control Costs. Simplify Operations.
-      </Text>
-
-      {status === 'locked' ? (
-        <Pressable
-          onPress={onBiometric}
-          disabled={busy}
-          style={{ backgroundColor: c.brand, borderRadius: 10, padding: 16, marginBottom: 16 }}
-        >
-          <Text style={{ color: c.brandText, textAlign: 'center', fontWeight: '600' }}>
-            Unlock with biometrics
-          </Text>
-        </Pressable>
-      ) : null}
-
-      {!needsMfa ? (
-        <>
-          <TextInput
-            placeholder="Email"
-            placeholderTextColor={c.muted}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-            style={inputStyle(c)}
-          />
-          <TextInput
-            placeholder="Password"
-            placeholderTextColor={c.muted}
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            style={inputStyle(c)}
-          />
-        </>
-      ) : (
-        <TextInput
-          placeholder="6-digit code"
-          placeholderTextColor={c.muted}
-          keyboardType="number-pad"
-          maxLength={6}
-          value={mfaCode}
-          onChangeText={setMfaCode}
-          style={inputStyle(c)}
-        />
-      )}
-
-      {error ? <Text style={{ color: '#ef4444', marginBottom: 12 }}>{error}</Text> : null}
-
-      <Pressable
-        onPress={onSubmit}
-        disabled={busy}
-        style={{ backgroundColor: c.brand, borderRadius: 10, padding: 16 }}
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1, justifyContent: 'center', padding: spacing.xl }}
       >
-        {busy ? (
-          <ActivityIndicator color={c.brandText} />
-        ) : (
-          <Text style={{ color: c.brandText, textAlign: 'center', fontWeight: '600' }}>
-            {needsMfa ? 'Verify' : 'Sign in'}
+        <View style={{ alignItems: 'center', marginBottom: spacing.xxl }}>
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 18,
+              backgroundColor: c.brand,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: spacing.lg,
+            }}
+          >
+            <Ionicons name="cube" size={32} color={c.brandText} />
+          </View>
+          <Text style={{ color: c.text, fontSize: 26, fontWeight: '800' }}>TechpioAsset</Text>
+          <Text style={{ color: c.muted, marginTop: 4, textAlign: 'center' }}>
+            Manage Assets. Control Costs. Simplify Operations.
           </Text>
-        )}
-      </Pressable>
-    </View>
-  );
-}
+        </View>
 
-function inputStyle(c: (typeof colors)['light']) {
-  return {
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.surface,
-    color: c.text,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
-  };
+        <Card level={2}>
+          {status === 'locked' ? (
+            <Button
+              label="Unlock with biometrics"
+              icon="finger-print"
+              onPress={onBiometric}
+              loading={busy}
+              style={{ marginBottom: spacing.md }}
+            />
+          ) : null}
+
+          {!needsMfa ? (
+            <>
+              <Field
+                label="Email"
+                placeholder="you@company.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+                value={email}
+                onChangeText={setEmail}
+              />
+              <Field
+                label="Password"
+                placeholder="••••••••"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+            </>
+          ) : (
+            <Field
+              label="Authentication code"
+              placeholder="6-digit code"
+              keyboardType="number-pad"
+              maxLength={6}
+              value={mfaCode}
+              onChangeText={setMfaCode}
+            />
+          )}
+
+          {error ? (
+            <Text style={{ color: c.danger, marginBottom: spacing.md, fontSize: 13 }}>{error}</Text>
+          ) : null}
+
+          <Button
+            label={needsMfa ? 'Verify' : 'Sign in'}
+            onPress={onSubmit}
+            loading={busy}
+          />
+        </Card>
+
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            marginTop: spacing.xl,
+          }}
+        >
+          <Ionicons name="shield-checkmark-outline" size={14} color={c.subtle} />
+          <Text style={{ color: c.subtle, fontSize: 12 }}>
+            Sessions expire automatically and every action is audited.
+          </Text>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
 }

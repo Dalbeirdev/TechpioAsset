@@ -16,6 +16,7 @@
   "dependencies": {
     "@babel/runtime": "^7.26.0",
     "@expo/metro-runtime": "~4.0.1",
+    "@expo/vector-icons": "^14.0.4",
     "@techpioasset/contracts": "workspace:*",
     "@techpioasset/domain": "workspace:*",
     "@techpioasset/ui-tokens": "workspace:*",
