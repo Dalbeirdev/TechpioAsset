@@ -29,6 +29,10 @@ allowBuilds:
   unrs-resolver: true
   # Unpacks the user-space PostgreSQL binaries used by `pnpm db:local`.
   '@embedded-postgres/windows-x64': true
+  # The Linux variant is pulled in on Linux (e.g. Docker/CI). Production and CI
+  # use a real Postgres service, never embedded-postgres, so its binary unpack is
+  # denied — this also stops pnpm erroring on an undecided build script there.
+  '@embedded-postgres/linux-x64': false
   # Native transform binary; used by Vitest to emit decorator metadata for Nest.
   '@swc/core': true
   # Optional native accelerator for BullMQ's msgpack serialisation. Denied: it is
