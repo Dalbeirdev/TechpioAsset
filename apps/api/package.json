@@ -22,6 +22,7 @@
     "db:validate": "prisma validate",
     "db:format": "prisma format",
     "seed": "tsx prisma/seed/index.ts",
+    "seed:admin": "tsx prisma/seed/create-admin.ts",
     "audit:summary": "node scripts/audit-summary.mjs"
   },
   "dependencies": {

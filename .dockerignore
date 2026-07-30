@@ -1,0 +1,32 @@
+# Keep the Docker build context small and platform-clean. node_modules is
+# excluded so the Linux image never inherits Windows-native binaries — it is
+# reinstalled inside the image with `pnpm install --frozen-lockfile`.
+**/node_modules
+**/.pnpm-store
+
+# Build outputs — regenerated inside the image.
+**/dist
+**/.next
+**/.turbo
+**/*.tsbuildinfo
+
+# Native mobile projects are irrelevant to the api/web server images.
+apps/mobile/android
+apps/mobile/ios
+apps/mobile/.expo
+
+# Local runtime data / secrets — never bake these into an image.
+**/.local-storage
+**/.env
+**/.env.*
+!**/.env.example
+docker-compose.override.yml
+
+# VCS, logs, editor, CI.
+.git
+.github
+**/*.log
+**/.DS_Store
+**/coverage
+**/.vscode
+**/.idea

@@ -1,0 +1,26 @@
+# Caddy reverse proxy for TechpioAsset.
+#
+# {$DOMAIN} comes from the DOMAIN env var (set in .env.prod, passed through in
+# docker-compose.prod.yml). Caddy automatically obtains and renews a Let's
+# Encrypt certificate for it, provided the domain's DNS points at this server
+# and ports 80 + 443 are open.
+#
+# Same-origin routing: the API and the web app are served from one hostname, so
+# the browser makes same-origin calls (NEXT_PUBLIC_API_URL = https://{$DOMAIN})
+# and there are no cross-origin/CORS concerns.
+
+{$DOMAIN} {
+	encode gzip zstd
+
+	# API and health endpoints go to the NestJS container. The API serves its
+	# routes under /api/v1 and exposes /health/live and /health/ready.
+	@backend path /api/* /health/*
+	handle @backend {
+		reverse_proxy api:3001
+	}
+
+	# Everything else is the Next.js app.
+	handle {
+		reverse_proxy web:3000
+	}
+}

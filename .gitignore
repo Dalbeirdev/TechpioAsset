@@ -10,7 +10,9 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.prod
 !.env.example
+!.env.prod.example
 
 # local infra + generated artefacts
 .pnpm-store/

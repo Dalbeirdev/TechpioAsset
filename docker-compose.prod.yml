@@ -1,0 +1,96 @@
+# TechpioAsset — production stack (single VPS).
+#
+#   piotask.com ──▶ Caddy (auto HTTPS)
+#                    ├── /api/*, /health/*  ──▶ api  (NestJS :3001)
+#                    └── everything else     ──▶ web  (Next.js :3000)
+#                             api ──▶ postgres + redis (private, no host ports)
+#
+# Bring up:   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# See docs/DEPLOY.md for the full first-time sequence (migrate → seed → admin).
+
+name: techpioasset-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Deterministic collation, UTF-8 — matches the local dev database.
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    # No host port: only reachable by other containers on the private network.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Persist locally-stored uploads across container rebuilds.
+      - uploads:/app/apps/api/.local-storage
+    expose:
+      - '3001'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the client bundle at build time — the public site origin.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+    expose:
+      - '3000'
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  caddydata:
+  caddyconfig:
