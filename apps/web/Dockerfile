@@ -5,7 +5,7 @@
 # NEXT_PUBLIC_API_URL is a BUILD-TIME value: Next.js inlines NEXT_PUBLIC_* vars
 # into the client bundle during `next build`, so it must be supplied as a build
 # arg (the public site origin), not just at runtime.
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 RUN corepack enable
 

@@ -7,7 +7,7 @@
 # Prisma client resolve exactly as they do in development. Turbo builds the
 # api together with its workspace dependencies (domain, contracts) in the
 # correct order.
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 # openssl is required by Prisma's query engine at runtime; the build toolchain
 # lets native deps (@node-rs/argon2, @swc/core) compile if a prebuilt binary is
