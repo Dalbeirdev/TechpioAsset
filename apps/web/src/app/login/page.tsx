@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Smartphone } from 'lucide-react';
 import { ApiError, apiFetch, apiBaseUrl } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card } from '@/components/ui';
@@ -207,6 +207,14 @@ export default function LoginPage() {
           <ShieldCheck aria-hidden="true" className="size-3.5" />
           Sessions expire automatically and every action is audited.
         </p>
+
+        <a
+          href="/downloads/techpioasset.apk"
+          className="mt-3 flex items-center justify-center gap-1.5 text-xs font-medium text-[var(--color-content-muted)] transition-colors hover:text-[var(--color-content)]"
+        >
+          <Smartphone aria-hidden="true" className="size-3.5" />
+          Download the Android app
+        </a>
       </div>
     </main>
   );
