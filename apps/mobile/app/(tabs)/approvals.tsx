@@ -82,8 +82,11 @@ export default function ApprovalsScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
               <Avatar name={who} size={40} />
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ color: c.text, fontWeight: '700', fontSize: 15 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <Text
+                    style={{ color: c.text, fontWeight: '700', fontSize: 14, flexShrink: 1 }}
+                    numberOfLines={1}
+                  >
                     {item.requestNumber}
                   </Text>
                   <StatusPill label={REQUEST_STATUS_TOKENS[item.status].label} bg={tone.bg} fg={tone.fg} />

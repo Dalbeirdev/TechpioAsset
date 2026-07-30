@@ -110,7 +110,9 @@ export function StatusPill({ label, bg, fg }: { label: string; bg: string; fg: s
         alignSelf: 'flex-start',
       }}
     >
-      <Text style={{ color: fg, fontSize: 11, fontWeight: '700' }}>{label}</Text>
+      <Text numberOfLines={1} style={{ color: fg, fontSize: 11, fontWeight: '700' }}>
+        {label}
+      </Text>
     </View>
   );
 }
