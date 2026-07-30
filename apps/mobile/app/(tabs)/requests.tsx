@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, RefreshControl, Text, View } from 'react-native';
+import { Alert, FlatList, RefreshControl, Text, View } from 'react-native';
+import { ApiError } from '../../src/lib/api-client';
 import {
   REQUEST_STATUS_TOKENS,
   TONE_PALETTE_DARK,
@@ -39,6 +40,7 @@ export default function RequestsScreen() {
   const [reason, setReason] = useState('');
   const [item, setItem] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,13 +56,20 @@ export default function RequestsScreen() {
     void load();
   }, [load]);
 
-  const canSubmit = reason.trim().length >= 10 && item.trim().length > 0;
-
   async function submit() {
-    if (!canSubmit) return;
+    // Validate with a clear message instead of a silently disabled button.
+    if (item.trim().length === 0) {
+      setFormError('Enter what you need.');
+      return;
+    }
+    if (reason.trim().length < 10) {
+      setFormError(`Add a business reason of at least 10 characters (${reason.trim().length}/10).`);
+      return;
+    }
+    setFormError(null);
     setSubmitting(true);
     try {
-      const created = await api.request<{ id: string }>('/requests', {
+      const created = await api.request<{ id: string; requestNumber?: string }>('/requests', {
         method: 'POST',
         body: {
           type: 'ADDITIONAL_EQUIPMENT',
@@ -72,6 +81,13 @@ export default function RequestsScreen() {
       setReason('');
       setItem('');
       await load();
+      Alert.alert('Request submitted', 'It has been sent for approval.');
+    } catch (caught) {
+      setFormError(
+        caught instanceof ApiError
+          ? (caught.problem?.detail ?? caught.problem?.title ?? 'Could not submit. Please try again.')
+          : 'Could not submit. Check your connection and try again.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -93,13 +109,18 @@ export default function RequestsScreen() {
             <Field label="What do you need?" placeholder="e.g. Laptop docking station" value={item} onChangeText={setItem} />
             <Field
               label="Business reason"
-              placeholder="At least 10 characters"
+              placeholder="Why do you need it? (at least 10 characters)"
               value={reason}
-              onChangeText={setReason}
+              onChangeText={(t) => {
+                setReason(t);
+                if (formError) setFormError(null);
+              }}
               multiline
-              style={undefined}
             />
-            <Button label="Submit request" icon="send" onPress={submit} loading={submitting} disabled={!canSubmit} />
+            {formError ? (
+              <Text style={{ color: c.danger, fontSize: 13, marginBottom: spacing.md }}>{formError}</Text>
+            ) : null}
+            <Button label="Submit request" icon="send" onPress={submit} loading={submitting} />
           </Card>
           <View style={{ height: spacing.xl }} />
           <SectionTitle>Your requests</SectionTitle>
