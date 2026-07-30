@@ -1,0 +1,80 @@
+# TechpioAsset — production stack for a VPS that ALREADY runs nginx on 80/443
+# (this is the piotask.com deployment, coexisting with PioDeploy).
+#
+# There is NO Caddy here: the host's existing nginx stays the front door and
+# reverse-proxies piotask.com to the containers. The web and api containers bind
+# to LOCALHOST ONLY, so they are never exposed publicly except through nginx.
+# Postgres and Redis stay entirely inside the Docker network.
+#
+# Bring up:
+#   docker compose -f docker-compose.vps.yml --env-file .env.prod up -d --build
+# Then add the nginx site (deploy/nginx/piotask.com.conf) and run certbot.
+# Full sequence: docs/DEPLOY.md → "Deploying behind an existing nginx".
+
+name: techpioasset
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    # No host port — private to the compose network.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/apps/api/.local-storage
+    # Localhost only: the host's nginx proxies /api/* and /health/* here.
+    ports:
+      - '127.0.0.1:3001:3001'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+    # Localhost only: the host's nginx proxies everything else here.
+    ports:
+      - '127.0.0.1:3000:3000'
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:

@@ -136,6 +136,37 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 Edit `.env.prod`: `AI_PROVIDER=anthropic`, `AI_ENABLED=true`, `ANTHROPIC_API_KEY=...`,
 then re-up. It stays inert (`mock`) until you do.
 
+## Deploying behind an existing nginx (piotask.com, shared VPS)
+
+When the VPS already runs **nginx on 80/443** for another site (e.g. PioDeploy),
+do **not** use the Caddy stack — it would collide on those ports. Use
+`docker-compose.vps.yml` instead: it drops Caddy and binds web/api to
+**localhost only**, and the host nginx reverse-proxies piotask.com to them.
+
+```bash
+# 1. Install Docker, clone, and create .env.prod (steps 2–4 above).
+# 2. Bring up the containers (localhost-bound; no 80/443 used):
+docker compose -f docker-compose.vps.yml --env-file .env.prod up -d --build
+
+# 3. Seed reference data + create the admin (first deploy only):
+docker compose -f docker-compose.vps.yml exec api pnpm seed
+docker compose -f docker-compose.vps.yml exec api pnpm seed:admin
+
+# 4. Add the nginx site (does not touch the existing site):
+cp deploy/nginx/piotask.com.conf /etc/nginx/sites-available/piotask.com
+ln -sf /etc/nginx/sites-available/piotask.com /etc/nginx/sites-enabled/piotask.com
+nginx -t && systemctl reload nginx
+
+# 5. Point piotask.com DNS (A record) at this server, then get TLS:
+certbot --nginx -d piotask.com
+```
+
+Verify: `curl -I http://127.0.0.1:3000` (web) and
+`curl http://127.0.0.1:3001/health/ready` (api) on the server, then
+`https://piotask.com` in a browser once DNS + certbot are done. PioDeploy is
+untouched throughout — its own DB (MariaDB) and nginx site stay as they are;
+TechpioAsset runs its own Postgres + Redis inside Docker.
+
 ## Adding www
 
 Add a `www.piotask.com` A record, then change the site line in `Caddyfile` to
