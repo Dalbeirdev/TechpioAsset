@@ -52,7 +52,26 @@ interface AssetDetail {
     profile: { firstName: string; lastName: string; employeeNumber: string | null } | null;
   } | null;
   assignmentDate: string | null;
+  notes: string | null;
+  assignments: {
+    id: string;
+    assignedAt: string;
+    returnedAt: string | null;
+    user: { email: string; profile: { firstName: string; lastName: string } | null } | null;
+    assetReturn: { conditionIn: AssetCondition; damageNotes: string | null } | null;
+  }[];
+  conditionLogs: {
+    id: string;
+    recordedAt: string;
+    previousStatus: AssetStatus | null;
+    newStatus: AssetStatus | null;
+    previousCondition: AssetCondition | null;
+    newCondition: AssetCondition | null;
+    reason: string | null;
+  }[];
 }
+
+type AssetTab = 'overview' | 'history' | 'financials';
 
 function fmtDate(value: string | null): string {
   if (!value) return '—';
@@ -78,6 +97,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   const queryClient = useQueryClient();
   const toast = useToast();
   const canSeeCost = can(PERMISSIONS.ASSETS_COST_READ);
+  const [tab, setTab] = useState<AssetTab>('overview');
   const [price, setPrice] = useState('');
   const [priceError, setPriceError] = useState<string | null>(null);
 
@@ -157,44 +177,133 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         </p>
       </div>
 
-      <Card className="p-5">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-          <Row label="Category" value={data.category?.name} />
-          <Row label="Type" value={data.subcategory?.name} />
-          <Row label="Office" value={data.office?.name} />
-          <Row label="Brand" value={data.brand} />
-          <Row label="Model" value={data.model} />
-          <Row
-            label="Condition"
-            value={
-              <StatusBadge token={CONDITION_TOKENS[data.condition]} size="sm" showIcon={false} />
+      {/* v2.2 Workstream E — tabbed asset detail. */}
+      <div
+        role="tablist"
+        aria-label="Asset detail sections"
+        className="flex gap-1 border-b border-[var(--color-border)]"
+      >
+        {(
+          [
+            ['overview', 'Overview'],
+            ['history', 'History'],
+            ...(canSeeCost ? ([['financials', 'Financials']] as const) : []),
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={
+              tab === key
+                ? 'border-b-2 border-[var(--color-brand)] px-3.5 py-2 text-sm font-semibold text-[var(--color-brand)]'
+                : 'border-b-2 border-transparent px-3.5 py-2 text-sm font-medium text-[var(--color-content-muted)] hover:text-[var(--color-content)]'
             }
-          />
-          <Row label="Purchased on" value={fmtDate(data.purchaseDate)} />
-          <Row label="Warranty ends" value={fmtDate(data.warrantyEndDate)} />
-          <Row
-            label="Assigned to"
-            value={
-              holderName ? (
-                <>
-                  {holderName}
-                  {holder?.profile?.employeeNumber ? (
-                    <span className="text-xs text-[var(--color-content-subtle)]">
-                      {' '}
-                      · {holder.profile.employeeNumber}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' ? (
+        <Card className="p-5">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+            <Row label="Category" value={data.category?.name} />
+            <Row label="Type" value={data.subcategory?.name} />
+            <Row label="Office" value={data.office?.name} />
+            <Row label="Brand" value={data.brand} />
+            <Row label="Model" value={data.model} />
+            <Row
+              label="Condition"
+              value={
+                <StatusBadge token={CONDITION_TOKENS[data.condition]} size="sm" showIcon={false} />
+              }
+            />
+            <Row label="Purchased on" value={fmtDate(data.purchaseDate)} />
+            <Row label="Warranty ends" value={fmtDate(data.warrantyEndDate)} />
+            <Row
+              label="Assigned to"
+              value={
+                holderName ? (
+                  <>
+                    {holderName}
+                    {holder?.profile?.employeeNumber ? (
+                      <span className="text-xs text-[var(--color-content-subtle)]">
+                        {' '}
+                        · {holder.profile.employeeNumber}
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  'Unassigned'
+                )
+              }
+            />
+          </dl>
+          {data.notes ? (
+            <p className="mt-4 border-t border-[var(--color-border)] pt-3 text-sm text-[var(--color-content-muted)]">
+              {data.notes}
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {tab === 'history' ? (
+        <Card className="p-5">
+          <h2 className="text-[15px] font-semibold">Custody &amp; condition history</h2>
+          {data.assignments.length === 0 && data.conditionLogs.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--color-content-muted)]">No history yet.</p>
+          ) : (
+            <ol className="mt-3 space-y-3">
+              {data.assignments.map((a) => (
+                <li key={`a-${a.id}`} className="flex gap-3 text-sm">
+                  <span className="mt-1 size-2 shrink-0 rounded-full bg-[var(--color-brand)]" />
+                  <span>
+                    <span className="font-medium">
+                      {a.returnedAt ? 'Returned by ' : 'Assigned to '}
+                      {a.user?.profile
+                        ? `${a.user.profile.firstName} ${a.user.profile.lastName}`
+                        : (a.user?.email ?? 'someone')}
                     </span>
-                  ) : null}
-                </>
-              ) : (
-                'Unassigned'
-              )
-            }
-          />
-        </dl>
-      </Card>
+                    <span className="text-[var(--color-content-subtle)]">
+                      {' '}
+                      · {fmtDate(a.returnedAt ?? a.assignedAt)}
+                    </span>
+                    {a.assetReturn?.damageNotes ? (
+                      <span className="block text-xs text-[var(--tone-warning-fg)]">
+                        {a.assetReturn.damageNotes}
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+              {data.conditionLogs.map((log) => (
+                <li key={`c-${log.id}`} className="flex gap-3 text-sm">
+                  <span className="mt-1 size-2 shrink-0 rounded-full bg-[var(--color-content-subtle)]" />
+                  <span>
+                    <span className="font-medium">
+                      {log.previousStatus && log.newStatus && log.previousStatus !== log.newStatus
+                        ? `${log.previousStatus} → ${log.newStatus}`
+                        : log.previousCondition && log.newCondition
+                          ? `Condition ${log.previousCondition} → ${log.newCondition}`
+                          : 'Status change'}
+                    </span>
+                    <span className="text-[var(--color-content-subtle)]"> · {fmtDate(log.recordedAt)}</span>
+                    {log.reason ? (
+                      <span className="block text-xs text-[var(--color-content-subtle)]">{log.reason}</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Card>
+      ) : null}
 
       {/* Price — visible to Finance / Super Admin only; recorded once, then locked. */}
-      {canSeeCost ? (
+      {tab === 'financials' && canSeeCost ? (
         <Card className="p-5">
           <h2 className="text-[15px] font-semibold">Price</h2>
           {data.purchaseCost != null ? (
