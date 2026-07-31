@@ -21,6 +21,29 @@ history.
 
 ---
 
+## Documentation
+
+Two documentation sets live in [`docs/`](./docs):
+
+**As-built (v1)** — what the code does today:
+
+- [TechpioAsset-SRS.pdf](./docs/TechpioAsset-SRS.pdf) — 37-page reverse-engineered Software Requirements Specification of the platform exactly as implemented.
+- Phase reports [0](./docs/phase-0-report.md)–[6](./docs/phase-6-report.md) and the [RBAC matrix](./docs).
+
+**Target-state redesign (v2)** — the blueprint to grow this into a world-class, multi-tenant Enterprise IT Asset Management (ITAM) platform (ServiceNow / Freshservice / ManageEngine / Lansweeper / Intune class). Every existing capability is preserved and extended; nothing is removed.
+
+| Document | Pages | For |
+| --- | --- | --- |
+| [Enterprise ITAM Redesign Blueprint](./docs/TechpioAsset-Enterprise-ITAM-Blueprint.pdf) | 86 | The master — BRD + FRD + Technical SRS. 13-role RBAC across 3 planes, the 18 asset statuses split into 4 orthogonal dimensions, License / Procurement / Inventory / Maintenance modules, 7-tab hardware detail, mobile, dashboards, reports, wireframes, 6-phase roadmap (29 diagrams). |
+| [Executive Summary](./docs/TechpioAsset-Executive-Summary.pdf) | 1 | Leadership / stakeholders — the opportunity, scope and roadmap on one page. |
+| [Developer Engineering Pack](./docs/TechpioAsset-Developer-Pack.pdf) | 68 | Engineers & QA — data model / ERD, RBAC & permission taxonomy, module logic & APIs, technical SRS, roadmap. |
+| [UI / UX Design Pack](./docs/TechpioAsset-Design-Pack.pdf) | 53 | Designers & front-end — roles, journeys, information architecture, mobile, dashboards, wireframes, design system. |
+| [QA Test-Scenario Pack](./docs/TechpioAsset-QA-Test-Pack.pdf) | 31 | QA / SDETs — ~450 traceable test cases across every module. Each functional case is tagged **Web / Mobile / Both** and executed on both clients. |
+
+The blueprint is a design specification for the next major version — it is not yet reflected in the code in this repository, which implements the as-built v1 above.
+
+---
+
 ## Prerequisites
 
 | Tool           | Version  | Notes                                         |
@@ -167,7 +190,7 @@ packages/
   ui-tokens/ Status colours, icons and tone palettes shared by web and mobile
   config/    Shared TypeScript, ESLint and Prettier bases
 e2e/         Playwright suite                     (Phase 1)
-docs/        Architecture, RBAC matrix, phase reports
+docs/        As-built SRS + phase reports, and the v2 Enterprise ITAM redesign blueprint (see Documentation)
 ```
 
 ## Architecture notes
