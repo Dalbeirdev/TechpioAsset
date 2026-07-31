@@ -31,6 +31,7 @@ import { ChatModule } from './providers/chat/chat.module.js';
 import { SsoModule } from './providers/sso/sso.module.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
+import { RlsTenantInterceptor } from './common/interceptors/rls-tenant.interceptor.js';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter.js';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from './auth/guards/permissions.guard.js';
@@ -87,6 +88,9 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
+    // Innermost interceptor: wraps just the handler in a tenant transaction when
+    // RLS_ENFORCE is on, so RLS scopes its queries. Passthrough otherwise.
+    { provide: APP_INTERCEPTOR, useClass: RlsTenantInterceptor },
     { provide: APP_FILTER, useClass: ProblemDetailsFilter },
   ],
 })
