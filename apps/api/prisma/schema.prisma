@@ -501,6 +501,7 @@ model User {
   savedFilters             SavedFilter[]
   scheduledReports         ScheduledReport[]
   directReports            UserProfile[]              @relation("LineManager")
+  headedDepartments        Department[]               @relation("DepartmentHead")
 
   /// Email is unique per tenant, not globally: the same person may exist in two companies.
   @@unique([companyId, email])
@@ -810,6 +811,8 @@ model Department {
   parentId   String?
   officeId   String?
   costCentre String?
+  // v2.2 Workstream D — the user who heads this department, for DEPARTMENT_HEAD approvals.
+  headId     String?
   isActive   Boolean @default(true)
 
   createdAt   DateTime  @default(now())
@@ -822,6 +825,7 @@ model Department {
   parent   Department?  @relation("DepartmentTree", fields: [parentId], references: [id], onDelete: SetNull)
   children Department[] @relation("DepartmentTree")
   office   Office?      @relation(fields: [officeId], references: [id], onDelete: SetNull)
+  head     User?        @relation("DepartmentHead", fields: [headId], references: [id], onDelete: SetNull)
 
   profiles      UserProfile[]
   assets        Asset[]
