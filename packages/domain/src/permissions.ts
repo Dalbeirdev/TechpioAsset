@@ -98,6 +98,15 @@ export const SYSTEM_ROLES = [
   'MANAGER',
   'EMPLOYEE',
   'AUDITOR',
+  // v2.1 Workstream C — the canonical 13-role model (blueprint §1). The eight
+  // above are retained as-is (IT_ADMIN=IT Manager, HR=HR Manager, FINANCE=Finance
+  // Manager, OFFICE_ADMIN=Office Admin, MANAGER=Department Manager); these five are
+  // net-new. Each new role carries only permissions whose modules exist today.
+  'COMPANY_ADMIN',
+  'IT_TECHNICIAN',
+  'PROCUREMENT_MANAGER',
+  'INVENTORY_MANAGER',
+  'VENDOR',
 ] as const;
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -247,6 +256,59 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.USERS_READ,
     P.AUDIT_READ,
   ],
+
+  // Tenant owner. In single-company v1 this is grant-equivalent to Super Admin;
+  // the two differ by authority plane (Super Admin = platform/MSP), which becomes
+  // meaningful once platform:* permissions and multi-tenant MSP land.
+  COMPANY_ADMIN: ALL_PERMISSIONS,
+
+  // Executes IT work — deploy, assign, repair. A subset of IT_ADMIN (IT Manager).
+  IT_TECHNICIAN: [
+    P.ASSETS_READ,
+    P.ASSETS_UPDATE,
+    P.ASSETS_ASSIGN,
+    P.ASSETS_RETURN,
+    P.ASSETS_TRANSFER,
+    P.INVENTORY_READ,
+    P.INVENTORY_ADJUST,
+    P.MAINTENANCE_READ,
+    P.MAINTENANCE_MANAGE,
+    P.REQUESTS_READ,
+    P.QR_GENERATE,
+    P.QR_PRINT,
+  ],
+
+  // Sourcing and purchasing. Owns vendors + POs; approves requests.
+  PROCUREMENT_MANAGER: [
+    P.ASSETS_READ,
+    P.VENDORS_READ,
+    P.VENDORS_MANAGE,
+    P.PURCHASE_ORDERS_READ,
+    P.PURCHASE_ORDERS_MANAGE,
+    P.INVOICES_READ,
+    P.REQUESTS_READ,
+    P.REQUESTS_APPROVE,
+    P.REPORTS_READ,
+  ],
+
+  // Stockroom / warehouse. Renamed+widened from the legacy "Asset Manager".
+  INVENTORY_MANAGER: [
+    P.ASSETS_READ,
+    P.ASSETS_CREATE,
+    P.ASSETS_UPDATE,
+    P.ASSETS_ASSIGN,
+    P.ASSETS_RETURN,
+    P.ASSETS_TRANSFER,
+    P.INVENTORY_READ,
+    P.INVENTORY_ADJUST,
+    P.QR_GENERATE,
+    P.QR_PRINT,
+    P.REPORTS_READ,
+  ],
+
+  // External supplier. The vendor-portal module does not exist yet, so this role
+  // is seeded as an assignable placeholder with no permissions until it ships.
+  VENDOR: [],
 };
 
 /**
@@ -263,6 +325,13 @@ export const ROLE_DEFAULT_SCOPE: Readonly<Record<SystemRole, DataScope>> = {
   MANAGER: 'DIRECT_REPORTS',
   EMPLOYEE: 'OWN',
   AUDITOR: 'ALL',
+  // v2.1 Workstream C — the five net-new canonical roles.
+  COMPANY_ADMIN: 'ALL',
+  IT_TECHNICIAN: 'ALL',
+  PROCUREMENT_MANAGER: 'ALL',
+  INVENTORY_MANAGER: 'ALL',
+  // External supplier: only ever its own records.
+  VENDOR: 'OWN',
 };
 
 /**
