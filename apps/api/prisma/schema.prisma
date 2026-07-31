@@ -294,6 +294,7 @@ enum NotificationChannel {
 enum NotificationType {
   NEW_REQUEST
   APPROVAL_REQUIRED
+  APPROVAL_ESCALATED
   REQUEST_APPROVED
   REQUEST_REJECTED
   ASSET_ORDERED
@@ -1682,10 +1683,13 @@ model RequestApproval {
   approverRoleId String?
   approverId     String?
 
-  decision  ApprovalDecision @default(WAITING)
-  decidedAt DateTime?
-  comment   String?
-  slaDueAt  DateTime?
+  decision    ApprovalDecision @default(WAITING)
+  decidedAt   DateTime?
+  comment     String?
+  slaDueAt    DateTime?
+  // v2.2 Workstream D — set when the SLA-escalation sweep has escalated this
+  // overdue step, so it is escalated (and notified) exactly once.
+  escalatedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
