@@ -611,6 +611,10 @@ model UserRole {
   userId String
   roleId String
 
+  // v2.1 Workstream C — optional per-assignment data-scope override. Null means
+  // "use the role's default scope". Honoured only when RBAC_SCOPES is enabled.
+  scope DataScope?
+
   createdAt   DateTime @default(now())
   createdById String?
 
@@ -620,6 +624,14 @@ model UserRole {
   @@id([userId, roleId])
   @@index([roleId])
   @@map("user_roles")
+}
+
+// v2.1 Workstream C — data-scope enum mirroring @techpioasset/domain DATA_SCOPES.
+enum DataScope {
+  ALL
+  DEPARTMENT
+  DIRECT_REPORTS
+  OWN
 }
 
 /// Refresh-token rotation (spec section 1). One row per issued token; a reused

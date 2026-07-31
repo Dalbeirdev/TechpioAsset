@@ -308,3 +308,33 @@ export function resolveScope(roles: readonly SystemRole[]): DataScope {
   }
   return widest;
 }
+
+const SYSTEM_ROLE_SET: ReadonlySet<string> = new Set(SYSTEM_ROLES);
+
+/** A user's assignment of a role, with an optional per-assignment scope override. */
+export interface RoleAssignment {
+  readonly roleKey: string;
+  /** Overrides the role's default scope for this user; null/undefined = use the default. */
+  readonly scopeOverride?: DataScope | null;
+}
+
+/**
+ * v2.1 Workstream C — effective scope honouring a per-assignment override.
+ *
+ * Each assignment resolves to `scopeOverride ?? ROLE_DEFAULT_SCOPE[role]` (unknown
+ * roles fail closed to OWN); the widest across all of a user's assignments wins,
+ * exactly like {@link resolveScope}. With no overrides this equals
+ * `resolveScope` over the known roles, so it is a safe superset of v1 behaviour.
+ */
+export function resolveEffectiveScope(assignments: readonly RoleAssignment[]): DataScope {
+  const precedence: readonly DataScope[] = ['OWN', 'DIRECT_REPORTS', 'DEPARTMENT', 'ALL'];
+  let widest: DataScope = 'OWN';
+  for (const a of assignments) {
+    const roleDefault: DataScope = SYSTEM_ROLE_SET.has(a.roleKey)
+      ? ROLE_DEFAULT_SCOPE[a.roleKey as SystemRole]
+      : 'OWN';
+    const effective = a.scopeOverride ?? roleDefault;
+    if (precedence.indexOf(effective) > precedence.indexOf(widest)) widest = effective;
+  }
+  return widest;
+}
