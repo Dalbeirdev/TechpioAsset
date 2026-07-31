@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Text, View } from 'react-native';
+import { type ComponentProps, useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import type {
   AssetCondition,
   AssetStatus,
@@ -33,8 +33,26 @@ interface AssetDetail {
   lifecycleState: LifecycleState | null;
   availabilityState: AvailabilityState | null;
   ownershipType: OwnershipType | null;
-  assignments: { id: string; returnedAt: string | null; acknowledgedAt: string | null }[];
+  assignments: {
+    id: string;
+    assignedAt: string;
+    returnedAt: string | null;
+    acknowledgedAt: string | null;
+    user: { email: string; profile: { firstName: string; lastName: string } | null } | null;
+    assetReturn: { damageNotes: string | null } | null;
+  }[];
+  conditionLogs: {
+    id: string;
+    recordedAt: string;
+    previousStatus: AssetStatus | null;
+    newStatus: AssetStatus | null;
+    previousCondition: AssetCondition | null;
+    newCondition: AssetCondition | null;
+    reason: string | null;
+  }[];
 }
+
+type MobileAssetTab = 'info' | 'history';
 
 /** Asset detail — the screen a QR scan opens (spec section 15). */
 export default function AssetDetailScreen() {
@@ -44,6 +62,7 @@ export default function AssetDetailScreen() {
 
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<MobileAssetTab>('info');
 
   const load = useCallback(async () => {
     const data = await api.request<AssetDetail>(`/assets/${id}`);
@@ -95,6 +114,7 @@ export default function AssetDetailScreen() {
 
   const tone = statusColor(asset.status, scheme);
   const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
+  const historyEvents = buildHistory(asset);
 
   return (
     <Screen scroll>
@@ -134,27 +154,178 @@ export default function AssetDetailScreen() {
         </View>
       </Card>
 
-      <SectionTitle>Details</SectionTitle>
-      <Card style={{ padding: 0, marginBottom: spacing.xl }}>
-        {asset.serialNumber ? <DetailRow label="Serial" value={asset.serialNumber} /> : null}
-        {asset.brand || asset.model ? (
-          <DetailRow label="Model" value={[asset.brand, asset.model].filter(Boolean).join(' ')} />
-        ) : null}
-        <DetailRow label="Condition" value={asset.condition} last />
-      </Card>
-
-      {openAssignment && !openAssignment.acknowledgedAt ? (
-        <Button
-          label="Confirm receipt"
-          icon="checkmark-circle-outline"
-          onPress={confirmReceipt}
-          loading={busy}
-          style={{ marginBottom: spacing.md }}
+      <View
+        style={{
+          flexDirection: 'row',
+          backgroundColor: c.card,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: c.border,
+          padding: 4,
+          marginBottom: spacing.xl,
+        }}
+      >
+        <TabButton label="Info" active={tab === 'info'} onPress={() => setTab('info')} />
+        <TabButton
+          label={`History${historyEvents.length ? ` (${historyEvents.length})` : ''}`}
+          active={tab === 'history'}
+          onPress={() => setTab('history')}
         />
-      ) : null}
-      <Button label="Report damage" icon="warning-outline" variant="danger" onPress={reportDamage} disabled={busy} />
+      </View>
+
+      {tab === 'info' ? (
+        <>
+          <SectionTitle>Details</SectionTitle>
+          <Card style={{ padding: 0, marginBottom: spacing.xl }}>
+            {asset.serialNumber ? <DetailRow label="Serial" value={asset.serialNumber} /> : null}
+            {asset.brand || asset.model ? (
+              <DetailRow label="Model" value={[asset.brand, asset.model].filter(Boolean).join(' ')} />
+            ) : null}
+            <DetailRow label="Condition" value={asset.condition} last />
+          </Card>
+
+          {openAssignment && !openAssignment.acknowledgedAt ? (
+            <Button
+              label="Confirm receipt"
+              icon="checkmark-circle-outline"
+              onPress={confirmReceipt}
+              loading={busy}
+              style={{ marginBottom: spacing.md }}
+            />
+          ) : null}
+          <Button
+            label="Report damage"
+            icon="warning-outline"
+            variant="danger"
+            onPress={reportDamage}
+            disabled={busy}
+          />
+        </>
+      ) : (
+        <>
+          <SectionTitle>Timeline</SectionTitle>
+          {historyEvents.length === 0 ? (
+            <Card>
+              <Text style={{ color: c.muted, fontSize: 14 }}>
+                No assignment or status history yet.
+              </Text>
+            </Card>
+          ) : (
+            <Card style={{ padding: 0 }}>
+              {historyEvents.map((ev, i) => (
+                <View
+                  key={ev.id}
+                  style={{
+                    flexDirection: 'row',
+                    gap: spacing.md,
+                    paddingHorizontal: 16,
+                    paddingVertical: 14,
+                    borderBottomWidth: i === historyEvents.length - 1 ? 0 : 1,
+                    borderBottomColor: c.border,
+                  }}
+                >
+                  <Ionicons name={ev.icon} size={18} color={c.muted} style={{ marginTop: 2 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>{ev.title}</Text>
+                    {ev.subtitle ? (
+                      <Text style={{ color: c.muted, fontSize: 13, marginTop: 2 }}>{ev.subtitle}</Text>
+                    ) : null}
+                    <Text style={{ color: c.muted, fontSize: 12, marginTop: 4 }}>{ev.at}</Text>
+                  </View>
+                </View>
+              ))}
+            </Card>
+          )}
+        </>
+      )}
     </Screen>
   );
+}
+
+function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const { c } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        flex: 1,
+        paddingVertical: 9,
+        borderRadius: 9,
+        alignItems: 'center',
+        backgroundColor: active ? c.brand : 'transparent',
+      }}
+    >
+      <Text style={{ color: active ? '#fff' : c.muted, fontWeight: '700', fontSize: 14 }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+type HistoryIcon = ComponentProps<typeof Ionicons>['name'];
+interface HistoryEvent {
+  id: string;
+  ts: number;
+  at: string;
+  icon: HistoryIcon;
+  title: string;
+  subtitle: string | null;
+}
+
+function fmt(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** Merge assignment and condition-log records into one date-descending timeline. */
+function buildHistory(asset: AssetDetail): HistoryEvent[] {
+  const events: HistoryEvent[] = [];
+
+  for (const a of asset.assignments) {
+    const who = a.user
+      ? a.user.profile
+        ? `${a.user.profile.firstName} ${a.user.profile.lastName}`.trim() || a.user.email
+        : a.user.email
+      : 'a teammate';
+    events.push({
+      id: `asg-${a.id}`,
+      ts: new Date(a.assignedAt).getTime(),
+      at: fmt(a.assignedAt),
+      icon: 'person-outline',
+      title: `Assigned to ${who}`,
+      subtitle: a.acknowledgedAt ? 'Receipt confirmed' : 'Awaiting receipt',
+    });
+    if (a.returnedAt) {
+      events.push({
+        id: `ret-${a.id}`,
+        ts: new Date(a.returnedAt).getTime(),
+        at: fmt(a.returnedAt),
+        icon: 'arrow-undo-outline',
+        title: `Returned by ${who}`,
+        subtitle: a.assetReturn?.damageNotes ? `Damage: ${a.assetReturn.damageNotes}` : null,
+      });
+    }
+  }
+
+  for (const log of asset.conditionLogs) {
+    const parts: string[] = [];
+    if (log.newStatus && log.newStatus !== log.previousStatus) {
+      parts.push(`Status → ${log.newStatus}`);
+    }
+    if (log.newCondition && log.newCondition !== log.previousCondition) {
+      parts.push(`Condition → ${log.newCondition}`);
+    }
+    events.push({
+      id: `log-${log.id}`,
+      ts: new Date(log.recordedAt).getTime(),
+      at: fmt(log.recordedAt),
+      icon: 'sync-outline',
+      title: parts.join(' · ') || 'Status updated',
+      subtitle: log.reason,
+    });
+  }
+
+  return events.sort((a, b) => b.ts - a.ts);
 }
 
 function DetailRow({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
