@@ -53,7 +53,7 @@ describe('Super Admin', () => {
     expect([...ROLE_PERMISSIONS.SUPER_ADMIN].sort()).toEqual([...ALL_PERMISSIONS].sort());
   });
 
-  it('is the only role that may configure AI, roles or workflows', () => {
+  it('shares tenant-admin permissions only with the Company Admin (tenant owner)', () => {
     for (const permission of [
       P.AI_CONFIGURE,
       P.ROLES_MANAGE,
@@ -64,7 +64,10 @@ describe('Super Admin', () => {
       P.CATEGORIES_MANAGE,
     ]) {
       const holders = SYSTEM_ROLES.filter((r) => roleHasPermission(r, permission));
-      expect(holders, `${permission} escaped Super Admin`).toEqual(['SUPER_ADMIN']);
+      expect([...holders].sort(), `${permission} escaped the admin roles`).toEqual([
+        'COMPANY_ADMIN',
+        'SUPER_ADMIN',
+      ]);
     }
   });
 });
@@ -129,9 +132,9 @@ describe('Employee isolation (spec section 3)', () => {
 });
 
 describe('Finance is the only invoice verifier (spec section 9: human approval)', () => {
-  it('holds invoices:verify alongside Super Admin only', () => {
+  it('holds invoices:verify alongside the Super Admin and Company Admin only', () => {
     const holders = SYSTEM_ROLES.filter((r) => roleHasPermission(r, P.INVOICES_VERIFY));
-    expect(holders.sort()).toEqual(['FINANCE', 'SUPER_ADMIN']);
+    expect([...holders].sort()).toEqual(['COMPANY_ADMIN', 'FINANCE', 'SUPER_ADMIN']);
   });
 });
 
@@ -234,5 +237,42 @@ describe('module:resource:action taxonomy (v2.1 WS-C)', () => {
     expect(grantsSatisfy(['reports:read', 'assets:*'], 'assets:dispose')).toBe(true);
     expect(grantsSatisfy(['reports:read', 'assets:*'], 'invoices:verify')).toBe(false);
     expect(grantsSatisfy(['*'], 'anything:goes')).toBe(true);
+  });
+});
+
+describe('canonical 13-role model (v2.1 WS-C)', () => {
+  it('defines exactly the 13 canonical roles', () => {
+    expect(SYSTEM_ROLES).toHaveLength(13);
+    for (const role of [
+      'COMPANY_ADMIN',
+      'IT_TECHNICIAN',
+      'PROCUREMENT_MANAGER',
+      'INVENTORY_MANAGER',
+      'VENDOR',
+    ] as const) {
+      expect(SYSTEM_ROLES).toContain(role);
+    }
+  });
+
+  it('every role has grants and a default scope (Vendor is an empty placeholder)', () => {
+    for (const role of SYSTEM_ROLES) {
+      expect(ROLE_PERMISSIONS[role], `${role} grants`).toBeDefined();
+      expect(ROLE_DEFAULT_SCOPE[role], `${role} scope`).toBeDefined();
+    }
+    expect(ROLE_PERMISSIONS.VENDOR).toEqual([]);
+    expect(ROLE_DEFAULT_SCOPE.VENDOR).toBe('OWN');
+  });
+
+  it('Company Admin is the tenant sovereign (grant-equivalent to Super Admin in v1)', () => {
+    expect([...ROLE_PERMISSIONS.COMPANY_ADMIN].sort()).toEqual([...ALL_PERMISSIONS].sort());
+  });
+
+  it('IT Technician is a subset of the IT Manager (IT_ADMIN)', () => {
+    const itManager = new Set(ROLE_PERMISSIONS.IT_ADMIN);
+    for (const p of ROLE_PERMISSIONS.IT_TECHNICIAN) expect(itManager.has(p)).toBe(true);
+  });
+
+  it('the read-only invariant still applies to exactly the Auditor', () => {
+    expect(READ_ONLY_ROLES).toEqual(['AUDITOR']);
   });
 });

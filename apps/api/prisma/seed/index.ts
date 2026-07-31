@@ -60,6 +60,27 @@ const ROLE_LABELS: Record<SystemRole, { name: string; description: string }> = {
     name: 'Auditor',
     description: 'Read-only access to assets, invoices, approvals, audit logs and reports.',
   },
+  // v2.1 Workstream C — the five net-new canonical roles (blueprint §1).
+  COMPANY_ADMIN: {
+    name: 'Company Admin',
+    description: 'Tenant owner: users, roles, workflows and configuration for this company.',
+  },
+  IT_TECHNICIAN: {
+    name: 'IT Technician',
+    description: 'Executes IT work — deploy, assign, repair and maintain devices.',
+  },
+  PROCUREMENT_MANAGER: {
+    name: 'Procurement Manager',
+    description: 'Manages vendors, purchase orders and sourcing; approves requests.',
+  },
+  INVENTORY_MANAGER: {
+    name: 'Inventory Manager',
+    description: 'Manages stock, receiving, transfers and asset provisioning.',
+  },
+  VENDOR: {
+    name: 'Vendor',
+    description: 'External supplier (portal placeholder; no access until the vendor portal ships).',
+  },
 };
 
 async function seedPermissions(): Promise<Map<string, string>> {

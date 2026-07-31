@@ -5,6 +5,7 @@ import type { AuthUser } from '@techpioasset/contracts';
 import {
   resolveScope,
   resolveEffectiveScope,
+  SYSTEM_ROLES,
   type DataScope,
   type SystemRole,
 } from '@techpioasset/domain';
@@ -519,19 +520,10 @@ export class AuthService {
       for (const grant of link.role.permissions) permissions.add(grant.permission.key);
     }
 
-    // Scope comes from the seeded system-role keys. A custom role that is not one
-    // of the eight falls through to OWN - the safe default.
+    // Scope comes from the seeded system-role keys. A custom role that is not a
+    // known system role falls through to OWN - the safe default.
     const knownRoles = roleKeys.filter((key): key is SystemRole =>
-      [
-        'SUPER_ADMIN',
-        'IT_ADMIN',
-        'HR',
-        'OFFICE_ADMIN',
-        'FINANCE',
-        'MANAGER',
-        'EMPLOYEE',
-        'AUDITOR',
-      ].includes(key),
+      (SYSTEM_ROLES as readonly string[]).includes(key),
     );
     // v2.1 Workstream C: when RBAC_SCOPES is on, honour each assignment's scope
     // override (UserRole.scope); otherwise keep v1's role-default resolution.
