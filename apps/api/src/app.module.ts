@@ -11,6 +11,7 @@ import { HealthModule } from './health/health.module.js';
 import { AssetsModule } from './assets/assets.module.js';
 import { OrgModule } from './org/org.module.js';
 import { UsersModule } from './users/users.module.js';
+import { RolesModule } from './roles/roles.module.js';
 import { RequestsModule } from './requests/requests.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { LifecycleModule } from './lifecycle/lifecycle.module.js';
@@ -71,6 +72,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     AuthModule,
     HealthModule,
     UsersModule,
+    RolesModule,
     OrgModule,
     AssetsModule,
     RequestsModule,
