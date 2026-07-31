@@ -3,7 +3,16 @@ export const TRACKING_TYPES = ['INDIVIDUAL', 'QUANTITY'] as const;
 export type TrackingType = (typeof TRACKING_TYPES)[number];
 
 /** Spec section 6 - recorded physical condition. */
-export const ASSET_CONDITIONS = ['NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED', 'UNUSABLE'] as const;
+export const ASSET_CONDITIONS = [
+  'NEW',
+  'GOOD',
+  'FAIR',
+  'POOR',
+  'DAMAGED',
+  'UNUSABLE',
+  // v2.1 Workstream A — blueprint retire signal; UNUSABLE backfills to this.
+  'END_OF_LIFE',
+] as const;
 export type AssetCondition = (typeof ASSET_CONDITIONS)[number];
 
 /**

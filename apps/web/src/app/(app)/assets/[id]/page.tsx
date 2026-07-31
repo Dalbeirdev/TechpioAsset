@@ -4,8 +4,21 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Lock, Pencil } from 'lucide-react';
-import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
-import { PERMISSIONS, type AssetCondition, type AssetStatus } from '@techpioasset/domain';
+import {
+  ASSET_STATUS_TOKENS,
+  CONDITION_TOKENS,
+  LIFECYCLE_STATE_TOKENS,
+  AVAILABILITY_STATE_TOKENS,
+  OWNERSHIP_TYPE_TOKENS,
+} from '@techpioasset/ui-tokens';
+import {
+  PERMISSIONS,
+  type AssetCondition,
+  type AssetStatus,
+  type LifecycleState,
+  type AvailabilityState,
+  type OwnershipType,
+} from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -23,6 +36,9 @@ interface AssetDetail {
   serialNumber: string | null;
   status: AssetStatus;
   condition: AssetCondition;
+  lifecycleState: LifecycleState | null;
+  availabilityState: AvailabilityState | null;
+  ownershipType: OwnershipType | null;
   purchaseDate: string | null;
   warrantyEndDate: string | null;
   purchaseCost?: string | null;
@@ -112,6 +128,19 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight">{data.name}</h1>
           <StatusBadge token={ASSET_STATUS_TOKENS[data.status]} size="sm" />
+          {data.lifecycleState ? (
+            <StatusBadge token={LIFECYCLE_STATE_TOKENS[data.lifecycleState]} size="sm" />
+          ) : null}
+          {data.availabilityState ? (
+            <StatusBadge token={AVAILABILITY_STATE_TOKENS[data.availabilityState]} size="sm" />
+          ) : null}
+          {data.ownershipType ? (
+            <StatusBadge
+              token={OWNERSHIP_TYPE_TOKENS[data.ownershipType]}
+              size="sm"
+              showIcon={false}
+            />
+          ) : null}
           {can(PERMISSIONS.ASSETS_UPDATE) ? (
             <Link
               href={`/assets/${id}/edit`}
