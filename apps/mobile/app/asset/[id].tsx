@@ -2,7 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Text, View } from 'react-native';
-import type { AssetCondition, AssetStatus } from '@techpioasset/domain';
+import type {
+  AssetCondition,
+  AssetStatus,
+  LifecycleState,
+  AvailabilityState,
+  OwnershipType,
+} from '@techpioasset/domain';
+import {
+  LIFECYCLE_STATE_TOKENS,
+  AVAILABILITY_STATE_TOKENS,
+  OWNERSHIP_TYPE_TOKENS,
+  TONE_PALETTE_DARK,
+  TONE_PALETTE_LIGHT,
+} from '@techpioasset/ui-tokens';
 import { useSession } from '../../src/providers/session';
 import { useTheme, statusColor, statusLabel } from '../../src/theme';
 import { Button, Card, IconBadge, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
@@ -16,6 +29,10 @@ interface AssetDetail {
   serialNumber: string | null;
   status: AssetStatus;
   condition: AssetCondition;
+  // v2.1 Workstream A — nullable until backfilled / dual-written.
+  lifecycleState: LifecycleState | null;
+  availabilityState: AvailabilityState | null;
+  ownershipType: OwnershipType | null;
   assignments: { id: string; returnedAt: string | null; acknowledgedAt: string | null }[];
 }
 
@@ -77,6 +94,7 @@ export default function AssetDetailScreen() {
   }
 
   const tone = statusColor(asset.status, scheme);
+  const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
 
   return (
     <Screen scroll>
@@ -88,8 +106,31 @@ export default function AssetDetailScreen() {
             <Text style={{ color: c.muted, fontSize: 13, marginTop: 2 }}>{asset.assetTag}</Text>
           </View>
         </View>
-        <View style={{ marginTop: spacing.md }}>
+        <View
+          style={{ marginTop: spacing.md, flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
+        >
           <StatusPill label={statusLabel(asset.status)} bg={tone.bg} fg={tone.fg} />
+          {asset.lifecycleState ? (
+            <StatusPill
+              label={LIFECYCLE_STATE_TOKENS[asset.lifecycleState].label}
+              bg={palette[LIFECYCLE_STATE_TOKENS[asset.lifecycleState].tone].bg}
+              fg={palette[LIFECYCLE_STATE_TOKENS[asset.lifecycleState].tone].fg}
+            />
+          ) : null}
+          {asset.availabilityState ? (
+            <StatusPill
+              label={AVAILABILITY_STATE_TOKENS[asset.availabilityState].label}
+              bg={palette[AVAILABILITY_STATE_TOKENS[asset.availabilityState].tone].bg}
+              fg={palette[AVAILABILITY_STATE_TOKENS[asset.availabilityState].tone].fg}
+            />
+          ) : null}
+          {asset.ownershipType ? (
+            <StatusPill
+              label={OWNERSHIP_TYPE_TOKENS[asset.ownershipType].label}
+              bg={palette[OWNERSHIP_TYPE_TOKENS[asset.ownershipType].tone].bg}
+              fg={palette[OWNERSHIP_TYPE_TOKENS[asset.ownershipType].tone].fg}
+            />
+          ) : null}
         </View>
       </Card>
 
