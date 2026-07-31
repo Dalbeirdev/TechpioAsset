@@ -30,6 +30,10 @@ export const envSchema = z
     // Off by default so v1 behaviour is unchanged until a tenant opts in.
     STATUS_MODEL_V2: booleanish.default('false'),
 
+    // v2.1 Workstream C — when on, a user's data scope honours a per-role-assignment
+    // override (UserRole.scope) instead of being fixed by the role default.
+    RBAC_SCOPES: booleanish.default('false'),
+
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().url(),
 

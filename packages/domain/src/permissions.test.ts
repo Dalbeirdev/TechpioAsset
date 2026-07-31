@@ -11,6 +11,7 @@ import {
   roleHasPermission,
   resolvePermissions,
   resolveScope,
+  resolveEffectiveScope,
   ReadOnlyRoleViolationError,
   type Permission,
 } from './permissions';
@@ -148,5 +149,49 @@ describe('resolvePermissions / resolveScope', () => {
   it('returns OWN for a user with no roles', () => {
     expect(resolveScope([])).toBe('OWN');
     expect(resolvePermissions([]).size).toBe(0);
+  });
+});
+
+describe('resolveEffectiveScope (v2.1 per-assignment override)', () => {
+  it('uses the role default when no override is given', () => {
+    expect(resolveEffectiveScope([{ roleKey: 'MANAGER' }])).toBe('DIRECT_REPORTS');
+    expect(resolveEffectiveScope([{ roleKey: 'EMPLOYEE' }])).toBe('OWN');
+    expect(resolveEffectiveScope([{ roleKey: 'IT_ADMIN' }])).toBe('ALL');
+  });
+
+  it('a per-assignment override widens or narrows that assignment', () => {
+    // Widen a Manager (default DIRECT_REPORTS) to ALL for this user.
+    expect(resolveEffectiveScope([{ roleKey: 'MANAGER', scopeOverride: 'ALL' }])).toBe('ALL');
+    // Narrow an IT_ADMIN (default ALL) to DEPARTMENT for this user.
+    expect(resolveEffectiveScope([{ roleKey: 'IT_ADMIN', scopeOverride: 'DEPARTMENT' }])).toBe(
+      'DEPARTMENT',
+    );
+  });
+
+  it('widest across assignments wins, like resolveScope', () => {
+    expect(
+      resolveEffectiveScope([
+        { roleKey: 'EMPLOYEE' },
+        { roleKey: 'MANAGER', scopeOverride: 'DEPARTMENT' },
+      ]),
+    ).toBe('DEPARTMENT');
+  });
+
+  it('unknown/custom roles fail closed to OWN', () => {
+    expect(resolveEffectiveScope([{ roleKey: 'CUSTOM_ROLE' }])).toBe('OWN');
+    // …but an explicit override on a custom role is honoured.
+    expect(resolveEffectiveScope([{ roleKey: 'CUSTOM_ROLE', scopeOverride: 'DEPARTMENT' }])).toBe(
+      'DEPARTMENT',
+    );
+  });
+
+  it('with no overrides equals resolveScope over the same known roles', () => {
+    expect(resolveEffectiveScope([{ roleKey: 'EMPLOYEE' }, { roleKey: 'FINANCE' }])).toBe(
+      resolveScope(['EMPLOYEE', 'FINANCE']),
+    );
+  });
+
+  it('empty assignments resolve to OWN', () => {
+    expect(resolveEffectiveScope([])).toBe('OWN');
   });
 });
