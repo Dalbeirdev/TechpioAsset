@@ -12,3 +12,4 @@ export * from './maintenance';
 export * from './reports';
 export * from './users';
 export * from './audit';
+export * from './delegations';

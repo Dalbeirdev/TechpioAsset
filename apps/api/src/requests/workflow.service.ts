@@ -155,7 +155,7 @@ export class WorkflowService {
       ? await this.prisma.client.role.findUnique({ where: { id: approval.approverRoleId } })
       : null;
 
-    const permitted = canApproveStep({
+    const ctx = {
       step: {
         stepOrder: approval.stepOrder,
         approverType: approval.approverType as ApproverType,
@@ -163,21 +163,57 @@ export class WorkflowService {
         approverUserId: approval.approverId,
         isSkippable: false,
       },
-      actorId: input.actorId,
-      actorRoleKeys: input.actorRoleKeys,
       requesterId: approval.request.requester.id,
       requesterManagerId: approval.request.requester.profile?.managerId ?? null,
       // v2.2 Workstream D — resolve the requester's department head so
       // DEPARTMENT_HEAD steps are approvable (were hardcoded null / un-approvable).
       requesterDepartmentHeadId: approval.request.requester.profile?.department?.headId ?? null,
-    });
+    } as const;
 
-    if (!permitted) {
-      throw AppError.forbidden(
-        `This request is awaiting "${approval.stepName}", which you are not the approver for`,
-      );
+    // Direct: the actor is the step's approver.
+    if (canApproveStep({ ...ctx, actorId: input.actorId, actorRoleKeys: input.actorRoleKeys })) {
+      return approval;
     }
 
-    return approval;
+    // v2.2 Workstream D — delegated: the actor may act for anyone who has an
+    // active delegation to them. SoD is preserved because canApproveStep rejects
+    // `actorId === requesterId`, so a delegate can never approve the delegator's
+    // (or their own) request.
+    for (const delegatorId of await this.activeDelegatorsFor(
+      input.actorId,
+      approval.request.companyId,
+    )) {
+      const delegatorRoleKeys = (
+        await this.prisma.client.userRole.findMany({
+          where: { userId: delegatorId },
+          select: { role: { select: { key: true } } },
+        })
+      ).map((r) => r.role.key);
+      if (canApproveStep({ ...ctx, actorId: delegatorId, actorRoleKeys: delegatorRoleKeys })) {
+        return approval;
+      }
+    }
+
+    throw AppError.forbidden(
+      `This request is awaiting "${approval.stepName}", which you are not the approver for`,
+    );
+  }
+
+  /** User ids that have an active (in-window, un-revoked) delegation to `actorId`. */
+  private async activeDelegatorsFor(actorId: string, companyId: string): Promise<string[]> {
+    const now = new Date();
+    const rows = await this.prisma.client.approvalDelegation.findMany({
+      where: {
+        delegateId: actorId,
+        companyId,
+        revokedAt: null,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+        ],
+      },
+      select: { delegatorId: true },
+    });
+    return rows.map((r) => r.delegatorId);
   }
 }
