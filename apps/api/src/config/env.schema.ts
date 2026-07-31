@@ -25,6 +25,11 @@ export const envSchema = z
     WEB_URL: z.string().url().default('http://localhost:3000'),
     CORS_ORIGINS: z.string().default('http://localhost:3000').transform(csv),
 
+    // v2.1 Workstream A — when on, asset writes dual-write the four status
+    // dimensions alongside the legacy `status`, and reads/filters expose them.
+    // Off by default so v1 behaviour is unchanged until a tenant opts in.
+    STATUS_MODEL_V2: booleanish.default('false'),
+
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().url(),
 
