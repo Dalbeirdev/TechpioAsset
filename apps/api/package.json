@@ -23,6 +23,7 @@
     "db:format": "prisma format",
     "seed": "tsx prisma/seed/index.ts",
     "seed:admin": "tsx prisma/seed/create-admin.ts",
+    "backfill:status-dimensions": "tsx prisma/backfill/status-dimensions.ts",
     "audit:summary": "node scripts/audit-summary.mjs"
   },
   "dependencies": {
