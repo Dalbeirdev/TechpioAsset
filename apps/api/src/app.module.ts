@@ -12,6 +12,7 @@ import { AssetsModule } from './assets/assets.module.js';
 import { OrgModule } from './org/org.module.js';
 import { UsersModule } from './users/users.module.js';
 import { RequestsModule } from './requests/requests.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 import { LifecycleModule } from './lifecycle/lifecycle.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { InvoicesModule } from './invoices/invoices.module.js';
@@ -73,6 +74,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     OrgModule,
     AssetsModule,
     RequestsModule,
+    DashboardModule,
     LifecycleModule,
     InvoicesModule,
     StorageHttpModule,

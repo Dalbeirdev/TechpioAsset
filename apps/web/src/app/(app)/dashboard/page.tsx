@@ -24,6 +24,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
 import { StatusBarChart } from '@/components/charts/status-bar-chart';
+import { RoleTiles } from '@/components/dashboard/role-tiles';
 import {
   AllocationPie,
   DonutChart,
@@ -341,6 +342,11 @@ export default function DashboardPage() {
           </Link>
         ) : null}
       </header>
+
+      {/* v2.2 Workstream F — role-based "what needs me now" tiles (server-scoped). */}
+      <section aria-label="For you">
+        <RoleTiles />
+      </section>
 
       {/* KPIs */}
       <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
