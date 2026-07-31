@@ -34,6 +34,12 @@ export const envSchema = z
     // override (UserRole.scope) instead of being fixed by the role default.
     RBAC_SCOPES: booleanish.default('false'),
 
+    // v2.1 Workstream B — when on, each request sets the `app.tenant_id` GUC so the
+    // Row-Level Security policies enforce tenant isolation. Requires the app to
+    // connect as a NON-superuser DB role (superusers bypass RLS). Off = policies
+    // stay dormant (permissive) and behaviour is exactly v1.
+    RLS_ENFORCE: booleanish.default('false'),
+
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().url(),
 
