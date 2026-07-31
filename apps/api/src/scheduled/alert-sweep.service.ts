@@ -31,9 +31,13 @@ export class AlertSweepService implements OnModuleInit {
     // Run shortly after boot, then daily. A cron system (BullMQ repeatable jobs)
     // would replace this in a clustered deployment; a single timer is correct for
     // one instance and keeps the dev path dependency-free.
-    this.timer = setInterval(() => void this.runWarrantySweep(), 24 * 60 * 60 * 1000);
+    const daily = () => {
+      void this.runWarrantySweep();
+      void this.runApprovalEscalationSweep();
+    };
+    this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
     this.timer.unref?.();
-    setTimeout(() => void this.runWarrantySweep(), 5000).unref?.();
+    setTimeout(daily, 5000).unref?.();
   }
 
   /**
@@ -121,6 +125,59 @@ export class AlertSweepService implements OnModuleInit {
       raised += 1;
     }
 
+    return raised;
+  }
+
+  /**
+   * v2.2 Workstream D — escalates approval steps whose SLA has lapsed.
+   *
+   * A PENDING step past its `slaDueAt` is escalated to the request's manager (or
+   * the requester's line manager) with an APPROVAL_ESCALATED notification, and
+   * marked `escalatedAt` so it escalates exactly once however often the sweep runs.
+   */
+  async runApprovalEscalationSweep(now: Date = new Date()): Promise<number> {
+    const overdue = await this.prisma.client.requestApproval.findMany({
+      where: { decision: 'PENDING', escalatedAt: null, slaDueAt: { lt: now } },
+      select: {
+        id: true,
+        stepName: true,
+        requestId: true,
+        request: {
+          select: {
+            companyId: true,
+            managerId: true,
+            requester: { select: { profile: { select: { managerId: true } } } },
+          },
+        },
+      },
+    });
+
+    let raised = 0;
+    for (const approval of overdue) {
+      const recipientId =
+        approval.request.managerId ?? approval.request.requester.profile?.managerId ?? null;
+      if (recipientId) {
+        await this.notifications.notify({
+          companyId: approval.request.companyId,
+          userId: recipientId,
+          type: 'APPROVAL_ESCALATED',
+          title: 'Approval overdue',
+          body: `The "${approval.stepName}" approval step has passed its SLA and needs attention.`,
+          linkPath: `/requests/${approval.requestId}`,
+          entityType: 'AssetRequest',
+          entityId: approval.requestId,
+        });
+        raised += 1;
+      }
+      // Mark escalated regardless of whether a recipient existed, so an
+      // orphaned step is not rescanned on every sweep.
+      await this.prisma.client.requestApproval.update({
+        where: { id: approval.id },
+        data: { escalatedAt: now },
+      });
+    }
+
+    if (raised > 0) this.logger.log(`Approval escalation sweep raised ${raised} alert(s)`);
     return raised;
   }
 
