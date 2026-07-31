@@ -1,16 +1,22 @@
 import { z } from 'zod';
-import { SYSTEM_ROLES } from '@techpioasset/domain';
 import { pageQuerySchema } from './pagination.js';
+
+/**
+ * Role keys are tenant role identifiers, not a fixed enum — custom roles
+ * (v2.2 Workstream G) are addressed by key too. Existence and the read-only /
+ * last-Super-Admin invariants are enforced server-side against the tenant's roles.
+ */
+const roleKey = z.string().trim().min(1).max(60);
 
 /** Users list, with an optional role filter on top of the standard page query. */
 export const userListQuerySchema = pageQuerySchema.extend({
-  role: z.enum(SYSTEM_ROLES).optional(),
+  role: roleKey.optional(),
 });
 export type UserListQuery = z.infer<typeof userListQuerySchema>;
 
 /** Replace a user's roles wholesale. Empty is rejected — everyone keeps at least one. */
 export const setUserRolesSchema = z.object({
-  roleKeys: z.array(z.enum(SYSTEM_ROLES)).min(1, 'A user must keep at least one role'),
+  roleKeys: z.array(roleKey).min(1, 'A user must keep at least one role'),
 });
 export type SetUserRolesInput = z.infer<typeof setUserRolesSchema>;
 
