@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { deriveDimensionsFromLegacy, type AssetStatus, type ConditionGrade } from '@techpioasset/domain';
@@ -95,13 +96,78 @@ export function createPrismaClient(datasourceUrl?: string, statusModelV2 = false
 
 export type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
 
+/** The client bound to an interactive transaction (no lifecycle/tx-control methods). */
+type TenantTxClient = Omit<
+  ExtendedPrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$use' | '$transaction' | '$extends'
+>;
+
+/**
+ * Wrap a tenant-bound transaction client so callers can still use `$transaction`.
+ *
+ * Services in this codebase open their own `client.$transaction(...)`, but Prisma
+ * cannot nest interactive transactions. Inside a request-scoped tenant transaction
+ * we therefore FLATTEN: a nested `$transaction(cb)` just runs `cb` with the same
+ * tenant tx (so it participates in the one transaction), and the array form awaits
+ * its queries in order on that tx. Trade-off: inner failures roll back the whole
+ * request transaction rather than independently — acceptable under RLS_ENFORCE.
+ */
+function tenantTxProxy(tx: TenantTxClient): ExtendedPrismaClient {
+  const proxy = new Proxy(tx as object, {
+    get(target, prop, receiver) {
+      if (prop === '$transaction') {
+        return async (arg: unknown) => {
+          if (typeof arg === 'function') return (arg as (c: unknown) => unknown)(proxy);
+          if (Array.isArray(arg)) {
+            const out: unknown[] = [];
+            for (const p of arg) out.push(await p);
+            return out;
+          }
+          throw new Error('Unsupported $transaction argument inside an RLS tenant transaction');
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as unknown as ExtendedPrismaClient;
+  return proxy;
+}
+
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
-  readonly client: ExtendedPrismaClient;
+  private readonly base: ExtendedPrismaClient;
+  // v2.1 Workstream B — when a request runs inside `runInTenant`, the tenant-bound
+  // (proxied) transaction client lives here so `client` resolves to it transparently.
+  private readonly tenantTx = new AsyncLocalStorage<ExtendedPrismaClient>();
 
   constructor(config: AppConfig) {
-    this.client = createPrismaClient(config.get('DATABASE_URL'), config.get('STATUS_MODEL_V2'));
+    this.base = createPrismaClient(config.get('DATABASE_URL'), config.get('STATUS_MODEL_V2'));
+  }
+
+  /**
+   * The Prisma client to use. Normally the base client; inside `runInTenant` it is
+   * the tenant-bound transaction client, so every query sees `app.tenant_id` set
+   * and the RLS policies (see the enable_row_level_security migration) enforce
+   * isolation. Back-compatible: with no active tenant transaction this is `base`.
+   */
+  get client(): ExtendedPrismaClient {
+    return this.tenantTx.getStore() ?? this.base;
+  }
+
+  /**
+   * Run `fn` inside a transaction with `app.tenant_id` set to `companyId`, so the
+   * RLS policies scope every query to that tenant. Requires the app to connect as
+   * a NON-superuser role (superusers bypass RLS — see deploy/rls-app-role.sql).
+   *
+   * Enforcement is opt-in and gated by RLS_ENFORCE at the call site; this method
+   * is the mechanism, verified against a non-superuser role. (Global auto-wiring
+   * must first reconcile with services that open their own transactions — see #10.)
+   */
+  async runInTenant<T>(companyId: string, fn: () => Promise<T>): Promise<T> {
+    return this.base.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("SELECT set_config('app.tenant_id', $1, true)", companyId);
+      return this.tenantTx.run(tenantTxProxy(tx as TenantTxClient), fn);
+    });
   }
 
   /**
@@ -115,7 +181,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
    */
   async onModuleInit(): Promise<void> {
     try {
-      await this.client.$connect();
+      await this.base.$connect();
       this.logger.log('Database connection established');
     } catch (error) {
       this.logger.error(
@@ -126,13 +192,13 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.client.$disconnect();
+    await this.base.$disconnect();
   }
 
   /** Round-trip used by the readiness probe. */
   async ping(): Promise<number> {
     const started = process.hrtime.bigint();
-    await this.client.$queryRaw`SELECT 1`;
+    await this.base.$queryRaw`SELECT 1`;
     return Number((process.hrtime.bigint() - started) / 1_000_000n);
   }
 }
