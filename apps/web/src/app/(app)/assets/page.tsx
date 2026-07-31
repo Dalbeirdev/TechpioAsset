@@ -5,12 +5,24 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, FileSpreadsheet, Plus, X } from 'lucide-react';
-import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
+import {
+  ASSET_STATUS_TOKENS,
+  CONDITION_TOKENS,
+  LIFECYCLE_STATE_TOKENS,
+  AVAILABILITY_STATE_TOKENS,
+  OWNERSHIP_TYPE_TOKENS,
+} from '@techpioasset/ui-tokens';
 import {
   ASSET_STATUSES,
+  LIFECYCLE_STATES,
+  AVAILABILITY_STATES,
+  OWNERSHIP_TYPES,
   PERMISSIONS,
   type AssetCondition,
   type AssetStatus,
+  type LifecycleState,
+  type AvailabilityState,
+  type OwnershipType,
 } from '@techpioasset/domain';
 import type { BulkActionResult } from '@techpioasset/contracts';
 import { apiFetch, apiFetchPage } from '@/lib/api-client';
@@ -33,6 +45,10 @@ interface AssetRow {
   serialNumber: string | null;
   status: AssetStatus;
   condition: AssetCondition;
+  // v2.1 Workstream A — nullable until backfilled / dual-written.
+  lifecycleState: LifecycleState | null;
+  availabilityState: AvailabilityState | null;
+  ownershipType: OwnershipType | null;
   purchaseCost?: string | null;
   currency?: string | null;
   category: { name: string } | null;
@@ -51,6 +67,10 @@ function AssetsTable() {
   const toast = useToast();
   const confirm = useConfirm();
   const [status, setStatus] = useState<string>('');
+  // v2.1 Workstream A — the four-dimension filters.
+  const [lifecycle, setLifecycle] = useState<string>('');
+  const [availability, setAvailability] = useState<string>('');
+  const [ownership, setOwnership] = useState<string>('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>('');
@@ -59,9 +79,12 @@ function AssetsTable() {
   const query = new URLSearchParams({ page: String(page), pageSize: '25' });
   if (q) query.set('q', q);
   if (status) query.set('status', status);
+  if (lifecycle) query.set('lifecycleState', lifecycle);
+  if (availability) query.set('availabilityState', availability);
+  if (ownership) query.set('ownershipType', ownership);
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['assets', q, status, page],
+    queryKey: ['assets', q, status, lifecycle, availability, ownership, page],
     queryFn: () => apiFetchPage<AssetRow>(`/assets?${query.toString()}`),
   });
 
@@ -74,7 +97,7 @@ function AssetsTable() {
   const canBulk = can(PERMISSIONS.ASSETS_UPDATE);
   useEffect(() => {
     setSelected(new Set());
-  }, [q, status, page]);
+  }, [q, status, lifecycle, availability, ownership, page]);
 
   const rows = data?.data ?? [];
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
@@ -154,6 +177,60 @@ function AssetsTable() {
               {ASSET_STATUSES.map((value) => (
                 <option key={value} value={value}>
                   {ASSET_STATUS_TOKENS[value].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium text-[var(--color-content-muted)]">Lifecycle</span>
+            <select
+              value={lifecycle}
+              onChange={(e) => {
+                setLifecycle(e.target.value);
+                setPage(1);
+              }}
+              className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+            >
+              <option value="">Any lifecycle</option>
+              {LIFECYCLE_STATES.map((value) => (
+                <option key={value} value={value}>
+                  {LIFECYCLE_STATE_TOKENS[value].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium text-[var(--color-content-muted)]">Availability</span>
+            <select
+              value={availability}
+              onChange={(e) => {
+                setAvailability(e.target.value);
+                setPage(1);
+              }}
+              className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+            >
+              <option value="">Any availability</option>
+              {AVAILABILITY_STATES.map((value) => (
+                <option key={value} value={value}>
+                  {AVAILABILITY_STATE_TOKENS[value].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium text-[var(--color-content-muted)]">Ownership</span>
+            <select
+              value={ownership}
+              onChange={(e) => {
+                setOwnership(e.target.value);
+                setPage(1);
+              }}
+              className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+            >
+              <option value="">Any ownership</option>
+              {OWNERSHIP_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {OWNERSHIP_TYPE_TOKENS[value].label}
                 </option>
               ))}
             </select>
@@ -331,14 +408,39 @@ function AssetsTable() {
                       {asset.category?.name ?? '—'}
                     </td>
                     <td className="px-4 py-2.5">
-                      <StatusBadge token={ASSET_STATUS_TOKENS[asset.status]} size="sm" />
+                      <div className="flex flex-wrap items-center gap-1">
+                        <StatusBadge token={ASSET_STATUS_TOKENS[asset.status]} size="sm" />
+                        {asset.lifecycleState ? (
+                          <StatusBadge
+                            token={LIFECYCLE_STATE_TOKENS[asset.lifecycleState]}
+                            size="sm"
+                            showIcon={false}
+                          />
+                        ) : null}
+                        {asset.availabilityState ? (
+                          <StatusBadge
+                            token={AVAILABILITY_STATE_TOKENS[asset.availabilityState]}
+                            size="sm"
+                            showIcon={false}
+                          />
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-2.5">
-                      <StatusBadge
-                        token={CONDITION_TOKENS[asset.condition]}
-                        size="sm"
-                        showIcon={false}
-                      />
+                      <div className="flex flex-wrap items-center gap-1">
+                        <StatusBadge
+                          token={CONDITION_TOKENS[asset.condition]}
+                          size="sm"
+                          showIcon={false}
+                        />
+                        {asset.ownershipType ? (
+                          <StatusBadge
+                            token={OWNERSHIP_TYPE_TOKENS[asset.ownershipType]}
+                            size="sm"
+                            showIcon={false}
+                          />
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-2.5 text-[var(--color-content-muted)]">
                       {asset.assignedUser?.profile

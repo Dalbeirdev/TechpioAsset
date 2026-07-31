@@ -3,10 +3,16 @@ import {
   REQUEST_STATUSES,
   VERIFICATION_STATUSES,
   ASSET_CONDITIONS,
+  LIFECYCLE_STATES,
+  AVAILABILITY_STATES,
+  OWNERSHIP_TYPES,
   type AssetStatus,
   type RequestStatus,
   type VerificationStatus,
   type AssetCondition,
+  type LifecycleState,
+  type AvailabilityState,
+  type OwnershipType,
 } from '@techpioasset/domain';
 import type { Tone } from './tones';
 
@@ -84,6 +90,35 @@ export const CONDITION_TOKENS: Readonly<Record<AssetCondition, StatusToken>> = {
   POOR: { label: 'Poor', tone: 'danger', icon: 'ThumbsDown' },
   DAMAGED: { label: 'Damaged', tone: 'danger', icon: 'TriangleAlert' },
   UNUSABLE: { label: 'Unusable', tone: 'critical', icon: 'OctagonX' },
+  END_OF_LIFE: { label: 'End of life', tone: 'muted', icon: 'PackageMinus' },
+};
+
+// v2.1 Workstream A — tokens for the four status dimensions.
+export const LIFECYCLE_STATE_TOKENS: Readonly<Record<LifecycleState, StatusToken>> = {
+  PLANNED: { label: 'Planned', tone: 'muted', icon: 'FileEdit' },
+  IN_PROCUREMENT: { label: 'In procurement', tone: 'info', icon: 'ShoppingCart' },
+  IN_STOCK: { label: 'In stock', tone: 'neutral', icon: 'Archive' },
+  DEPLOYED: { label: 'Deployed', tone: 'success', icon: 'Laptop' },
+  IN_MAINTENANCE: { label: 'In maintenance', tone: 'warning', icon: 'Wrench' },
+  RETIRED: { label: 'Retired', tone: 'muted', icon: 'PackageMinus' },
+  DISPOSED: { label: 'Disposed', tone: 'muted', icon: 'Trash2' },
+};
+
+export const AVAILABILITY_STATE_TOKENS: Readonly<Record<AvailabilityState, StatusToken>> = {
+  AVAILABLE: { label: 'Available', tone: 'success', icon: 'CircleCheck' },
+  RESERVED: { label: 'Reserved', tone: 'progress', icon: 'BookmarkCheck' },
+  ASSIGNED: { label: 'Assigned', tone: 'info', icon: 'UserCheck' },
+  IN_TRANSIT: { label: 'In transit', tone: 'progress', icon: 'Truck' },
+  IN_REPAIR: { label: 'In repair', tone: 'warning', icon: 'Wrench' },
+  LOST: { label: 'Lost', tone: 'critical', icon: 'SearchX' },
+};
+
+export const OWNERSHIP_TYPE_TOKENS: Readonly<Record<OwnershipType, StatusToken>> = {
+  OWNED: { label: 'Owned', tone: 'neutral', icon: 'BadgeCheck' },
+  LEASED: { label: 'Leased', tone: 'info', icon: 'FileClock' },
+  RENTED: { label: 'Rented', tone: 'info', icon: 'CalendarClock' },
+  BYOD: { label: 'BYOD', tone: 'progress', icon: 'Smartphone' },
+  LOANER: { label: 'Loaner', tone: 'warning', icon: 'Handshake' },
 };
 
 /** Every status enum paired with its token map, for exhaustiveness testing. */
@@ -92,4 +127,7 @@ export const STATUS_TOKEN_REGISTRY = [
   { name: 'RequestStatus', values: REQUEST_STATUSES, tokens: REQUEST_STATUS_TOKENS },
   { name: 'VerificationStatus', values: VERIFICATION_STATUSES, tokens: VERIFICATION_STATUS_TOKENS },
   { name: 'AssetCondition', values: ASSET_CONDITIONS, tokens: CONDITION_TOKENS },
+  { name: 'LifecycleState', values: LIFECYCLE_STATES, tokens: LIFECYCLE_STATE_TOKENS },
+  { name: 'AvailabilityState', values: AVAILABILITY_STATES, tokens: AVAILABILITY_STATE_TOKENS },
+  { name: 'OwnershipType', values: OWNERSHIP_TYPES, tokens: OWNERSHIP_TYPE_TOKENS },
 ] as const;
