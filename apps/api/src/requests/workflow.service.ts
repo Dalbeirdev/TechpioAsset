@@ -161,6 +161,7 @@ export class WorkflowService {
       },
       actorId: input.actorId,
       actorRoleKeys: input.actorRoleKeys,
+      requesterId: approval.request.requester.id,
       requesterManagerId: approval.request.requester.profile?.managerId ?? null,
       requesterDepartmentHeadId: null,
     });
