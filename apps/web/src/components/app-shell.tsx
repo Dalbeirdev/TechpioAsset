@@ -17,6 +17,7 @@ import {
   Receipt,
   ScrollText,
   Search,
+  ShieldCheck,
   Users,
   Wrench,
   X,
@@ -51,6 +52,7 @@ const NAV: NavItem[] = [
   },
   { href: '/reports', label: 'Reports', Icon: BarChart3, permission: PERMISSIONS.REPORTS_READ },
   { href: '/audit', label: 'Audit log', Icon: ScrollText, permission: PERMISSIONS.AUDIT_READ },
+  { href: '/settings/roles', label: 'Roles', Icon: ShieldCheck, permission: PERMISSIONS.ROLES_MANAGE },
   { href: '/settings/ai', label: 'AI settings', Icon: Cpu, permission: PERMISSIONS.AI_CONFIGURE },
 ];
 
