@@ -98,6 +98,15 @@ export const SYSTEM_ROLES = [
   'MANAGER',
   'EMPLOYEE',
   'AUDITOR',
+  // v2.1 Workstream C — the canonical 13-role model (blueprint §1). The eight
+  // above are retained as-is (IT_ADMIN=IT Manager, HR=HR Manager, FINANCE=Finance
+  // Manager, OFFICE_ADMIN=Office Admin, MANAGER=Department Manager); these five are
+  // net-new. Each new role carries only permissions whose modules exist today.
+  'COMPANY_ADMIN',
+  'IT_TECHNICIAN',
+  'PROCUREMENT_MANAGER',
+  'INVENTORY_MANAGER',
+  'VENDOR',
 ] as const;
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -247,6 +256,59 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.USERS_READ,
     P.AUDIT_READ,
   ],
+
+  // Tenant owner. In single-company v1 this is grant-equivalent to Super Admin;
+  // the two differ by authority plane (Super Admin = platform/MSP), which becomes
+  // meaningful once platform:* permissions and multi-tenant MSP land.
+  COMPANY_ADMIN: ALL_PERMISSIONS,
+
+  // Executes IT work — deploy, assign, repair. A subset of IT_ADMIN (IT Manager).
+  IT_TECHNICIAN: [
+    P.ASSETS_READ,
+    P.ASSETS_UPDATE,
+    P.ASSETS_ASSIGN,
+    P.ASSETS_RETURN,
+    P.ASSETS_TRANSFER,
+    P.INVENTORY_READ,
+    P.INVENTORY_ADJUST,
+    P.MAINTENANCE_READ,
+    P.MAINTENANCE_MANAGE,
+    P.REQUESTS_READ,
+    P.QR_GENERATE,
+    P.QR_PRINT,
+  ],
+
+  // Sourcing and purchasing. Owns vendors + POs; approves requests.
+  PROCUREMENT_MANAGER: [
+    P.ASSETS_READ,
+    P.VENDORS_READ,
+    P.VENDORS_MANAGE,
+    P.PURCHASE_ORDERS_READ,
+    P.PURCHASE_ORDERS_MANAGE,
+    P.INVOICES_READ,
+    P.REQUESTS_READ,
+    P.REQUESTS_APPROVE,
+    P.REPORTS_READ,
+  ],
+
+  // Stockroom / warehouse. Renamed+widened from the legacy "Asset Manager".
+  INVENTORY_MANAGER: [
+    P.ASSETS_READ,
+    P.ASSETS_CREATE,
+    P.ASSETS_UPDATE,
+    P.ASSETS_ASSIGN,
+    P.ASSETS_RETURN,
+    P.ASSETS_TRANSFER,
+    P.INVENTORY_READ,
+    P.INVENTORY_ADJUST,
+    P.QR_GENERATE,
+    P.QR_PRINT,
+    P.REPORTS_READ,
+  ],
+
+  // External supplier. The vendor-portal module does not exist yet, so this role
+  // is seeded as an assignable placeholder with no permissions until it ships.
+  VENDOR: [],
 };
 
 /**
@@ -263,6 +325,13 @@ export const ROLE_DEFAULT_SCOPE: Readonly<Record<SystemRole, DataScope>> = {
   MANAGER: 'DIRECT_REPORTS',
   EMPLOYEE: 'OWN',
   AUDITOR: 'ALL',
+  // v2.1 Workstream C — the five net-new canonical roles.
+  COMPANY_ADMIN: 'ALL',
+  IT_TECHNICIAN: 'ALL',
+  PROCUREMENT_MANAGER: 'ALL',
+  INVENTORY_MANAGER: 'ALL',
+  // External supplier: only ever its own records.
+  VENDOR: 'OWN',
 };
 
 /**
@@ -305,6 +374,108 @@ export function resolveScope(roles: readonly SystemRole[]): DataScope {
   for (const role of roles) {
     const scope = ROLE_DEFAULT_SCOPE[role];
     if (precedence.indexOf(scope) > precedence.indexOf(widest)) widest = scope;
+  }
+  return widest;
+}
+
+const SYSTEM_ROLE_SET: ReadonlySet<string> = new Set(SYSTEM_ROLES);
+
+// ---------------------------------------------------------------------------
+// v2.1 Workstream C — module:resource:action taxonomy layer.
+//
+// v1 permissions are `resource:action`. The v2 blueprint groups them under a
+// coarser `module` and allows wildcard grants (e.g. `assets:*`). This layer maps
+// each permission to its module and provides wildcard matching, WITHOUT rewriting
+// the existing strings — both the plain grant and a `module:*` grant resolve.
+// ---------------------------------------------------------------------------
+
+/** Blueprint module each v1 resource belongs to (blueprint §5). */
+export const RESOURCE_MODULE: Readonly<Record<string, string>> = {
+  assets: 'assets',
+  qr: 'assets',
+  inventory: 'inventory',
+  invoices: 'procurement',
+  vendors: 'procurement',
+  'purchase-orders': 'procurement',
+  requests: 'requests',
+  employees: 'people',
+  onboarding: 'people',
+  offboarding: 'people',
+  maintenance: 'maintenance',
+  reports: 'reports',
+  users: 'admin',
+  roles: 'admin',
+  permissions: 'admin',
+  categories: 'admin',
+  workflows: 'admin',
+  settings: 'admin',
+  ai: 'admin',
+  audit: 'audit',
+};
+
+/** The resource segment (first `:`-separated token) of a permission. */
+export function permissionResource(permission: string): string {
+  return permission.split(':', 1)[0] ?? permission;
+}
+
+/** The blueprint module a permission belongs to (falls back to its resource). */
+export function permissionModule(permission: string): string {
+  const resource = permissionResource(permission);
+  return RESOURCE_MODULE[resource] ?? resource;
+}
+
+/**
+ * Does a grant satisfy a required permission? Supports `*` wildcard segments,
+ * so `assets:*` matches `assets:read` and `assets:cost:read`, `*` matches
+ * anything, and a plain grant matches only itself. Non-trailing wildcards match
+ * exactly one segment (`assets:*:read`).
+ */
+export function permissionMatches(grant: string, required: string): boolean {
+  if (grant === required) return true;
+  const g = grant.split(':');
+  const r = required.split(':');
+  for (let i = 0; i < g.length; i++) {
+    if (g[i] === '*') {
+      // A trailing `*` covers one-or-more remaining segments; a middle `*`
+      // matches exactly the one segment at this position.
+      if (i === g.length - 1) return r.length > i;
+      if (r[i] === undefined) return false;
+      continue;
+    }
+    if (g[i] !== r[i]) return false;
+  }
+  return g.length === r.length;
+}
+
+/** True when any of the held grants (possibly wildcards) satisfies `required`. */
+export function grantsSatisfy(grants: readonly string[], required: string): boolean {
+  return grants.some((grant) => permissionMatches(grant, required));
+}
+
+/** A user's assignment of a role, with an optional per-assignment scope override. */
+export interface RoleAssignment {
+  readonly roleKey: string;
+  /** Overrides the role's default scope for this user; null/undefined = use the default. */
+  readonly scopeOverride?: DataScope | null;
+}
+
+/**
+ * v2.1 Workstream C — effective scope honouring a per-assignment override.
+ *
+ * Each assignment resolves to `scopeOverride ?? ROLE_DEFAULT_SCOPE[role]` (unknown
+ * roles fail closed to OWN); the widest across all of a user's assignments wins,
+ * exactly like {@link resolveScope}. With no overrides this equals
+ * `resolveScope` over the known roles, so it is a safe superset of v1 behaviour.
+ */
+export function resolveEffectiveScope(assignments: readonly RoleAssignment[]): DataScope {
+  const precedence: readonly DataScope[] = ['OWN', 'DIRECT_REPORTS', 'DEPARTMENT', 'ALL'];
+  let widest: DataScope = 'OWN';
+  for (const a of assignments) {
+    const roleDefault: DataScope = SYSTEM_ROLE_SET.has(a.roleKey)
+      ? ROLE_DEFAULT_SCOPE[a.roleKey as SystemRole]
+      : 'OWN';
+    const effective = a.scopeOverride ?? roleDefault;
+    if (precedence.indexOf(effective) > precedence.indexOf(widest)) widest = effective;
   }
   return widest;
 }

@@ -1,7 +1,19 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, Text, View } from 'react-native';
-import type { AssetStatus, AssetCondition } from '@techpioasset/domain';
+import type {
+  AssetStatus,
+  AssetCondition,
+  LifecycleState,
+  AvailabilityState,
+  OwnershipType,
+} from '@techpioasset/domain';
+import {
+  LIFECYCLE_STATE_TOKENS,
+  AVAILABILITY_STATE_TOKENS,
+  TONE_PALETTE_DARK,
+  TONE_PALETTE_LIGHT,
+} from '@techpioasset/ui-tokens';
 import { useSession } from '../../src/providers/session';
 import { useTheme, statusColor, statusLabel } from '../../src/theme';
 import { Card, Chevron, EmptyState, Field, IconBadge, StatusPill } from '../../src/components/ui';
@@ -12,6 +24,10 @@ interface AssetRow {
   name: string;
   status: AssetStatus;
   condition: AssetCondition;
+  // v2.1 Workstream A — nullable until backfilled / dual-written.
+  lifecycleState: LifecycleState | null;
+  availabilityState: AvailabilityState | null;
+  ownershipType: OwnershipType | null;
   serialNumber: string | null;
   category: { name: string } | null;
   assignedUser: { profile: { displayName: string | null } | null } | null;
@@ -22,6 +38,7 @@ export default function AssetsScreen() {
   const { api } = useSession();
   const router = useRouter();
   const { c, scheme, spacing } = useTheme();
+  const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
 
   const [rows, setRows] = useState<AssetRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,8 +109,34 @@ export default function AssetsScreen() {
                 {item.category ? ` · ${item.category.name}` : ''}
                 {holder ? ` · ${holder}` : ''}
               </Text>
-              <View style={{ marginTop: 8 }}>
+              <View
+                style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
+              >
                 <StatusPill label={statusLabel(item.status)} bg={tone.bg} fg={tone.fg} />
+                {item.lifecycleState
+                  ? (() => {
+                      const t = palette[LIFECYCLE_STATE_TOKENS[item.lifecycleState].tone];
+                      return (
+                        <StatusPill
+                          label={LIFECYCLE_STATE_TOKENS[item.lifecycleState].label}
+                          bg={t.bg}
+                          fg={t.fg}
+                        />
+                      );
+                    })()
+                  : null}
+                {item.availabilityState
+                  ? (() => {
+                      const t = palette[AVAILABILITY_STATE_TOKENS[item.availabilityState].tone];
+                      return (
+                        <StatusPill
+                          label={AVAILABILITY_STATE_TOKENS[item.availabilityState].label}
+                          bg={t.bg}
+                          fg={t.fg}
+                        />
+                      );
+                    })()
+                  : null}
               </View>
             </View>
             <Chevron />

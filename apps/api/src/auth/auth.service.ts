@@ -2,7 +2,13 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { AuditAction, UserStatus, VerificationPurpose } from '@prisma/client';
 import type { AuthUser } from '@techpioasset/contracts';
-import { resolveScope, type DataScope, type SystemRole } from '@techpioasset/domain';
+import {
+  resolveScope,
+  resolveEffectiveScope,
+  SYSTEM_ROLES,
+  type DataScope,
+  type SystemRole,
+} from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { getRequestContext } from '../common/request-context.js';
 import { AppConfig } from '../config/config.module.js';
@@ -514,21 +520,23 @@ export class AuthService {
       for (const grant of link.role.permissions) permissions.add(grant.permission.key);
     }
 
-    // Scope comes from the seeded system-role keys. A custom role that is not one
-    // of the eight falls through to OWN - the safe default.
+    // Scope comes from the seeded system-role keys. A custom role that is not a
+    // known system role falls through to OWN - the safe default.
     const knownRoles = roleKeys.filter((key): key is SystemRole =>
-      [
-        'SUPER_ADMIN',
-        'IT_ADMIN',
-        'HR',
-        'OFFICE_ADMIN',
-        'FINANCE',
-        'MANAGER',
-        'EMPLOYEE',
-        'AUDITOR',
-      ].includes(key),
+      (SYSTEM_ROLES as readonly string[]).includes(key),
     );
-    const scope: DataScope = knownRoles.length > 0 ? resolveScope(knownRoles) : 'OWN';
+    // v2.1 Workstream C: when RBAC_SCOPES is on, honour each assignment's scope
+    // override (UserRole.scope); otherwise keep v1's role-default resolution.
+    const scope: DataScope = this.config.get('RBAC_SCOPES')
+      ? resolveEffectiveScope(
+          user.roles.map((link) => ({
+            roleKey: link.role.key,
+            scopeOverride: (link.scope as DataScope | null) ?? null,
+          })),
+        )
+      : knownRoles.length > 0
+        ? resolveScope(knownRoles)
+        : 'OWN';
 
     return {
       id: user.id,
