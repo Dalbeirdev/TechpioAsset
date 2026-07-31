@@ -311,6 +311,78 @@ export function resolveScope(roles: readonly SystemRole[]): DataScope {
 
 const SYSTEM_ROLE_SET: ReadonlySet<string> = new Set(SYSTEM_ROLES);
 
+// ---------------------------------------------------------------------------
+// v2.1 Workstream C — module:resource:action taxonomy layer.
+//
+// v1 permissions are `resource:action`. The v2 blueprint groups them under a
+// coarser `module` and allows wildcard grants (e.g. `assets:*`). This layer maps
+// each permission to its module and provides wildcard matching, WITHOUT rewriting
+// the existing strings — both the plain grant and a `module:*` grant resolve.
+// ---------------------------------------------------------------------------
+
+/** Blueprint module each v1 resource belongs to (blueprint §5). */
+export const RESOURCE_MODULE: Readonly<Record<string, string>> = {
+  assets: 'assets',
+  qr: 'assets',
+  inventory: 'inventory',
+  invoices: 'procurement',
+  vendors: 'procurement',
+  'purchase-orders': 'procurement',
+  requests: 'requests',
+  employees: 'people',
+  onboarding: 'people',
+  offboarding: 'people',
+  maintenance: 'maintenance',
+  reports: 'reports',
+  users: 'admin',
+  roles: 'admin',
+  permissions: 'admin',
+  categories: 'admin',
+  workflows: 'admin',
+  settings: 'admin',
+  ai: 'admin',
+  audit: 'audit',
+};
+
+/** The resource segment (first `:`-separated token) of a permission. */
+export function permissionResource(permission: string): string {
+  return permission.split(':', 1)[0] ?? permission;
+}
+
+/** The blueprint module a permission belongs to (falls back to its resource). */
+export function permissionModule(permission: string): string {
+  const resource = permissionResource(permission);
+  return RESOURCE_MODULE[resource] ?? resource;
+}
+
+/**
+ * Does a grant satisfy a required permission? Supports `*` wildcard segments,
+ * so `assets:*` matches `assets:read` and `assets:cost:read`, `*` matches
+ * anything, and a plain grant matches only itself. Non-trailing wildcards match
+ * exactly one segment (`assets:*:read`).
+ */
+export function permissionMatches(grant: string, required: string): boolean {
+  if (grant === required) return true;
+  const g = grant.split(':');
+  const r = required.split(':');
+  for (let i = 0; i < g.length; i++) {
+    if (g[i] === '*') {
+      // A trailing `*` covers one-or-more remaining segments; a middle `*`
+      // matches exactly the one segment at this position.
+      if (i === g.length - 1) return r.length > i;
+      if (r[i] === undefined) return false;
+      continue;
+    }
+    if (g[i] !== r[i]) return false;
+  }
+  return g.length === r.length;
+}
+
+/** True when any of the held grants (possibly wildcards) satisfies `required`. */
+export function grantsSatisfy(grants: readonly string[], required: string): boolean {
+  return grants.some((grant) => permissionMatches(grant, required));
+}
+
 /** A user's assignment of a role, with an optional per-assignment scope override. */
 export interface RoleAssignment {
   readonly roleKey: string;

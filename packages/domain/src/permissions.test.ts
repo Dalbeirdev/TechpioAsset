@@ -12,6 +12,9 @@ import {
   resolvePermissions,
   resolveScope,
   resolveEffectiveScope,
+  permissionModule,
+  permissionMatches,
+  grantsSatisfy,
   ReadOnlyRoleViolationError,
   type Permission,
 } from './permissions';
@@ -193,5 +196,43 @@ describe('resolveEffectiveScope (v2.1 per-assignment override)', () => {
 
   it('empty assignments resolve to OWN', () => {
     expect(resolveEffectiveScope([])).toBe('OWN');
+  });
+});
+
+describe('module:resource:action taxonomy (v2.1 WS-C)', () => {
+  it('maps every catalogue permission to a module', () => {
+    for (const permission of ALL_PERMISSIONS) {
+      expect(permissionModule(permission), permission).toBeTruthy();
+    }
+    expect(permissionModule('assets:read')).toBe('assets');
+    expect(permissionModule('invoices:verify')).toBe('procurement');
+    expect(permissionModule('purchase-orders:manage')).toBe('procurement');
+    expect(permissionModule('users:manage')).toBe('admin');
+    expect(permissionModule('audit:read')).toBe('audit');
+  });
+
+  it('an exact grant matches only itself', () => {
+    expect(permissionMatches('assets:read', 'assets:read')).toBe(true);
+    expect(permissionMatches('assets:read', 'assets:update')).toBe(false);
+  });
+
+  it('a trailing wildcard covers one-or-more remaining segments', () => {
+    expect(permissionMatches('assets:*', 'assets:read')).toBe(true);
+    expect(permissionMatches('assets:*', 'assets:cost:read')).toBe(true);
+    expect(permissionMatches('assets:*', 'invoices:read')).toBe(false);
+    // `assets:*` needs at least one more segment — bare `assets` does not match.
+    expect(permissionMatches('assets:*', 'assets')).toBe(false);
+  });
+
+  it('a lone `*` matches everything; a middle wildcard matches one segment', () => {
+    expect(permissionMatches('*', 'anything:at:all')).toBe(true);
+    expect(permissionMatches('assets:*:read', 'assets:cost:read')).toBe(true);
+    expect(permissionMatches('assets:*:read', 'assets:cost:write')).toBe(false);
+  });
+
+  it('grantsSatisfy resolves a required permission against a wildcard grant set', () => {
+    expect(grantsSatisfy(['reports:read', 'assets:*'], 'assets:dispose')).toBe(true);
+    expect(grantsSatisfy(['reports:read', 'assets:*'], 'invoices:verify')).toBe(false);
+    expect(grantsSatisfy(['*'], 'anything:goes')).toBe(true);
   });
 });
