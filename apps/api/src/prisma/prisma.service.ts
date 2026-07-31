@@ -102,13 +102,43 @@ type TenantTxClient = Omit<
   '$connect' | '$disconnect' | '$on' | '$use' | '$transaction' | '$extends'
 >;
 
+/**
+ * Wrap a tenant-bound transaction client so callers can still use `$transaction`.
+ *
+ * Services in this codebase open their own `client.$transaction(...)`, but Prisma
+ * cannot nest interactive transactions. Inside a request-scoped tenant transaction
+ * we therefore FLATTEN: a nested `$transaction(cb)` just runs `cb` with the same
+ * tenant tx (so it participates in the one transaction), and the array form awaits
+ * its queries in order on that tx. Trade-off: inner failures roll back the whole
+ * request transaction rather than independently — acceptable under RLS_ENFORCE.
+ */
+function tenantTxProxy(tx: TenantTxClient): ExtendedPrismaClient {
+  const proxy = new Proxy(tx as object, {
+    get(target, prop, receiver) {
+      if (prop === '$transaction') {
+        return async (arg: unknown) => {
+          if (typeof arg === 'function') return (arg as (c: unknown) => unknown)(proxy);
+          if (Array.isArray(arg)) {
+            const out: unknown[] = [];
+            for (const p of arg) out.push(await p);
+            return out;
+          }
+          throw new Error('Unsupported $transaction argument inside an RLS tenant transaction');
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as unknown as ExtendedPrismaClient;
+  return proxy;
+}
+
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
   private readonly base: ExtendedPrismaClient;
   // v2.1 Workstream B — when a request runs inside `runInTenant`, the tenant-bound
-  // transaction client lives here so `client` resolves to it transparently.
-  private readonly tenantTx = new AsyncLocalStorage<TenantTxClient>();
+  // (proxied) transaction client lives here so `client` resolves to it transparently.
+  private readonly tenantTx = new AsyncLocalStorage<ExtendedPrismaClient>();
 
   constructor(config: AppConfig) {
     this.base = createPrismaClient(config.get('DATABASE_URL'), config.get('STATUS_MODEL_V2'));
@@ -121,7 +151,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
    * isolation. Back-compatible: with no active tenant transaction this is `base`.
    */
   get client(): ExtendedPrismaClient {
-    return (this.tenantTx.getStore() as ExtendedPrismaClient | undefined) ?? this.base;
+    return this.tenantTx.getStore() ?? this.base;
   }
 
   /**
@@ -136,7 +166,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   async runInTenant<T>(companyId: string, fn: () => Promise<T>): Promise<T> {
     return this.base.$transaction(async (tx) => {
       await tx.$executeRawUnsafe("SELECT set_config('app.tenant_id', $1, true)", companyId);
-      return this.tenantTx.run(tx as unknown as TenantTxClient, fn);
+      return this.tenantTx.run(tenantTxProxy(tx as TenantTxClient), fn);
     });
   }
 
