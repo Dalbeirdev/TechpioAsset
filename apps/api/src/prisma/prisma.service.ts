@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { deriveDimensionsFromLegacy, type AssetStatus, type ConditionGrade } from '@techpioasset/domain';
@@ -95,13 +96,48 @@ export function createPrismaClient(datasourceUrl?: string, statusModelV2 = false
 
 export type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
 
+/** The client bound to an interactive transaction (no lifecycle/tx-control methods). */
+type TenantTxClient = Omit<
+  ExtendedPrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$use' | '$transaction' | '$extends'
+>;
+
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
-  readonly client: ExtendedPrismaClient;
+  private readonly base: ExtendedPrismaClient;
+  // v2.1 Workstream B — when a request runs inside `runInTenant`, the tenant-bound
+  // transaction client lives here so `client` resolves to it transparently.
+  private readonly tenantTx = new AsyncLocalStorage<TenantTxClient>();
 
   constructor(config: AppConfig) {
-    this.client = createPrismaClient(config.get('DATABASE_URL'), config.get('STATUS_MODEL_V2'));
+    this.base = createPrismaClient(config.get('DATABASE_URL'), config.get('STATUS_MODEL_V2'));
+  }
+
+  /**
+   * The Prisma client to use. Normally the base client; inside `runInTenant` it is
+   * the tenant-bound transaction client, so every query sees `app.tenant_id` set
+   * and the RLS policies (see the enable_row_level_security migration) enforce
+   * isolation. Back-compatible: with no active tenant transaction this is `base`.
+   */
+  get client(): ExtendedPrismaClient {
+    return (this.tenantTx.getStore() as ExtendedPrismaClient | undefined) ?? this.base;
+  }
+
+  /**
+   * Run `fn` inside a transaction with `app.tenant_id` set to `companyId`, so the
+   * RLS policies scope every query to that tenant. Requires the app to connect as
+   * a NON-superuser role (superusers bypass RLS — see deploy/rls-app-role.sql).
+   *
+   * Enforcement is opt-in and gated by RLS_ENFORCE at the call site; this method
+   * is the mechanism, verified against a non-superuser role. (Global auto-wiring
+   * must first reconcile with services that open their own transactions — see #10.)
+   */
+  async runInTenant<T>(companyId: string, fn: () => Promise<T>): Promise<T> {
+    return this.base.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("SELECT set_config('app.tenant_id', $1, true)", companyId);
+      return this.tenantTx.run(tx as unknown as TenantTxClient, fn);
+    });
   }
 
   /**
@@ -115,7 +151,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
    */
   async onModuleInit(): Promise<void> {
     try {
-      await this.client.$connect();
+      await this.base.$connect();
       this.logger.log('Database connection established');
     } catch (error) {
       this.logger.error(
@@ -126,13 +162,13 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.client.$disconnect();
+    await this.base.$disconnect();
   }
 
   /** Round-trip used by the readiness probe. */
   async ping(): Promise<number> {
     const started = process.hrtime.bigint();
-    await this.client.$queryRaw`SELECT 1`;
+    await this.base.$queryRaw`SELECT 1`;
     return Number((process.hrtime.bigint() - started) / 1_000_000n);
   }
 }
