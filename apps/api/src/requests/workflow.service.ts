@@ -137,7 +137,11 @@ export class WorkflowService {
     const approval = await this.prisma.client.requestApproval.findFirst({
       where: { requestId: input.requestId, decision: ApprovalDecision.PENDING },
       orderBy: { stepOrder: 'asc' },
-      include: { request: { include: { requester: { include: { profile: true } } } } },
+      include: {
+        request: {
+          include: { requester: { include: { profile: { include: { department: true } } } } },
+        },
+      },
     });
 
     if (!approval) {
@@ -163,7 +167,9 @@ export class WorkflowService {
       actorRoleKeys: input.actorRoleKeys,
       requesterId: approval.request.requester.id,
       requesterManagerId: approval.request.requester.profile?.managerId ?? null,
-      requesterDepartmentHeadId: null,
+      // v2.2 Workstream D — resolve the requester's department head so
+      // DEPARTMENT_HEAD steps are approvable (were hardcoded null / un-approvable).
+      requesterDepartmentHeadId: approval.request.requester.profile?.department?.headId ?? null,
     });
 
     if (!permitted) {
