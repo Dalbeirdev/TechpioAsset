@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { ASSET_STATUSES, ASSET_CONDITIONS, TRACKING_TYPES } from '@techpioasset/domain';
+import {
+  ASSET_STATUSES,
+  ASSET_CONDITIONS,
+  TRACKING_TYPES,
+  LIFECYCLE_STATES,
+  AVAILABILITY_STATES,
+  OWNERSHIP_TYPES,
+} from '@techpioasset/domain';
 import { moneyString } from './money.js';
 
 /** Asset contracts (spec sections 5, 6, 12). */
@@ -7,6 +14,11 @@ import { moneyString } from './money.js';
 export const assetStatusEnum = z.enum(ASSET_STATUSES);
 export const assetConditionEnum = z.enum(ASSET_CONDITIONS);
 export const trackingTypeEnum = z.enum(TRACKING_TYPES);
+
+// v2.1 Workstream A — the four status dimensions (see @techpioasset/domain).
+export const lifecycleStateEnum = z.enum(LIFECYCLE_STATES);
+export const availabilityStateEnum = z.enum(AVAILABILITY_STATES);
+export const ownershipTypeEnum = z.enum(OWNERSHIP_TYPES);
 
 /** Money arrives as a string so it never round-trips through IEEE-754. */
 
@@ -44,6 +56,9 @@ export const createAssetSchema = z.object({
 
   condition: assetConditionEnum.default('GOOD'),
   status: assetStatusEnum.default('DRAFT'),
+  // v2.1 Workstream A — optional; lifecycle/availability are derived from status
+  // on write when STATUS_MODEL_V2 is on. Ownership is orthogonal, so it is set here.
+  ownershipType: ownershipTypeEnum.optional(),
   notes: z.string().trim().max(4000).optional().nullable(),
 
   /**
@@ -81,6 +96,10 @@ export const assetListQuerySchema = z.object({
   assignedUserId: z.string().optional(),
   condition: assetConditionEnum.optional(),
   vendorId: z.string().optional(),
+  // v2.1 Workstream A — filter by any of the four status dimensions (AST-051).
+  lifecycleState: lifecycleStateEnum.optional(),
+  availabilityState: availabilityStateEnum.optional(),
+  ownershipType: ownershipTypeEnum.optional(),
 });
 export type AssetListQuery = z.infer<typeof assetListQuerySchema>;
 
