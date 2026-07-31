@@ -86,10 +86,15 @@ export class ScheduledController {
     description: 'Super Admin trigger for the sweep that also runs on a daily timer.',
   })
   async runAlerts() {
-    const [warranty, maintenance] = await Promise.all([
+    const [warranty, maintenance, escalations] = await Promise.all([
       this.sweep.runWarrantySweep(),
       this.sweep.runMaintenanceSweep(),
+      this.sweep.runApprovalEscalationSweep(),
     ]);
-    return { warrantyAlerts: warranty, maintenanceAlerts: maintenance };
+    return {
+      warrantyAlerts: warranty,
+      maintenanceAlerts: maintenance,
+      approvalEscalations: escalations,
+    };
   }
 }

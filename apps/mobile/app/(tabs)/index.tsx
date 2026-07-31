@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, Text, View } from 'react-native';
-import { PERMISSIONS, type AssetStatus, type AssetCondition } from '@techpioasset/domain';
+import type { AssetStatus, AssetCondition } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
 import { useTheme, statusColor, statusLabel } from '../../src/theme';
 import {
@@ -13,6 +13,7 @@ import {
   SectionTitle,
   StatCard,
   StatusPill,
+  type IconName,
 } from '../../src/components/ui';
 
 interface AssetRow {
@@ -24,38 +25,61 @@ interface AssetRow {
   serialNumber: string | null;
 }
 
-/** Home: a quick overview plus the equipment issued to the signed-in user. */
+interface Tile {
+  key: string;
+  label: string;
+  value: number;
+  icon: string;
+  tone: 'neutral' | 'info' | 'progress' | 'success' | 'warning' | 'danger';
+}
+
+// Server (Lucide) icon names → Ionicons.
+const TILE_ICON: Record<string, IconName> = {
+  Boxes: 'cube-outline',
+  ClipboardList: 'document-text-outline',
+  UserCheck: 'checkmark-done-outline',
+  Layers: 'layers-outline',
+  ShieldAlert: 'shield-outline',
+  Wrench: 'construct-outline',
+};
+// Tile key → mobile route (my-assets stays on Home).
+const TILE_ROUTE: Record<string, string> = {
+  'my-open-requests': '/(tabs)/requests',
+  'awaiting-approval': '/(tabs)/approvals',
+  'assets-total': '/(tabs)/assets',
+  'warranty-expiring': '/(tabs)/assets',
+  'open-maintenance': '/maintenance',
+};
+
+/** Home: role-aware KPI tiles plus the equipment issued to the signed-in user. */
 export default function HomeScreen() {
   const { api, user } = useSession();
   const router = useRouter();
   const { c, scheme, spacing } = useTheme();
 
   const [assets, setAssets] = useState<AssetRow[]>([]);
-  const [requestCount, setRequestCount] = useState(0);
-  const [approvalCount, setApprovalCount] = useState(0);
+  const [tiles, setTiles] = useState<Tile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const canApprove = !!user?.permissions.includes(PERMISSIONS.REQUESTS_APPROVE);
   const firstName = (user?.displayName ?? user?.email ?? '').split(/[\s@]/)[0] || 'there';
+
+  const tileTint = (tone: Tile['tone']): string | undefined =>
+    tone === 'warning' ? c.warning : tone === 'danger' ? c.danger : undefined;
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const [mine, reqs, approvals] = await Promise.all([
+      const [mine, summary] = await Promise.all([
         api.request<AssetRow[]>(`/assets?assignedUserId=${user.id}&pageSize=100`),
-        api.request<unknown[]>('/requests?pageSize=50').catch(() => []),
-        canApprove
-          ? api.request<unknown[]>('/requests?awaitingMe=true&pageSize=50').catch(() => [])
-          : Promise.resolve([]),
+        api.request<{ tiles: Tile[] }>('/dashboard').catch(() => ({ tiles: [] })),
       ]);
       setAssets(mine ?? []);
-      setRequestCount((reqs ?? []).length);
-      setApprovalCount((approvals ?? []).length);
+      setTiles(summary?.tiles ?? []);
     } finally {
       setLoading(false);
     }
-  }, [api, user, canApprove]);
+  }, [api, user]);
 
   useEffect(() => {
     void load();
@@ -68,23 +92,28 @@ export default function HomeScreen() {
         {firstName}
       </Text>
 
-      <View style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl }}>
-        <StatCard icon="cube-outline" value={assets.length} label="My assets" />
-        <StatCard
-          icon="document-text-outline"
-          value={requestCount}
-          label="My requests"
-          onPress={() => router.push('/(tabs)/requests')}
-        />
-        {canApprove ? (
-          <StatCard
-            icon="checkmark-done-outline"
-            value={approvalCount}
-            label="To approve"
-            tint={approvalCount > 0 ? c.warning : undefined}
-            onPress={() => router.push('/(tabs)/approvals')}
-          />
-        ) : null}
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: spacing.md,
+          marginBottom: spacing.xl,
+        }}
+      >
+        {tiles.map((tile) => {
+          const route = TILE_ROUTE[tile.key];
+          return (
+            <View key={tile.key} style={{ width: '47%' }}>
+              <StatCard
+                icon={TILE_ICON[tile.icon] ?? 'ellipse-outline'}
+                value={tile.value}
+                label={tile.label}
+                tint={tileTint(tile.tone)}
+                onPress={route ? () => router.push(route as never) : undefined}
+              />
+            </View>
+          );
+        })}
       </View>
 
       <SectionTitle>My assets</SectionTitle>

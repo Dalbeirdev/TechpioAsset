@@ -294,6 +294,7 @@ enum NotificationChannel {
 enum NotificationType {
   NEW_REQUEST
   APPROVAL_REQUIRED
+  APPROVAL_ESCALATED
   REQUEST_APPROVED
   REQUEST_REJECTED
   ASSET_ORDERED
@@ -433,6 +434,7 @@ model Company {
   savedFilters              SavedFilter[]
   scheduledReports          ScheduledReport[]
   physicalInventorySessions PhysicalInventorySession[]
+  approvalDelegations       ApprovalDelegation[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -501,6 +503,9 @@ model User {
   savedFilters             SavedFilter[]
   scheduledReports         ScheduledReport[]
   directReports            UserProfile[]              @relation("LineManager")
+  headedDepartments        Department[]               @relation("DepartmentHead")
+  delegationsGiven         ApprovalDelegation[]       @relation("DelegationDelegator")
+  delegationsReceived      ApprovalDelegation[]       @relation("DelegationDelegate")
 
   /// Email is unique per tenant, not globally: the same person may exist in two companies.
   @@unique([companyId, email])
@@ -810,6 +815,8 @@ model Department {
   parentId   String?
   officeId   String?
   costCentre String?
+  // v2.2 Workstream D — the user who heads this department, for DEPARTMENT_HEAD approvals.
+  headId     String?
   isActive   Boolean @default(true)
 
   createdAt   DateTime  @default(now())
@@ -822,6 +829,7 @@ model Department {
   parent   Department?  @relation("DepartmentTree", fields: [parentId], references: [id], onDelete: SetNull)
   children Department[] @relation("DepartmentTree")
   office   Office?      @relation(fields: [officeId], references: [id], onDelete: SetNull)
+  head     User?        @relation("DepartmentHead", fields: [headId], references: [id], onDelete: SetNull)
 
   profiles      UserProfile[]
   assets        Asset[]
@@ -1678,10 +1686,13 @@ model RequestApproval {
   approverRoleId String?
   approverId     String?
 
-  decision  ApprovalDecision @default(WAITING)
-  decidedAt DateTime?
-  comment   String?
-  slaDueAt  DateTime?
+  decision    ApprovalDecision @default(WAITING)
+  decidedAt   DateTime?
+  comment     String?
+  slaDueAt    DateTime?
+  // v2.2 Workstream D — set when the SLA-escalation sweep has escalated this
+  // overdue step, so it is escalated (and notified) exactly once.
+  escalatedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2167,4 +2178,28 @@ model ScheduledReport {
 
   @@index([companyId, isActive, nextRunAt])
   @@map("scheduled_reports")
+}
+
+// v2.2 Workstream D — an approval delegation: `delegator` lets `delegate` act on
+// their approval steps within an optional window. SoD is preserved by the decide
+// path (a delegate can never approve the delegator's — or their own — request).
+model ApprovalDelegation {
+  id          String    @id @default(cuid())
+  companyId   String
+  delegatorId String
+  delegateId  String
+  startsAt    DateTime?
+  endsAt      DateTime?
+  reason      String?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  delegator User    @relation("DelegationDelegator", fields: [delegatorId], references: [id], onDelete: Cascade)
+  delegate  User    @relation("DelegationDelegate", fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, delegateId])
+  @@index([companyId, delegatorId])
+  @@map("approval_delegations")
 }

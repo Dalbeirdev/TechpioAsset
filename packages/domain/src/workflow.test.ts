@@ -149,4 +149,50 @@ describe('canApproveStep', () => {
       }),
     ).toBe(false);
   });
+
+  // v2.2 Workstream D — a DEPARTMENT_HEAD step is satisfied by the requester's
+  // actual department head, resolved from Department.headId.
+  it('requires the actual department head for a DEPARTMENT_HEAD step', () => {
+    const s = step({ approverType: 'DEPARTMENT_HEAD' });
+    expect(
+      canApproveStep({ step: s, actorId: 'head', actorRoleKeys: [], requesterDepartmentHeadId: 'head' }),
+    ).toBe(true);
+    expect(
+      canApproveStep({ step: s, actorId: 'other', actorRoleKeys: [], requesterDepartmentHeadId: 'head' }),
+    ).toBe(false);
+    expect(
+      canApproveStep({ step: s, actorId: 'head', actorRoleKeys: [], requesterDepartmentHeadId: null }),
+    ).toBe(false);
+  });
+
+  // v2.2 Workstream D — segregation of duties (BR-04, APR-009).
+  it('forbids the requester from approving their own request, even with the approver role', () => {
+    // A ROLE step the requester happens to hold — SoD must still block them.
+    expect(
+      canApproveStep({
+        step: step({ approverRoleKey: 'FINANCE' }),
+        actorId: 'u1',
+        actorRoleKeys: ['FINANCE'],
+        requesterId: 'u1',
+      }),
+    ).toBe(false);
+    // A USER step naming the requester themselves — still blocked.
+    expect(
+      canApproveStep({
+        step: step({ approverType: 'USER', approverUserId: 'u1' }),
+        actorId: 'u1',
+        actorRoleKeys: [],
+        requesterId: 'u1',
+      }),
+    ).toBe(false);
+    // A different eligible approver is unaffected by SoD.
+    expect(
+      canApproveStep({
+        step: step({ approverRoleKey: 'FINANCE' }),
+        actorId: 'u2',
+        actorRoleKeys: ['FINANCE'],
+        requesterId: 'u1',
+      }),
+    ).toBe(true);
+  });
 });

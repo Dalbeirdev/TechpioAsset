@@ -30,6 +30,13 @@ export const NOTIFICATION_CATALOGUE: Readonly<Record<NotificationType, Notificat
     mandatory: true,
     channels: ['IN_APP', 'EMAIL', 'PUSH'],
   },
+  // v2.2 Workstream D — an approval step past its SLA, escalated to the manager.
+  APPROVAL_ESCALATED: {
+    type: 'APPROVAL_ESCALATED',
+    title: 'Approval overdue',
+    mandatory: true,
+    channels: ['IN_APP', 'EMAIL', 'PUSH'],
+  },
   REQUEST_APPROVED: {
     type: 'REQUEST_APPROVED',
     title: 'Request approved',

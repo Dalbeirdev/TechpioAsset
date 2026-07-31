@@ -52,6 +52,21 @@
   --color-chart-3: #f59e0b;
   --color-chart-4: #9333ea;
   --color-chart-5: #dc2626;
+
+  /* Soft tinted icon chips for the marketing pages (bg + foreground pairs).
+     Dark overrides live in `.dark`. Each fg clears AA against its own bg. */
+  --color-tint-blue: #e9f1ff;
+  --color-tint-blue-fg: #2563eb;
+  --color-tint-green: #e2f6ee;
+  --color-tint-green-fg: #0a7f54;
+  --color-tint-purple: #eeeaff;
+  --color-tint-purple-fg: #6d5ae6;
+  --color-tint-amber: #fff0e0;
+  --color-tint-amber-fg: #b45f0d;
+  --color-tint-teal: #e1f5f1;
+  --color-tint-teal-fg: #0e857a;
+  --color-tint-rose: #ffe9ec;
+  --color-tint-rose-fg: #d43a3f;
 }
 
 /* Surface tokens for the dark scheme. Tone tokens (status badge colours) are
@@ -96,6 +111,20 @@
   --color-chart-3: #fbbf24;
   --color-chart-4: #c084fc;
   --color-chart-5: #f87171;
+
+  /* Tinted icon chips — dark scheme. */
+  --color-tint-blue: #15294c;
+  --color-tint-blue-fg: #7db0ff;
+  --color-tint-green: #0f2e24;
+  --color-tint-green-fg: #3fcb93;
+  --color-tint-purple: #221e45;
+  --color-tint-purple-fg: #a99bff;
+  --color-tint-amber: #33230f;
+  --color-tint-amber-fg: #f4a94e;
+  --color-tint-teal: #0e2e2b;
+  --color-tint-teal-fg: #3ac7b6;
+  --color-tint-rose: #37161b;
+  --color-tint-rose-fg: #ff7a80;
 }
 
 @layer base {
@@ -143,5 +172,48 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+  }
+
+  /* Idle motion for the marketing mascot. Frozen by the reduced-motion block. */
+  @keyframes mascotBob {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  @keyframes mascotFloat {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-7px);
+    }
+  }
+  @keyframes mascotTwinkle {
+    0%,
+    100% {
+      opacity: 0.4;
+      transform: scale(0.9);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+  }
+  .mascot-bob {
+    animation: mascotBob 5s ease-in-out infinite;
+    transform-origin: center;
+  }
+  .mascot-float {
+    animation: mascotFloat 4.2s ease-in-out infinite;
+    transform-origin: center;
+  }
+  .mascot-twinkle {
+    animation: mascotTwinkle 3s ease-in-out infinite;
+    transform-origin: center;
   }
 }

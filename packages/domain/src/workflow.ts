@@ -96,10 +96,18 @@ export function canApproveStep(input: {
   step: WorkflowStepLike;
   actorId: string;
   actorRoleKeys: readonly string[];
+  /** The user who raised the request; SoD forbids them approving any of its steps. */
+  requesterId?: string | null;
   requesterManagerId?: string | null;
   requesterDepartmentHeadId?: string | null;
 }): boolean {
   const { step, actorId, actorRoleKeys } = input;
+
+  // v2.2 Workstream D — segregation of duties (BR-04). A requester may never
+  // approve a step of their own request, whatever approver type the step uses
+  // (e.g. a requester who also holds the approving ROLE). Checked first so it
+  // cannot be bypassed by any approver-type match below.
+  if (input.requesterId && actorId === input.requesterId) return false;
 
   switch (step.approverType) {
     case 'USER':
