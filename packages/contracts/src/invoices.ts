@@ -16,6 +16,7 @@ export const invoiceLineInputSchema = z.object({
 /** Manual invoice entry — the AI-disabled path must remain fully usable. */
 export const createInvoiceSchema = z.object({
   vendorId: z.string().min(1),
+  purchaseOrderId: z.string().optional().nullable(),
   invoiceNumber: z.string().trim().min(1).max(100),
   invoiceDate: z.coerce.date(),
   purchaseDate: z.coerce.date().optional().nullable(),

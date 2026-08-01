@@ -15,3 +15,5 @@ export * from './depreciation';
 export * from './warranty';
 export * from './maintenance-status';
 export * from './license';
+export * from './procurement';
+export * from './stock';

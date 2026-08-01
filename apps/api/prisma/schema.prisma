@@ -386,6 +386,14 @@ enum AuditAction {
   LICENSE_RENEWED
   LICENSE_KEY_REVEALED
   LICENSE_ASSIGN_BLOCKED
+  // v2.4 procurement
+  PR_SUBMITTED
+  PR_APPROVED
+  PR_REJECTED
+  PO_ISSUED
+  PO_CANCELLED
+  GRN_RECEIVED
+  MATCH_OVERRIDDEN
 }
 
 enum PhysicalInventoryStatus {
@@ -447,6 +455,9 @@ model Company {
   physicalInventorySessions PhysicalInventorySession[]
   approvalDelegations       ApprovalDelegation[]
   softwareLicenses          SoftwareLicense[]
+  purchaseRequests          PurchaseRequest[]
+  goodsReceipts             GoodsReceipt[]
+  stockLocations            StockLocation[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -519,6 +530,7 @@ model User {
   delegationsGiven         ApprovalDelegation[]       @relation("DelegationDelegator")
   delegationsReceived      ApprovalDelegation[]       @relation("DelegationDelegate")
   licenseAssignments       LicenseAssignment[]        @relation("LicenseAssignee")
+  purchaseRequests         PurchaseRequest[]          @relation("PurchaseRequester")
 
   /// Email is unique per tenant, not globally: the same person may exist in two companies.
   @@unique([companyId, email])
@@ -755,6 +767,7 @@ model Office {
   transfersTo               AssetTransfer[]            @relation("TransferToOffice")
   physicalInventorySessions PhysicalInventorySession[]
   aiOverrides               AIFeatureOverride[]
+  stockLocations            StockLocation[]
 
   @@unique([companyId, code])
   @@index([deletedAt])
@@ -1064,6 +1077,11 @@ model InventoryItem {
 
   transactions InventoryTransaction[]
   invoiceLinks AssetInvoiceLink[]
+  prLines       PurchaseRequestLine[]
+  grnLines      GoodsReceiptLine[]
+  stockLevels   StockLevel[]
+  stockMovements StockMovement[]
+  stockTransfers StockTransfer[]
 
   @@unique([companyId, sku])
   @@index([companyId, categoryId])
@@ -1377,6 +1395,9 @@ model PurchaseOrder {
   vendor   Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   lines    PurchaseOrderLine[]
   invoices Invoice[]
+  receipts GoodsReceipt[]
+  matchResults InvoiceMatchResult[]
+  convertedFromRequests PurchaseRequest[] @relation("RequestConvertedPo")
 
   @@unique([companyId, poNumber])
   @@index([companyId, status])
@@ -1398,6 +1419,7 @@ model PurchaseOrderLine {
   updatedAt DateTime @updatedAt
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  grnLines      GoodsReceiptLine[]
 
   @@unique([purchaseOrderId, lineNumber])
   @@map("purchase_order_lines")
@@ -1453,6 +1475,7 @@ model Invoice {
   extractions   InvoiceExtraction[]
   verifications InvoiceVerification[]
   softwareLicenses SoftwareLicense[]
+  matchResult      InvoiceMatchResult?
 
   /// Deterministic duplicate-invoice-number check (spec section 9).
   @@unique([companyId, invoiceNumber])
@@ -2415,4 +2438,259 @@ model LicenseRenewal {
 
   @@index([licenseId, renewedAt])
   @@map("license_renewals")
+}
+
+// -----------------------------------------------------------------------------
+// v2.4 Procurement & Warehouse Inventory (blueprint Volume III). The stock
+// ledger (stock_movements) is append-only and is the truth; StockLevel is a
+// cached rollup guarded by CHECKs and reconciled by the nightly sweep. Receipts
+// are append-only; over-receipt is refused by a conditional update against
+// PurchaseOrderLine.receivedQuantity (CHECK-backed, like seat pools).
+// -----------------------------------------------------------------------------
+
+enum PurchaseRequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CONVERTED
+  CANCELLED
+}
+
+enum GrnLineIntake {
+  STOCK
+  ASSET
+}
+
+enum StockMovementType {
+  RECEIPT
+  ISSUE
+  ADJUST_UP
+  ADJUST_DOWN
+  TRANSFER_IN
+  TRANSFER_OUT
+  COUNT_CORRECTION
+  CONVERT_TO_ASSET
+}
+
+enum InvoiceMatchOutcome {
+  MATCHED
+  QTY_MISMATCH
+  PRICE_MISMATCH
+  NO_RECEIPT
+  NO_PO
+}
+
+model PurchaseRequest {
+  id        String @id @default(cuid())
+  companyId String
+
+  prNumber    String
+  status      PurchaseRequestStatus @default(DRAFT)
+  requesterId String
+  neededBy    DateTime?
+  /// Why the purchase is needed - approvers read this first.
+  justification  String
+  estimatedTotal Decimal? @db.Decimal(14, 2)
+  currency       String?  @db.Char(3)
+
+  submittedAt    DateTime?
+  approvedById   String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  /// Set when converted; the PO carries the lines from there on.
+  convertedPoId String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requester   User                  @relation("PurchaseRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  convertedPo PurchaseOrder?        @relation("RequestConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  lines       PurchaseRequestLine[]
+
+  @@unique([companyId, prNumber])
+  @@index([companyId, status])
+  @@index([deletedAt])
+  @@map("purchase_requests")
+}
+
+model PurchaseRequestLine {
+  id                String @id @default(cuid())
+  purchaseRequestId String
+
+  lineNumber         Int
+  description        String
+  quantity           Decimal  @db.Decimal(14, 3)
+  estimatedUnitPrice Decimal? @db.Decimal(14, 2)
+  /// Optional link when the line replenishes tracked stock.
+  inventoryItemId String?
+
+  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem?  @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@unique([purchaseRequestId, lineNumber])
+  @@map("purchase_request_lines")
+}
+
+/// Append-only: a receipt is a fact about the loading dock, never edited.
+model GoodsReceipt {
+  id        String @id @default(cuid())
+  companyId String
+
+  grnNumber       String
+  purchaseOrderId String
+  receivedById    String?
+  receivedAt      DateTime @default(now())
+  notes           String?
+
+  createdAt DateTime @default(now())
+
+  company       Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  lines         GoodsReceiptLine[]
+
+  @@unique([companyId, grnNumber])
+  @@index([purchaseOrderId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id             String @id @default(cuid())
+  goodsReceiptId String
+
+  purchaseOrderLineId String
+  /// Always positive (CHECK); over-receipt is refused at the PO line.
+  quantity Decimal       @db.Decimal(14, 3)
+  intake   GrnLineIntake
+  /// STOCK intake posts here; ASSET intake creates a draft asset instead.
+  stockLocationId String?
+  inventoryItemId String?
+  note            String?
+
+  goodsReceipt      GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderLine PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Cascade)
+  stockLocation     StockLocation?    @relation(fields: [stockLocationId], references: [id], onDelete: SetNull)
+  inventoryItem     InventoryItem?    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderLineId])
+  @@map("goods_receipt_lines")
+}
+
+/// One current match verdict per invoice; re-running the match replaces it.
+model InvoiceMatchResult {
+  id        String @id @default(cuid())
+  companyId String
+
+  invoiceId       String              @unique
+  purchaseOrderId String?
+  outcome         InvoiceMatchOutcome
+  /// Honest numbers behind the verdict: per-line qty/price deltas, totals.
+  details        Json
+  overriddenById String?
+  overriddenAt   DateTime?
+  overrideReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice       Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, outcome])
+  @@map("invoice_match_results")
+}
+
+model StockLocation {
+  id        String @id @default(cuid())
+  companyId String
+
+  code     String
+  name     String
+  officeId String?
+  isActive Boolean @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  company  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  office   Office?            @relation(fields: [officeId], references: [id], onDelete: SetNull)
+  levels   StockLevel[]
+  grnLines GoodsReceiptLine[]
+
+  @@unique([companyId, code])
+  @@index([deletedAt])
+  @@map("stock_locations")
+}
+
+/// Cached rollup of the ledger for one (item, location). CHECK-guarded; the
+/// sweep reconciles cache == sum(ledger) and WARNs on drift.
+model StockLevel {
+  id        String @id @default(cuid())
+  companyId String
+
+  inventoryItemId String
+  stockLocationId String
+  quantity        Decimal @default(0) @db.Decimal(14, 3)
+  reserved        Decimal @default(0) @db.Decimal(14, 3)
+
+  updatedAt DateTime @updatedAt
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([inventoryItemId, stockLocationId])
+  @@index([companyId])
+  @@map("stock_levels")
+}
+
+/// The append-only truth. quantity is always positive; the type carries the sign.
+model StockMovement {
+  id        String @id @default(cuid())
+  companyId String
+
+  inventoryItemId String
+  stockLocationId String
+  type            StockMovementType
+  quantity        Decimal           @db.Decimal(14, 3)
+  /// What caused it: a GRN line, a transfer, a count session, an asset.
+  refType String?
+  refId   String?
+  reason  String?
+  actorId String?
+
+  createdAt DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId, stockLocationId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("stock_movements")
+}
+
+/// Single-item location transfer (v2.4 cut); posts TRANSFER_OUT + TRANSFER_IN
+/// ledger rows in one transaction.
+model StockTransfer {
+  id        String @id @default(cuid())
+  companyId String
+
+  inventoryItemId String
+  fromLocationId  String
+  toLocationId    String
+  quantity        Decimal @db.Decimal(14, 3)
+  note            String?
+  movedById       String?
+
+  createdAt DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@map("stock_transfers")
 }

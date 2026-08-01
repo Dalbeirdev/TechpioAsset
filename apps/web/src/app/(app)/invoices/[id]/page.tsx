@@ -9,6 +9,7 @@ import { apiFetch, ApiError, API_BASE, getAccessToken } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
+import { MatchPanel } from '@/components/procurement/match-panel';
 
 interface Issue {
   code: string;
@@ -322,6 +323,12 @@ export default function InvoiceReviewPage({ params }: { params: Promise<{ id: st
               </ul>
             )}
           </Card>
+
+          <MatchPanel
+            invoiceId={id}
+            canRun={can(PERMISSIONS.INVOICES_VERIFY)}
+            canOverride={can(PERMISSIONS.PROCUREMENT_MATCH_OVERRIDE)}
+          />
 
           {verification?.decidedAt ? (
             <Card className="p-4">

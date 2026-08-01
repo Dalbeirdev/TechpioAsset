@@ -19,9 +19,13 @@ export const PERMISSIONS = {
   ASSETS_DISPOSE: 'assets:dispose',
   ASSETS_COST_READ: 'assets:cost:read',
 
-  // Quantity-tracked stock
+  // Quantity-tracked stock. v2.4 adds the warehouse layer: locations,
+  // transfers between them, and converting stock units into tracked assets.
   INVENTORY_READ: 'inventory:read',
   INVENTORY_ADJUST: 'inventory:adjust',
+  INVENTORY_LOCATIONS_MANAGE: 'inventory:locations:manage',
+  INVENTORY_TRANSFER: 'inventory:transfer',
+  INVENTORY_CONVERT: 'inventory:convert',
 
   // Invoices and procurement
   INVOICES_READ: 'invoices:read',
@@ -79,6 +83,17 @@ export const PERMISSIONS = {
   LICENSES_KEYS_REVEAL: 'licenses:keys:reveal',
   LICENSES_COST_READ: 'licenses:cost:read',
 
+  // Procurement (v2.4). Approving above the Finance threshold additionally
+  // requires the cost permission (the standing Finance + Super Admin rule).
+  PROCUREMENT_PR_CREATE: 'procurement:pr:create',
+  PROCUREMENT_PR_READ: 'procurement:pr:read',
+  PROCUREMENT_PR_APPROVE: 'procurement:pr:approve',
+  PROCUREMENT_PR_CONVERT: 'procurement:pr:convert',
+  PROCUREMENT_PO_ISSUE: 'procurement:po:issue',
+  PROCUREMENT_RECEIVE: 'procurement:receive',
+  /** Accept a mismatched three-way match anyway - always audited. */
+  PROCUREMENT_MATCH_OVERRIDE: 'procurement:match:override',
+
   // AI
   AI_CONFIGURE: 'ai:configure',
   AI_REVIEW_RESULTS: 'ai:review-results',
@@ -126,7 +141,7 @@ const P = PERMISSIONS;
 
 /** Actions that only read. Used to prove the Auditor role can never mutate. */
 const WRITE_ACTION_PATTERN =
-  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal)$/;
+  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal|convert|issue|receive|override)$/;
 
 export function isReadOnlyPermission(permission: Permission): boolean {
   return !WRITE_ACTION_PATTERN.test(permission);
@@ -137,6 +152,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
 
   IT_ADMIN: [
     P.ASSETS_READ,
+    P.PROCUREMENT_PR_CREATE,
+    P.PROCUREMENT_PR_READ,
+    P.INVENTORY_TRANSFER,
+    P.INVENTORY_CONVERT,
     P.LICENSES_READ,
     P.LICENSES_CREATE,
     P.LICENSES_UPDATE,
@@ -221,6 +240,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   FINANCE: [
     P.ASSETS_READ,
     P.ASSETS_COST_READ,
+    P.PROCUREMENT_PR_READ,
+    P.PROCUREMENT_PR_APPROVE,
+    P.PROCUREMENT_MATCH_OVERRIDE,
     P.LICENSES_READ,
     P.LICENSES_COST_READ,
     P.LICENSES_RENEW,
@@ -255,6 +277,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   ],
 
   EMPLOYEE: [
+    P.PROCUREMENT_PR_CREATE,
+    P.PROCUREMENT_PR_READ,
     P.ASSETS_READ,
     P.REQUESTS_CREATE,
     P.REQUESTS_READ,
@@ -278,6 +302,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.USERS_READ,
     P.AUDIT_READ,
     P.LICENSES_READ,
+    P.PROCUREMENT_PR_READ,
   ],
 
   // Tenant owner. In single-company v1 this is grant-equivalent to Super Admin;
@@ -307,6 +332,12 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   // Sourcing and purchasing. Owns vendors + POs; approves requests.
   PROCUREMENT_MANAGER: [
     P.ASSETS_READ,
+    P.PROCUREMENT_PR_CREATE,
+    P.PROCUREMENT_PR_READ,
+    P.PROCUREMENT_PR_APPROVE,
+    P.PROCUREMENT_PR_CONVERT,
+    P.PROCUREMENT_PO_ISSUE,
+    P.PROCUREMENT_RECEIVE,
     P.LICENSES_READ,
     P.LICENSES_CREATE,
     P.LICENSES_UPDATE,
@@ -324,6 +355,12 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   // Stockroom / warehouse. Renamed+widened from the legacy "Asset Manager".
   INVENTORY_MANAGER: [
     P.ASSETS_READ,
+    P.PROCUREMENT_PR_READ,
+    P.PROCUREMENT_RECEIVE,
+    P.PURCHASE_ORDERS_READ,
+    P.INVENTORY_LOCATIONS_MANAGE,
+    P.INVENTORY_TRANSFER,
+    P.INVENTORY_CONVERT,
     P.ASSETS_CREATE,
     P.ASSETS_UPDATE,
     P.ASSETS_ASSIGN,

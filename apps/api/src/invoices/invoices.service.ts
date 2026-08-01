@@ -13,6 +13,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
+import { MatchService } from '../procurement/match.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const SORTABLE = [
@@ -30,6 +31,7 @@ export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly match: MatchService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -166,11 +168,20 @@ export class InvoicesService {
     });
     if (!vendor) throw AppError.notFound('Vendor', input.vendorId);
 
+    if (input.purchaseOrderId) {
+      const po = await this.prisma.client.purchaseOrder.findFirst({
+        where: { id: input.purchaseOrderId, ...tenantFilter(actor) },
+        select: { id: true },
+      });
+      if (!po) throw AppError.notFound('Purchase order', input.purchaseOrderId);
+    }
+
     const invoice = await this.prisma.client.invoice.create({
       data: {
         companyId: actor.companyId,
         invoiceNumber: input.invoiceNumber,
         vendorId: input.vendorId,
+        purchaseOrderId: input.purchaseOrderId ?? null,
         invoiceDate: input.invoiceDate,
         purchaseDate: input.purchaseDate ?? null,
         dueDate: input.dueDate ?? null,
@@ -347,6 +358,12 @@ export class InvoicesService {
     // the actor proves a person made this call; an automated path has no userId
     // and would throw AutomatedApprovalError.
     assertHumanDecisionOnly(decision, { userId: actor.id, automated: false });
+
+    // v2.4 P3 - the three-way match gates approval. A PO-linked invoice must
+    // match what was RECEIVED (or carry an audited override) before VERIFIED.
+    if (decision === 'VERIFIED') {
+      await this.match.assertVerifiable(actor, id);
+    }
 
     const latestVerification = await this.prisma.client.invoiceVerification.findFirst({
       where: { invoiceId: id },
