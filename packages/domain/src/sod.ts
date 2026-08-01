@@ -86,6 +86,13 @@ export const SOD_CONFLICTS: readonly SodConflict[] = [
     reason:
       'Can grant themselves or others approval rights and exercise them. Role administration and approval authority should be separated.',
   },
+  {
+    id: 'buy-licences-and-verify-invoices',
+    a: P.LICENSES_CREATE,
+    b: P.INVOICES_VERIFY,
+    reason:
+      'Can record licence purchases and verify the invoices that pay for them — the ordering/payment conflict applied to software.',
+  },
 ];
 
 /** Conflicts triggered by one set of permissions (e.g. a single role's grants). */
