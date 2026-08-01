@@ -1018,6 +1018,12 @@ model Asset {
   fulfilledItems RequestItem[]           @relation("RequestItemFulfilledAsset")
   inventoryScans PhysicalInventoryScan[]
   licenseAssignments LicenseAssignment[] @relation("LicenseAssignedAsset")
+  hardwareProfile      HardwareProfile?
+  osInfo               OperatingSystemInfo?
+  installedSoftware    InstalledSoftware[]
+  health               AssetHealth?
+  discoveredDevices    DiscoveredDevice[]
+  maintenanceSchedules MaintenanceSchedule[]
 
   /// Postgres treats NULLs as distinct in a unique index, so quantity-tracked
   /// rows (which carry no serial) coexist freely while real serials stay unique.
@@ -1261,6 +1267,11 @@ model MaintenanceRecord {
   downtimeHours Decimal? @db.Decimal(8, 2)
 
   warrantyId             String?
+  // v2.5 work-order extensions: who does the work, by when, escalated once.
+  technicianId String?
+  slaDueAt     DateTime?
+  escalatedAt  DateTime?
+  diagnosis    String?
   replacementRecommended Boolean @default(false)
   recommendationNote     String?
   resolutionNotes        String?
@@ -2693,4 +2704,188 @@ model StockTransfer {
 
   @@index([companyId, createdAt])
   @@map("stock_transfers")
+}
+
+// -----------------------------------------------------------------------------
+// v2.5 Discovery, Hardware Detail & Work Orders (blueprint Part B + Vol III A).
+// Discovery NEVER silently mutates assets: DiscoveredDevice is a staging row
+// whose matchState is resolved by exact-serial auto-match or human review.
+// AssetHealth is a derived cache (computedAt) - the domain health module is the
+// authority. Hardware/OS/software rows are replaceable snapshots per asset.
+// -----------------------------------------------------------------------------
+
+enum DiscoverySource {
+  MOCK
+  AGENT
+  INTUNE
+}
+
+enum DiscoveryMatchState {
+  MATCHED
+  PROPOSED
+  CONFLICT
+  UNMATCHED
+  IGNORED
+}
+
+enum SmartStatus {
+  HEALTHY
+  WARNING
+  FAILING
+}
+
+enum HealthGrade {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+  CRITICAL
+}
+
+/// Latest discovered hardware snapshot for an asset (one row, replaced on ingest).
+model HardwareProfile {
+  id        String @id @default(cuid())
+  companyId String
+  assetId   String @unique
+
+  manufacturer      String?
+  modelName         String?
+  cpu               String?
+  cpuCores          Int?
+  ramGb             Decimal? @db.Decimal(8, 1)
+  ramSlotsUsed      Int?
+  ramSlotsTotal     Int?
+  storageTotalGb    Decimal? @db.Decimal(10, 1)
+  storageFreeGb     Decimal? @db.Decimal(10, 1)
+  smartStatus       SmartStatus?
+  batteryHealthPct  Int?
+  batteryCycleCount Int?
+  gpu               String?
+  biosVersion       String?
+
+  source           DiscoverySource
+  lastDiscoveredAt DateTime        @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("hardware_profiles")
+}
+
+/// Latest OS + security-posture snapshot for an asset.
+model OperatingSystemInfo {
+  id        String @id @default(cuid())
+  companyId String
+  assetId   String @unique
+
+  osName      String?
+  osVersion   String?
+  osBuild     String?
+  osSupported Boolean?
+  osActivated Boolean?
+  lastBootAt  DateTime?
+
+  diskEncrypted          Boolean?
+  defenderEnabled        Boolean?
+  firewallEnabled        Boolean?
+  tpmPresent             Boolean?
+  localAdminCount        Int?
+  missingCriticalPatches Int?
+
+  source           DiscoverySource
+  lastDiscoveredAt DateTime        @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("operating_system_info")
+}
+
+/// Discovered software inventory rows; replaced wholesale per ingest.
+model InstalledSoftware {
+  id        String @id @default(cuid())
+  companyId String
+  assetId   String
+
+  name        String
+  version     String?
+  publisher   String?
+  installedAt DateTime?
+
+  lastDiscoveredAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, name])
+  @@index([companyId])
+  @@map("installed_software")
+}
+
+/// Staging row for a device seen by discovery. Exact-serial matches auto-link;
+/// everything else waits for a human (PROPOSED/CONFLICT) or stays UNMATCHED.
+model DiscoveredDevice {
+  id        String @id @default(cuid())
+  companyId String
+
+  externalId   String?
+  serialNumber String?
+  hostname     String?
+  source       DiscoverySource
+  matchState   DiscoveryMatchState @default(UNMATCHED)
+  assetId      String?
+  /// The raw ingest payload, kept verbatim for review and re-processing.
+  payload Json
+
+  firstSeenAt  DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  reviewedById String?
+  reviewedAt   DateTime?
+
+  asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, matchState])
+  @@index([companyId, serialNumber])
+  @@map("discovered_devices")
+}
+
+/// Derived health cache. The domain module is the authority; the sweep recomputes.
+model AssetHealth {
+  id        String @id @default(cuid())
+  companyId String
+  assetId   String @unique
+
+  overall Int
+  grade   HealthGrade
+  /// Per-sub-score breakdown: [{ key, score, weight }] - honest numbers.
+  subScores       Json
+  recommendations Json
+  capped          Boolean  @default(false)
+  computedAt      DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, grade])
+  @@map("asset_health")
+}
+
+/// Preventive maintenance recurrence; the sweep spawns REQUESTED work orders.
+model MaintenanceSchedule {
+  id        String @id @default(cuid())
+  companyId String
+  assetId   String
+
+  title         String
+  intervalDays  Int
+  nextDueAt     DateTime
+  lastCreatedAt DateTime?
+  isActive      Boolean   @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, nextDueAt])
+  @@map("maintenance_schedules")
 }
