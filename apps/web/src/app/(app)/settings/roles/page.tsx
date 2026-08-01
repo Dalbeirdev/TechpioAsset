@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Lock, Pencil, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, KeyRound, Lock, Pencil, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, EmptyState, ErrorState, Field, Input, Skeleton } from '@/components/ui';
 import { Textarea } from '@/components/ui/textarea';
-import { PERMISSIONS } from '@techpioasset/domain';
+import { PERMISSIONS, findSodConflicts } from '@techpioasset/domain';
 
 interface RoleListItem {
   id: string;
@@ -283,6 +283,9 @@ function RoleEditor({
 
   const nameError = save.error && name.trim().length < 2 ? 'Give the role a name' : undefined;
   const inUse = !isNew && (loaded?.userCount ?? 0) > 0;
+  // Live segregation-of-duties check over the current selection. Advisory only —
+  // save still succeeds; the point is that combining duties is a *choice*.
+  const sodConflicts = findSodConflicts([...perms]);
 
   return (
     <Card className="grid gap-5 p-6">
@@ -406,6 +409,29 @@ function RoleEditor({
           </div>
         )}
       </div>
+
+      {/* Segregation-of-duties warnings — advisory, never blocking */}
+      {sodConflicts.length > 0 ? (
+        <div
+          role="alert"
+          className="rounded-[var(--radius-card)] border border-[var(--tone-warning-fg)]/30 bg-[var(--tone-warning-bg)] p-3"
+        >
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-[var(--tone-warning-fg)]">
+            <AlertTriangle className="size-4" />
+            {sodConflicts.length} segregation-of-duties warning{sodConflicts.length === 1 ? '' : 's'}
+          </p>
+          <ul className="mt-2 grid gap-1.5">
+            {sodConflicts.map((c) => (
+              <li key={c.id} className="text-[12.5px] leading-snug text-[var(--tone-warning-fg)]">
+                {c.reason}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11.5px] text-[var(--tone-warning-fg)]/80">
+            You can still save — combining duties is allowed, but should be a deliberate choice.
+          </p>
+        </div>
+      ) : null}
 
       {/* Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">

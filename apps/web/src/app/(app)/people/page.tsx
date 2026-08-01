@@ -2,8 +2,8 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Search, Settings2 } from 'lucide-react';
-import { PERMISSIONS, SYSTEM_ROLES } from '@techpioasset/domain';
+import { AlertTriangle, Download, Search, Settings2 } from 'lucide-react';
+import { PERMISSIONS, SYSTEM_ROLES, findSodConflicts } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -59,6 +59,24 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   const [roleKeys, setRoleKeys] = useState<string[]>(user.roles.map((r) => r.role.key));
   const [error, setError] = useState<string | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(true);
+
+  // WS-G — the tenant's full role list (system + custom) with each role's
+  // permission keys, so the picker offers custom roles and can compute live
+  // SoD warnings over the union of the selection. Falls back to system roles
+  // if the fetch fails so the modal never goes blank.
+  const tenantRoles = useQuery({
+    queryKey: ['roles'],
+    enabled: canRoles,
+    queryFn: () =>
+      apiFetch<{ key: string; name: string; isSystem: boolean; permissions: string[] }[]>('/roles'),
+    staleTime: 60_000,
+  });
+  const roleOptions =
+    tenantRoles.data ??
+    SYSTEM_ROLES.map((key) => ({ key, name: roleLabel(key), isSystem: true, permissions: [] }));
+  const sodConflicts = findSodConflicts(
+    roleOptions.filter((r) => roleKeys.includes(r.key)).flatMap((r) => r.permissions),
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -139,18 +157,41 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                 Roles
               </legend>
               <div className="mt-2 grid grid-cols-2 gap-1.5">
-                {SYSTEM_ROLES.map((key) => (
-                  <label key={key} className="flex items-center gap-2 text-sm">
+                {roleOptions.map((r) => (
+                  <label key={r.key} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
-                      checked={roleKeys.includes(key)}
-                      onChange={() => toggleRole(key)}
+                      checked={roleKeys.includes(r.key)}
+                      onChange={() => toggleRole(r.key)}
                       className="size-4 rounded border-[var(--color-border-strong)]"
                     />
-                    {roleLabel(key)}
+                    <span className="min-w-0 truncate">{r.name}</span>
+                    {!r.isSystem ? (
+                      <span className="rounded-full bg-[var(--color-brand)]/10 px-1.5 text-[10px] font-semibold text-[var(--color-brand)]">
+                        custom
+                      </span>
+                    ) : null}
                   </label>
                 ))}
               </div>
+              {sodConflicts.length > 0 ? (
+                <div
+                  role="alert"
+                  className="mt-3 rounded-[var(--radius-card)] border border-[var(--tone-warning-fg)]/30 bg-[var(--tone-warning-bg)] p-2.5"
+                >
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--tone-warning-fg)]">
+                    <AlertTriangle className="size-3.5" />
+                    Segregation-of-duties warning
+                  </p>
+                  <ul className="mt-1.5 grid gap-1">
+                    {sodConflicts.map((c) => (
+                      <li key={c.id} className="text-[11.5px] leading-snug text-[var(--tone-warning-fg)]">
+                        {c.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <Button
                 className="mt-3"
                 size="sm"
