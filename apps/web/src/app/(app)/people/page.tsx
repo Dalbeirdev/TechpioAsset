@@ -77,6 +77,14 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   const sodConflicts = findSodConflicts(
     roleOptions.filter((r) => roleKeys.includes(r.key)).flatMap((r) => r.permissions),
   );
+  // Saving a conflicting combination requires an explicit acknowledgment
+  // (RBAC-024); a changed conflict set is a new decision, so the tick resets.
+  const [sodAcknowledged, setSodAcknowledged] = useState(false);
+  const sodKey = sodConflicts.map((c) => c.id).join('|');
+  useEffect(() => {
+    setSodAcknowledged(false);
+  }, [sodKey]);
+  const sodBlocked = sodConflicts.length > 0 && !sodAcknowledged;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -190,13 +198,23 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                       </li>
                     ))}
                   </ul>
+                  <label className="mt-2 flex items-start gap-2 text-[11.5px] font-medium text-[var(--tone-warning-fg)]">
+                    <input
+                      type="checkbox"
+                      checked={sodAcknowledged}
+                      onChange={(e) => setSodAcknowledged(e.target.checked)}
+                      className="mt-0.5 size-3.5 accent-[var(--tone-warning-fg)]"
+                    />
+                    I understand this combination conflicts, and I accept the risk.
+                  </label>
                 </div>
               ) : null}
               <Button
                 className="mt-3"
                 size="sm"
                 loading={saveRoles.isPending}
-                disabled={roleKeys.length === 0 || busy}
+                disabled={roleKeys.length === 0 || busy || sodBlocked}
+                title={sodBlocked ? 'Acknowledge the segregation-of-duties warning first' : undefined}
                 onClick={() => saveRoles.mutate()}
               >
                 Save roles

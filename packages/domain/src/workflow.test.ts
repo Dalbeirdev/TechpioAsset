@@ -45,12 +45,14 @@ describe('pendingStatusForApprover', () => {
 });
 
 describe('shouldSkipStep', () => {
-  it('skips when the estimate is at or below the threshold', () => {
+  it('skips only when the estimate is strictly below the threshold', () => {
     expect(shouldSkipStep(step({ costThreshold: '100.00' }), '50.00')).toBe(true);
-    expect(shouldSkipStep(step({ costThreshold: '100.00' }), '100.00')).toBe(true);
+    expect(shouldSkipStep(step({ costThreshold: '100.00' }), '99.99')).toBe(true);
   });
 
-  it('does not skip above the threshold', () => {
+  // Blueprint BR-05: the threshold is inclusive — equality still needs the step.
+  it('does not skip at or above the threshold', () => {
+    expect(shouldSkipStep(step({ costThreshold: '100.00' }), '100.00')).toBe(false);
     expect(shouldSkipStep(step({ costThreshold: '100.00' }), '100.01')).toBe(false);
   });
 

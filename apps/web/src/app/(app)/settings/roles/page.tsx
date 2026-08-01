@@ -200,6 +200,7 @@ function RoleEditor({
   const [readOnly, setReadOnly] = useState(false);
   const [perms, setPerms] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [sodAcknowledged, setSodAcknowledged] = useState(false);
   const loaded = detail.data;
 
   // Prefill from the loaded role once.
@@ -283,9 +284,16 @@ function RoleEditor({
 
   const nameError = save.error && name.trim().length < 2 ? 'Give the role a name' : undefined;
   const inUse = !isNew && (loaded?.userCount ?? 0) > 0;
-  // Live segregation-of-duties check over the current selection. Advisory only —
-  // save still succeeds; the point is that combining duties is a *choice*.
+  // Live segregation-of-duties check over the current selection. Combining
+  // duties is allowed but must be an explicit choice: saving with conflicts
+  // requires ticking the acknowledgment below (RBAC-024).
   const sodConflicts = findSodConflicts([...perms]);
+  const sodKey = sodConflicts.map((c) => c.id).join('|');
+  // A different conflict set is a different decision — re-require the tick.
+  useEffect(() => {
+    setSodAcknowledged(false);
+  }, [sodKey]);
+  const sodBlocked = sodConflicts.length > 0 && !sodAcknowledged;
 
   return (
     <Card className="grid gap-5 p-6">
@@ -410,7 +418,7 @@ function RoleEditor({
         )}
       </div>
 
-      {/* Segregation-of-duties warnings — advisory, never blocking */}
+      {/* Segregation-of-duties warnings — saving requires explicit acknowledgment */}
       {sodConflicts.length > 0 ? (
         <div
           role="alert"
@@ -427,9 +435,15 @@ function RoleEditor({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11.5px] text-[var(--tone-warning-fg)]/80">
-            You can still save — combining duties is allowed, but should be a deliberate choice.
-          </p>
+          <label className="mt-2.5 flex items-start gap-2 text-[12.5px] font-medium text-[var(--tone-warning-fg)]">
+            <input
+              type="checkbox"
+              checked={sodAcknowledged}
+              onChange={(e) => setSodAcknowledged(e.target.checked)}
+              className="mt-0.5 size-4 accent-[var(--tone-warning-fg)]"
+            />
+            I understand this role combines conflicting duties, and I accept the risk.
+          </label>
         </div>
       ) : null}
 
@@ -471,7 +485,8 @@ function RoleEditor({
           </Button>
           <Button
             loading={save.isPending}
-            disabled={name.trim().length < 2}
+            disabled={name.trim().length < 2 || sodBlocked}
+            title={sodBlocked ? 'Acknowledge the segregation-of-duties warnings first' : undefined}
             onClick={() => save.mutate()}
           >
             {isNew ? 'Create role' : 'Save changes'}
