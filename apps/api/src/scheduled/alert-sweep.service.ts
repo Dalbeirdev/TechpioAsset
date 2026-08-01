@@ -42,6 +42,7 @@ export class AlertSweepService implements OnModuleInit {
       void this.runWarrantySweep();
       void this.runApprovalEscalationSweep();
       void this.runLicenseSweep();
+      void this.runStockSweep();
     };
     this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
     this.timer.unref?.();
@@ -294,9 +295,83 @@ export class AlertSweepService implements OnModuleInit {
     return { expiring, capacity, drift };
   }
 
+  /**
+   * v2.4 P7 - warehouse housekeeping in one daily pass:
+   * 1. reconcile every StockLevel cache against the signed sum of its ledger
+   *    and WARN on drift - never silently repair (the ledger is the truth and
+   *    a mismatch is a bug to investigate, exactly like seat counters);
+   * 2. raise LOW_STOCK for locations at or below the item minimum, once a day
+   *    (catches levels that drifted low without a triggering mutation).
+   */
+  async runStockSweep(now: Date = new Date()): Promise<{ drift: number; lowStock: number }> {
+    const levels = await this.prisma.client.stockLevel.findMany({
+      select: {
+        id: true,
+        companyId: true,
+        quantity: true,
+        inventoryItemId: true,
+        stockLocationId: true,
+        inventoryItem: { select: { name: true, minStock: true, createdById: true } },
+        stockLocation: { select: { name: true } },
+      },
+    });
+
+    const sign: Record<string, number> = {
+      RECEIPT: 1,
+      ISSUE: -1,
+      ADJUST_UP: 1,
+      ADJUST_DOWN: -1,
+      TRANSFER_IN: 1,
+      TRANSFER_OUT: -1,
+      CONVERT_TO_ASSET: -1,
+    };
+
+    let drift = 0;
+    let lowStock = 0;
+    for (const level of levels) {
+      const movements = await this.prisma.client.stockMovement.findMany({
+        where: { inventoryItemId: level.inventoryItemId, stockLocationId: level.stockLocationId },
+        select: { type: true, quantity: true },
+      });
+      const balance = movements.reduce((sum, m) => sum + (sign[m.type] ?? 0) * Number(m.quantity), 0);
+      if (balance !== Number(level.quantity)) {
+        drift += 1;
+        this.logger.warn(
+          `Stock ledger drift on level ${level.id}: cache=${Number(level.quantity)}, ledger=${balance}`,
+        );
+      }
+
+      const min = level.inventoryItem.minStock;
+      const recipientId = level.inventoryItem.createdById;
+      if (
+        min !== null &&
+        Number(level.quantity) <= Number(min) &&
+        recipientId &&
+        !(await this.alreadyAlertedToday(level.id, 'LOW_STOCK', now))
+      ) {
+        await this.notifications.notify({
+          companyId: level.companyId,
+          userId: recipientId,
+          type: 'LOW_STOCK',
+          title: `Low stock: ${level.inventoryItem.name}`,
+          body: `${level.stockLocation.name} is down to ${Number(level.quantity)} (minimum ${Number(min)}).`,
+          linkPath: '/inventory',
+          entityType: 'StockLevel',
+          entityId: level.id,
+        });
+        lowStock += 1;
+      }
+    }
+
+    if (drift + lowStock > 0) {
+      this.logger.log(`Stock sweep: ${drift} drift warning(s), ${lowStock} low-stock alert(s)`);
+    }
+    return { drift, lowStock };
+  }
+
   private async alreadyAlertedToday(
     entityId: string,
-    type: 'WARRANTY_EXPIRATION' | 'MAINTENANCE_DUE' | 'LICENSE_EXPIRING' | 'SEAT_LIMIT_REACHED',
+    type: 'WARRANTY_EXPIRATION' | 'MAINTENANCE_DUE' | 'LICENSE_EXPIRING' | 'SEAT_LIMIT_REACHED' | 'LOW_STOCK',
     now: Date,
   ): Promise<boolean> {
     const startOfDay = new Date(now);
