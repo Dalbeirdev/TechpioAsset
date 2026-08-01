@@ -63,6 +63,13 @@ export class StockController {
     return this.stock.updateLocation(actor, id, body);
   }
 
+  @Get('items')
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  @ApiOperation({ summary: 'The stock-item catalogue' })
+  listItems(@CurrentUser() actor: AuthUser) {
+    return this.stock.listItems(actor);
+  }
+
   @Get('levels')
   @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   @ApiOperation({ summary: 'Per-location stock levels (filter by item or location)' })

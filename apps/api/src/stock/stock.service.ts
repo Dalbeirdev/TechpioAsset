@@ -104,6 +104,15 @@ export class StockService {
 
   // ── reads ──────────────────────────────────────────────────────────────────
 
+  /** The tenant's stock-item catalogue (for intake and adjustment pickers). */
+  async listItems(actor: AuthUser) {
+    return this.prisma.client.inventoryItem.findMany({
+      where: { companyId: actor.companyId, deletedAt: null, isActive: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, sku: true, name: true, unit: true, minStock: true, quantityOnHand: true },
+    });
+  }
+
   async listLevels(actor: AuthUser, inventoryItemId?: string, stockLocationId?: string) {
     return this.prisma.client.stockLevel.findMany({
       where: {
