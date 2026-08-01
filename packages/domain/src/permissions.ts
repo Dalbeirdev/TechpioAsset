@@ -19,9 +19,13 @@ export const PERMISSIONS = {
   ASSETS_DISPOSE: 'assets:dispose',
   ASSETS_COST_READ: 'assets:cost:read',
 
-  // Quantity-tracked stock
+  // Quantity-tracked stock. v2.4 adds the warehouse layer: locations,
+  // transfers between them, and converting stock units into tracked assets.
   INVENTORY_READ: 'inventory:read',
   INVENTORY_ADJUST: 'inventory:adjust',
+  INVENTORY_LOCATIONS_MANAGE: 'inventory:locations:manage',
+  INVENTORY_TRANSFER: 'inventory:transfer',
+  INVENTORY_CONVERT: 'inventory:convert',
 
   // Invoices and procurement
   INVOICES_READ: 'invoices:read',
@@ -150,6 +154,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_READ,
     P.PROCUREMENT_PR_CREATE,
     P.PROCUREMENT_PR_READ,
+    P.INVENTORY_TRANSFER,
+    P.INVENTORY_CONVERT,
     P.LICENSES_READ,
     P.LICENSES_CREATE,
     P.LICENSES_UPDATE,
@@ -351,6 +357,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_READ,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_RECEIVE,
+    P.INVENTORY_LOCATIONS_MANAGE,
+    P.INVENTORY_TRANSFER,
+    P.INVENTORY_CONVERT,
     P.ASSETS_CREATE,
     P.ASSETS_UPDATE,
     P.ASSETS_ASSIGN,

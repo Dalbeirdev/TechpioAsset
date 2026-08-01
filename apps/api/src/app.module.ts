@@ -14,6 +14,7 @@ import { UsersModule } from './users/users.module.js';
 import { RolesModule } from './roles/roles.module.js';
 import { LicensesModule } from './licenses/licenses.module.js';
 import { ProcurementModule } from './procurement/procurement.module.js';
+import { StockModule } from './stock/stock.module.js';
 import { RequestsModule } from './requests/requests.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { LifecycleModule } from './lifecycle/lifecycle.module.js';
@@ -77,6 +78,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     RolesModule,
     LicensesModule,
     ProcurementModule,
+    StockModule,
     OrgModule,
     AssetsModule,
     RequestsModule,
