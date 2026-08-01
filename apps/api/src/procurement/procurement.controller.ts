@@ -14,9 +14,11 @@ import {
   type ReceiveGrnInput,
 } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
+import { AppError } from '../common/errors/app-error.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { ProcurementService } from './procurement.service.js';
+import { MatchService } from './match.service.js';
 
 /**
  * v2.4 Procurement. SoD is enforced in the service (a requester never decides
@@ -26,7 +28,10 @@ import { ProcurementService } from './procurement.service.js';
 @ApiTags('procurement')
 @Controller('procurement')
 export class ProcurementController {
-  constructor(private readonly procurement: ProcurementService) {}
+  constructor(
+    private readonly procurement: ProcurementService,
+    private readonly match: MatchService,
+  ) {}
 
   // ── purchase requests ──────────────────────────────────────────────────────
 
@@ -86,6 +91,43 @@ export class ProcurementController {
     @Body(zodBody(convertPurchaseRequestSchema)) body: ConvertPurchaseRequestInput,
   ) {
     return this.procurement.convertPr(actor, id, body);
+  }
+
+  // ── three-way match ────────────────────────────────────────────────────────
+
+  @Get('match/:invoiceId')
+  @RequirePermissions(PERMISSIONS.INVOICES_READ)
+  @ApiOperation({ summary: 'The stored three-way-match verdict for an invoice' })
+  getMatch(@CurrentUser() actor: AuthUser, @Param('invoiceId') invoiceId: string) {
+    return this.match.get(actor, invoiceId);
+  }
+
+  @Post('match/:invoiceId/run')
+  @RequirePermissions(PERMISSIONS.INVOICES_VERIFY)
+  @ApiOperation({ summary: 'Recompute the match (clears any prior override)' })
+  runMatch(@CurrentUser() actor: AuthUser, @Param('invoiceId') invoiceId: string) {
+    return this.match.run(actor, invoiceId);
+  }
+
+  @Post('match/:invoiceId/override')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_MATCH_OVERRIDE)
+  @ApiOperation({
+    summary: 'Accept a mismatched invoice anyway',
+    description: 'Requires a reason; the override is written to the audit log.',
+  })
+  overrideMatch(
+    @CurrentUser() actor: AuthUser,
+    @Param('invoiceId') invoiceId: string,
+    @Body() body: { reason?: string },
+  ) {
+    const reason = body?.reason?.trim();
+    if (!reason || reason.length < 10) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'Give a reason of at least 10 characters - it goes on the audit record',
+      );
+    }
+    return this.match.override(actor, invoiceId, reason);
   }
 
   // ── purchase orders ────────────────────────────────────────────────────────
