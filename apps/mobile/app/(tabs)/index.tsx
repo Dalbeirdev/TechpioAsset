@@ -41,6 +41,7 @@ const TILE_ICON: Record<string, IconName> = {
   Layers: 'layers-outline',
   ShieldAlert: 'shield-outline',
   Wrench: 'construct-outline',
+  KeyRound: 'key-outline',
 };
 // Tile key → mobile route (my-assets stays on Home).
 const TILE_ROUTE: Record<string, string> = {
@@ -49,6 +50,7 @@ const TILE_ROUTE: Record<string, string> = {
   'assets-total': '/(tabs)/assets',
   'warranty-expiring': '/(tabs)/assets',
   'open-maintenance': '/maintenance',
+  'licenses-expiring': '/licenses',
 };
 
 /** Home: role-aware KPI tiles plus the equipment issued to the signed-in user. */

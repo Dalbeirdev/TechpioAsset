@@ -26,6 +26,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: 'Records',
     items: [
+      { icon: 'key-outline', label: 'Licenses', href: '/licenses', perm: PERMISSIONS.LICENSES_READ },
+      { icon: 'ribbon-outline', label: 'My licenses', href: '/my-licenses' },
       { icon: 'document-attach-outline', label: 'Invoices', href: '/invoices', perm: PERMISSIONS.INVOICES_READ },
       { icon: 'construct-outline', label: 'Maintenance', href: '/maintenance', perm: PERMISSIONS.MAINTENANCE_READ },
       { icon: 'people-outline', label: 'People', href: '/people', perm: PERMISSIONS.USERS_READ },

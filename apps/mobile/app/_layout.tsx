@@ -30,6 +30,9 @@ export default function RootLayout() {
           <Stack.Screen name="asset/[id]" options={{ headerShown: true, title: 'Asset' }} />
           <Stack.Screen name="request/[id]" options={{ headerShown: true, title: 'Request' }} />
           <Stack.Screen name="scan" options={{ headerShown: true, title: 'Scan' }} />
+          <Stack.Screen name="licenses" options={{ headerShown: true, title: 'Licenses' }} />
+          <Stack.Screen name="license/[id]" options={{ headerShown: true, title: 'License' }} />
+          <Stack.Screen name="my-licenses" options={{ headerShown: true, title: 'My licenses' }} />
           <Stack.Screen name="invoices" options={{ headerShown: true, title: 'Invoices' }} />
           <Stack.Screen name="maintenance" options={{ headerShown: true, title: 'Maintenance' }} />
           <Stack.Screen name="people" options={{ headerShown: true, title: 'People' }} />
