@@ -22,7 +22,13 @@ export const createPurchaseRequestSchema = z.object({
     .trim()
     .min(10, 'At least 10 characters - approvers read this first.')
     .max(2000),
-  neededBy: z.coerce.date().optional().nullable(),
+  neededBy: z.coerce
+    .date()
+    .refine((d) => d.getTime() >= new Date(new Date().toDateString()).getTime(), {
+      message: 'The needed-by date cannot be in the past',
+    })
+    .optional()
+    .nullable(),
   currency: z.string().trim().length(3).optional().nullable(),
   lines: z
     .array(
