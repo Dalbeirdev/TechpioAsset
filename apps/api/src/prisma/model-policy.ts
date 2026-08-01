@@ -27,6 +27,7 @@ export const SOFT_DELETABLE_MODELS = new Set<string>([
   'AssetRequest',
   'RequestComment',
   'MaintenanceRecord',
+  'SoftwareLicense',
   'Attachment',
   'WorkflowDefinition',
   'OnboardingTemplate',
