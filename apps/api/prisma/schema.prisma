@@ -314,6 +314,9 @@ enum NotificationType {
   LOW_STOCK
   REPLACEMENT_DUE
   SECURITY_ALERT
+  // v2.3 licenses
+  LICENSE_EXPIRING
+  SEAT_LIMIT_REACHED
 }
 
 /// Spec section 10 - individually switchable AI features.
