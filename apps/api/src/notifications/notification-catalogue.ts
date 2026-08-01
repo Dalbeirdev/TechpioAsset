@@ -140,6 +140,19 @@ export const NOTIFICATION_CATALOGUE: Readonly<Record<NotificationType, Notificat
     mandatory: false,
     channels: ['IN_APP'],
   },
+  // v2.3 licenses — renewals to plan; a refused seat must never pass silently.
+  LICENSE_EXPIRING: {
+    type: 'LICENSE_EXPIRING',
+    title: 'License expiring',
+    mandatory: false,
+    channels: ['IN_APP', 'EMAIL'],
+  },
+  SEAT_LIMIT_REACHED: {
+    type: 'SEAT_LIMIT_REACHED',
+    title: 'License limit reached',
+    mandatory: true,
+    channels: ['IN_APP', 'EMAIL'],
+  },
   SECURITY_ALERT: {
     type: 'SECURITY_ALERT',
     title: 'Security alert',

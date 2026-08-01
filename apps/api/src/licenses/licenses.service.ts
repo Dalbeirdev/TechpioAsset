@@ -21,6 +21,7 @@ import {
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { decryptLicenseKey, encryptLicenseKey, maskLicenseKey } from './license-key.util.js';
@@ -39,6 +40,7 @@ export class LicensesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
     private readonly config: AppConfig,
   ) {}
 
@@ -366,6 +368,18 @@ export class LicensesService {
             purchased: license.seatsPurchased,
             [principal.field]: principal.id,
           },
+        });
+        // Blueprint A.7c: the refusal reaches the actor's inbox too, so a
+        // blocked assign never passes silently even off-screen.
+        await this.notifications.notify({
+          companyId: actor.companyId,
+          userId: actor.id,
+          type: 'SEAT_LIMIT_REACHED',
+          title: `License limit reached: ${license.name}`,
+          body: error.message,
+          linkPath: `/licenses/${license.id}`,
+          entityType: 'SoftwareLicense',
+          entityId: license.id,
         });
         throw error;
       }
