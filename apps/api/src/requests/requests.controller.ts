@@ -99,7 +99,8 @@ export class RequestsController {
     summary: 'Approve or reject the current step',
     description:
       'Holding requests:approve is not sufficient — the caller must also be the approver for the ' +
-      'step the request is currently waiting on.',
+      'step the request is currently waiting on (directly or via an active delegation). The ' +
+      'reverse also holds: a delegation alone is not enough without requests:approve.',
   })
   decide(
     @CurrentUser() actor: AuthUser,

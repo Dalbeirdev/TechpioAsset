@@ -53,16 +53,23 @@ async function cancel(actor: Session, id: string) {
 }
 
 describe('QA APR — approvals', () => {
-  it('APR-004 boundary: cost exactly at the Finance threshold SKIPS Finance (v1 rule cost<=threshold; blueprint BR-05 wants inclusive — documented deviation)', async () => {
+  it('APR-004 boundary: cost exactly at the Finance threshold INCLUDES Finance (blueprint BR-05, inclusive; aligned in v2.3)', async () => {
     const r = await createAndSubmit(s.employee, {
       estimatedCost: '250.00',
       items: [{ description: 'QA boundary probe', quantity: 1, estimatedCost: '250.00' }],
     });
     const names = r.approvals.map((a) => a.stepName.toLowerCase());
-    // Current, deliberate v1 semantics: skip while cost <= threshold. If this
-    // assertion ever flips, BR-05 alignment happened — update the QA report.
-    expect(names.some((n) => n.includes('finance'))).toBe(false);
+    expect(names.some((n) => n.includes('finance'))).toBe(true);
     await cancel(s.employee, r.id);
+
+    // And just below the threshold still skips Finance.
+    const below = await createAndSubmit(s.employee, {
+      estimatedCost: '249.99',
+      items: [{ description: 'QA boundary probe (below)', quantity: 1, estimatedCost: '249.99' }],
+    });
+    const belowNames = below.approvals.map((a) => a.stepName.toLowerCase());
+    expect(belowNames.some((n) => n.includes('finance'))).toBe(false);
+    await cancel(s.employee, below.id);
   });
 
   it('APR-009 SoD: the requester cannot decide their own request (403, step stays pending)', async () => {

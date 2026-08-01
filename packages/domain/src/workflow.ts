@@ -72,7 +72,10 @@ export function shouldSkipStep(
   const cost = Number(estimatedCost);
   if (!Number.isFinite(threshold) || !Number.isFinite(cost)) return false;
 
-  return cost <= threshold;
+  // Blueprint BR-05: the threshold is inclusive — a cost AT the threshold still
+  // requires the step. Only strictly-below skips. (v2.3 alignment; v1 skipped at
+  // equality, flagged as QA deviation APR-004.)
+  return cost < threshold;
 }
 
 /** Steps that actually apply to a request, in order. */

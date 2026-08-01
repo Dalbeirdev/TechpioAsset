@@ -9,6 +9,10 @@ import { DelegationService } from './delegation.service.js';
  * v2.2 Workstream D — a user manages their own approval delegations. No special
  * permission: anyone may delegate the approvals they themselves hold. Authority
  * is still checked at decide time, so delegating never grants new power.
+ *
+ * Deliberate limit (QA note, v2.3): a delegation transfers STEP authority, not
+ * permissions. The decide route still requires the delegate to hold the base
+ * `requests:approve` permission — a delegate without it is refused at the guard.
  */
 @ApiTags('approvals')
 @Controller('delegations')
