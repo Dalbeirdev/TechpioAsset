@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Receipt,
+  ShoppingCart,
   ScrollText,
   KeyRound,
   Search,
@@ -44,6 +45,8 @@ const NAV: NavItem[] = [
   { href: '/licenses', label: 'Licenses', Icon: KeyRound, permission: PERMISSIONS.LICENSES_READ },
   { href: '/my-assets', label: 'My assets', Icon: Package },
   { href: '/requests', label: 'Requests', Icon: ClipboardList },
+  { href: '/procurement', label: 'Procurement', Icon: ShoppingCart, permission: PERMISSIONS.PROCUREMENT_PR_READ },
+  { href: '/inventory', label: 'Inventory', Icon: Boxes, permission: PERMISSIONS.INVENTORY_READ },
   { href: '/invoices', label: 'Invoices', Icon: Receipt, permission: PERMISSIONS.INVOICES_READ },
   { href: '/people', label: 'People', Icon: Users, permission: PERMISSIONS.EMPLOYEES_READ },
   {
