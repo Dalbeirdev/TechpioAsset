@@ -14,3 +14,4 @@ export * from './users';
 export * from './audit';
 export * from './delegations';
 export * from './roles';
+export * from './licenses';

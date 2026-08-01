@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Boxes, ClipboardList, Layers, ShieldAlert, UserCheck, Wrench } from 'lucide-react';
+import { Boxes, ClipboardList, Layers, ShieldAlert, UserCheck, Wrench, KeyRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { Card, ErrorState, Skeleton } from '@/components/ui';
@@ -20,6 +20,7 @@ interface Tile {
 // Icons the dashboard summary emits (kept explicit for tree-shaking).
 const ICONS: Record<string, LucideIcon> = {
   Boxes,
+  KeyRound,
   ClipboardList,
   UserCheck,
   Layers,

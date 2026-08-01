@@ -1,5 +1,12 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
-import { warrantyBucket, isWarrantyAlertable } from '@techpioasset/domain';
+import {
+  deriveLicenseStatus,
+  expiryBucket,
+  isHighUtilization,
+  isWarrantyAlertable,
+  seatsAvailable,
+  warrantyBucket,
+} from '@techpioasset/domain';
 import { AppConfig } from '../config/config.module.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -34,6 +41,7 @@ export class AlertSweepService implements OnModuleInit {
     const daily = () => {
       void this.runWarrantySweep();
       void this.runApprovalEscalationSweep();
+      void this.runLicenseSweep();
     };
     this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
     this.timer.unref?.();
@@ -181,9 +189,114 @@ export class AlertSweepService implements OnModuleInit {
     return raised;
   }
 
+  /**
+   * v2.3 L6 — licence housekeeping in one daily pass:
+   * 1. refresh each licence's cached status from its expiry date;
+   * 2. raise LICENSE_EXPIRING inside the 90/60/30-day buckets (once a day);
+   * 3. raise SEAT_LIMIT_REACHED when a pool is full or at >=90% utilisation;
+   * 4. reconcile the seat counter against actual ACTIVE assignments and WARN on
+   *    drift - the counter stays authoritative for the limit, assignments for
+   *    "who", and a mismatch means a bug worth investigating, not hiding.
+   */
+  async runLicenseSweep(
+    now: Date = new Date(),
+  ): Promise<{ expiring: number; capacity: number; drift: number }> {
+    const licenses = await this.prisma.client.softwareLicense.findMany({
+      where: { deletedAt: null, status: { not: 'RETIRED' } },
+      select: {
+        id: true,
+        companyId: true,
+        name: true,
+        status: true,
+        expiryDate: true,
+        seatsPurchased: true,
+        createdById: true,
+        updatedById: true,
+        pools: { select: { id: true, seatsAllocated: true, seatsReserved: true } },
+      },
+    });
+
+    let expiring = 0;
+    let capacity = 0;
+    let drift = 0;
+
+    for (const license of licenses) {
+      // 1. Cached status follows the calendar.
+      const derived = deriveLicenseStatus(license.expiryDate, now);
+      if (derived !== license.status) {
+        await this.prisma.client.softwareLicense.update({
+          where: { id: license.id },
+          data: { status: derived },
+        });
+      }
+
+      const recipientId = license.createdById ?? license.updatedById;
+
+      // 2. Expiry buckets.
+      if (license.expiryDate && recipientId) {
+        const bucket = expiryBucket(license.expiryDate, now);
+        if (bucket && !(await this.alreadyAlertedToday(license.id, 'LICENSE_EXPIRING', now))) {
+          await this.notifications.notify({
+            companyId: license.companyId,
+            userId: recipientId,
+            type: 'LICENSE_EXPIRING',
+            title: `License expiring: ${license.name}`,
+            body: `${license.name} expires ${license.expiryDate.toDateString()} (within ${bucket} days). Plan the renewal.`,
+            linkPath: `/licenses/${license.id}`,
+            entityType: 'SoftwareLicense',
+            entityId: license.id,
+          });
+          expiring += 1;
+        }
+      }
+
+      // 3 + 4. Seat capacity and counter drift, per pool.
+      for (const pool of license.pools) {
+        const active = await this.prisma.client.licenseAssignment.count({
+          where: { seatPoolId: pool.id, status: 'ACTIVE' },
+        });
+        if (active !== pool.seatsReserved) {
+          drift += 1;
+          this.logger.warn(
+            `Seat counter drift on license ${license.id} pool ${pool.id}: reserved=${pool.seatsReserved}, active=${active}`,
+          );
+        }
+
+        if (
+          recipientId &&
+          isHighUtilization(pool.seatsAllocated, pool.seatsReserved) &&
+          !(await this.alreadyAlertedToday(license.id, 'SEAT_LIMIT_REACHED', now))
+        ) {
+          const free = seatsAvailable(pool.seatsAllocated, pool.seatsReserved);
+          await this.notifications.notify({
+            companyId: license.companyId,
+            userId: recipientId,
+            type: 'SEAT_LIMIT_REACHED',
+            title: `License seats ${free === 0 ? 'exhausted' : 'nearly exhausted'}: ${license.name}`,
+            body:
+              free === 0
+                ? `Every one of ${pool.seatsAllocated} seats is assigned. New assignments will be refused until seats are added or reclaimed.`
+                : `Only ${free} of ${pool.seatsAllocated} seats remain.`,
+            linkPath: `/licenses/${license.id}`,
+            entityType: 'SoftwareLicense',
+            entityId: license.id,
+          });
+          capacity += 1;
+        }
+      }
+    }
+
+    if (expiring + capacity + drift > 0) {
+      this.logger.log(
+        `License sweep: ${expiring} expiring alert(s), ${capacity} capacity alert(s), ${drift} drift warning(s)`,
+      );
+    }
+    return { expiring, capacity, drift };
+  }
+
   private async alreadyAlertedToday(
     entityId: string,
-    type: 'WARRANTY_EXPIRATION' | 'MAINTENANCE_DUE',
+    type: 'WARRANTY_EXPIRATION' | 'MAINTENANCE_DUE' | 'LICENSE_EXPIRING' | 'SEAT_LIMIT_REACHED',
     now: Date,
   ): Promise<boolean> {
     const startOfDay = new Date(now);

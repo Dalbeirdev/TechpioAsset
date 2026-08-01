@@ -102,6 +102,26 @@ export class DashboardService {
       });
     }
 
+    // Licence owners — renewals to plan (v2.3).
+    if (has(PERMISSIONS.LICENSES_READ)) {
+      const in90d = new Date(Date.now() + 90 * 86_400_000);
+      const expiring = await db.softwareLicense.count({
+        where: {
+          companyId: actor.companyId,
+          status: { not: 'RETIRED' },
+          expiryDate: { gte: new Date(), lte: in90d },
+        },
+      });
+      tiles.push({
+        key: 'licenses-expiring',
+        label: 'Licenses expiring (90d)',
+        value: expiring,
+        href: '/licenses',
+        icon: 'KeyRound',
+        tone: expiring > 0 ? 'warning' : 'neutral',
+      });
+    }
+
     // Maintenance owners.
     if (has(PERMISSIONS.MAINTENANCE_READ)) {
       tiles.push({
