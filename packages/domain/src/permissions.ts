@@ -87,6 +87,8 @@ export const PERMISSIONS = {
   PROCUREMENT_PR_CONVERT: 'procurement:pr:convert',
   PROCUREMENT_PO_ISSUE: 'procurement:po:issue',
   PROCUREMENT_RECEIVE: 'procurement:receive',
+  /** Accept a mismatched three-way match anyway - always audited. */
+  PROCUREMENT_MATCH_OVERRIDE: 'procurement:match:override',
 
   // AI
   AI_CONFIGURE: 'ai:configure',
@@ -135,7 +137,7 @@ const P = PERMISSIONS;
 
 /** Actions that only read. Used to prove the Auditor role can never mutate. */
 const WRITE_ACTION_PATTERN =
-  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal|convert|issue|receive)$/;
+  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal|convert|issue|receive|override)$/;
 
 export function isReadOnlyPermission(permission: Permission): boolean {
   return !WRITE_ACTION_PATTERN.test(permission);
@@ -234,6 +236,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ASSETS_COST_READ,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_PR_APPROVE,
+    P.PROCUREMENT_MATCH_OVERRIDE,
     P.LICENSES_READ,
     P.LICENSES_COST_READ,
     P.LICENSES_RENEW,

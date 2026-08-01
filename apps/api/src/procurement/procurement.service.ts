@@ -314,8 +314,11 @@ export class ProcurementService {
       if (!item) throw AppError.notFound('Inventory item', line.inventoryItemId!);
     }
 
-    const grnNumber = await this.nextNumber('goodsReceipt', 'GRN');
-    const grn = await this.prisma.client.$transaction(async (tx) => {
+    // Concurrent receivers can race the sequential GRN number; the unique
+    // constraint catches the loser, and we retry the whole (rolled-back)
+    // transaction with a fresh number rather than surfacing a 500.
+    const grn = await this.withGrnNumberRetry(async (grnNumber) =>
+      this.prisma.client.$transaction(async (tx) => {
       // 1. Guarded increments - the WHERE clause is the over-receipt limit.
       for (const line of input.lines) {
         const poLine = lineById.get(line.purchaseOrderLineId)!;
@@ -407,8 +410,9 @@ export class ProcurementService {
           updatedById: actor.id,
         },
       });
-      return created;
-    });
+        return created;
+      }),
+    );
 
     await this.audit.record({
       companyId: actor.companyId,
@@ -543,6 +547,20 @@ export class ProcurementService {
       createdAt: true,
       requester: { select: { id: true, email: true, profile: { select: { firstName: true, lastName: true } } } },
     } satisfies Prisma.PurchaseRequestSelect;
+  }
+
+  /** Retries a GRN-numbered operation when the sequential number collides. */
+  private async withGrnNumberRetry<T>(fn: (grnNumber: string) => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt += 1) {
+      const grnNumber = await this.nextNumber('goodsReceipt', 'GRN');
+      try {
+        return await fn(grnNumber);
+      } catch (error) {
+        const unique =
+          error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+        if (!unique || attempt >= 4) throw error;
+      }
+    }
   }
 
   /** `PR-2026-000042`-style numbers, per entity, unique per company. */

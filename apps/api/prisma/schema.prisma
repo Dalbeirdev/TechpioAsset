@@ -393,6 +393,7 @@ enum AuditAction {
   PO_ISSUED
   PO_CANCELLED
   GRN_RECEIVED
+  MATCH_OVERRIDDEN
 }
 
 enum PhysicalInventoryStatus {

@@ -48,6 +48,7 @@ export const AUDIT_ACTIONS = [
   'PO_ISSUED',
   'PO_CANCELLED',
   'GRN_RECEIVED',
+  'MATCH_OVERRIDDEN',
 ] as const;
 export type AuditActionName = (typeof AUDIT_ACTIONS)[number];
 
