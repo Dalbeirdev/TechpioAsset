@@ -42,7 +42,7 @@ Two documentation sets live in [`docs/`](./docs):
 
 The blueprint is a design specification for the next major version — it is not yet reflected in the code in this repository, which implements the as-built v1 above.
 
-**Getting there:** [Implementation Plan v2.1](./docs/IMPLEMENTATION-PLAN-v2.1.md) (draft) sequences the blueprint into shippable releases (v2.1–v2.6) mapped to the real codebase, and details the first release — Foundation & Status-Model refactor — with expand/contract migrations, feature-flagged rollout, and acceptance criteria traced to the QA pack.
+**Getting there:** [Implementation Plan v2.1](./docs/IMPLEMENTATION-PLAN-v2.1.md) sequences the blueprint into shippable releases (v2.1–v2.6) mapped to the real codebase. v2.1 (foundation & status model) and v2.2 (core ITAM & RBAC) are shipped; the next release is detailed in [Implementation Plan v2.3 — License Management](./docs/IMPLEMENTATION-PLAN-v2.3-LICENSES.md), the flagship seat-limit-enforcement module.
 
 ---
 
