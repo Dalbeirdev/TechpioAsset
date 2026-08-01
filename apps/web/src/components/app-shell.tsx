@@ -16,6 +16,7 @@ import {
   PanelLeftOpen,
   Receipt,
   ScrollText,
+  KeyRound,
   Search,
   ShieldCheck,
   Users,
@@ -40,6 +41,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
   { href: '/assets', label: 'Assets', Icon: Boxes, permission: PERMISSIONS.ASSETS_READ },
+  { href: '/licenses', label: 'Licenses', Icon: KeyRound, permission: PERMISSIONS.LICENSES_READ },
   { href: '/my-assets', label: 'My assets', Icon: Package },
   { href: '/requests', label: 'Requests', Icon: ClipboardList },
   { href: '/invoices', label: 'Invoices', Icon: Receipt, permission: PERMISSIONS.INVOICES_READ },
