@@ -93,6 +93,13 @@ export const SOD_CONFLICTS: readonly SodConflict[] = [
     reason:
       'Can record licence purchases and verify the invoices that pay for them — the ordering/payment conflict applied to software.',
   },
+  {
+    id: 'receive-and-verify-invoices',
+    a: P.PROCUREMENT_RECEIVE,
+    b: P.INVOICES_VERIFY,
+    reason:
+      'Can receive goods and verify the invoices that pay for them. The person at the loading dock should not also clear the bill.',
+  },
 ];
 
 /** Conflicts triggered by one set of permissions (e.g. a single role's grants). */

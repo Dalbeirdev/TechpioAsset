@@ -42,6 +42,12 @@ export const AUDIT_ACTIONS = [
   'LICENSE_RENEWED',
   'LICENSE_KEY_REVEALED',
   'LICENSE_ASSIGN_BLOCKED',
+  'PR_SUBMITTED',
+  'PR_APPROVED',
+  'PR_REJECTED',
+  'PO_ISSUED',
+  'PO_CANCELLED',
+  'GRN_RECEIVED',
 ] as const;
 export type AuditActionName = (typeof AUDIT_ACTIONS)[number];
 

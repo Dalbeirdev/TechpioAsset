@@ -117,6 +117,9 @@ export const envSchema = z
      */
     LICENSE_KEY_SECRET: z.string().min(16).optional(),
 
+    /** v2.4 - PRs at or above this estimated total need a Finance approver. */
+    PR_FINANCE_THRESHOLD: z.coerce.number().nonnegative().default(250),
+
     // mock | webhook — optional Teams/Slack chat integration (spec section 19).
     CHAT_PROVIDER: z.enum(['mock', 'webhook']).default('mock'),
     TEAMS_WEBHOOK_URL: z.string().optional(),
