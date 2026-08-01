@@ -17,3 +17,4 @@ export * from './maintenance-status';
 export * from './license';
 export * from './procurement';
 export * from './stock';
+export * from './health';
