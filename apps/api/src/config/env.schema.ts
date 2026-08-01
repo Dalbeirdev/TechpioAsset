@@ -110,6 +110,13 @@ export const envSchema = z
     PUSH_PROVIDER: z.enum(['mock', 'expo']).default('mock'),
     EXPO_ACCESS_TOKEN: z.string().optional(),
 
+    /**
+     * v2.3 — encrypts stored licence keys (AES-256-GCM). Optional: without it,
+     * adding or revealing keys is refused with a clear error; everything else
+     * in the licence module works. Set to any string of 16+ characters.
+     */
+    LICENSE_KEY_SECRET: z.string().min(16).optional(),
+
     // mock | webhook — optional Teams/Slack chat integration (spec section 19).
     CHAT_PROVIDER: z.enum(['mock', 'webhook']).default('mock'),
     TEAMS_WEBHOOK_URL: z.string().optional(),

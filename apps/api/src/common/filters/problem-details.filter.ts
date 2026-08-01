@@ -46,6 +46,7 @@ const TITLES: Partial<Record<ErrorCode, string>> = {
   FORBIDDEN: 'Forbidden',
   NOT_FOUND: 'Not found',
   CONFLICT: 'Conflict',
+  SEAT_LIMIT_EXCEEDED: 'License limit exceeded',
   RATE_LIMITED: 'Too many requests',
   INTERNAL_ERROR: 'Internal server error',
 };

@@ -67,6 +67,18 @@ export const PERMISSIONS = {
   WORKFLOWS_CONFIGURE: 'workflows:configure',
   SETTINGS_MANAGE: 'settings:manage',
 
+  // Licenses (v2.3). Cost visibility mirrors the asset rule: Finance + Super
+  // Admin only. Key reveals are separately gated and always audited.
+  LICENSES_READ: 'licenses:read',
+  LICENSES_CREATE: 'licenses:create',
+  LICENSES_UPDATE: 'licenses:update',
+  LICENSES_DELETE: 'licenses:delete',
+  LICENSES_ASSIGN: 'licenses:assign',
+  LICENSES_REVOKE: 'licenses:revoke',
+  LICENSES_RENEW: 'licenses:renew',
+  LICENSES_KEYS_REVEAL: 'licenses:keys:reveal',
+  LICENSES_COST_READ: 'licenses:cost:read',
+
   // AI
   AI_CONFIGURE: 'ai:configure',
   AI_REVIEW_RESULTS: 'ai:review-results',
@@ -114,7 +126,7 @@ const P = PERMISSIONS;
 
 /** Actions that only read. Used to prove the Auditor role can never mutate. */
 const WRITE_ACTION_PATTERN =
-  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf)$/;
+  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal)$/;
 
 export function isReadOnlyPermission(permission: Permission): boolean {
   return !WRITE_ACTION_PATTERN.test(permission);
@@ -125,6 +137,13 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
 
   IT_ADMIN: [
     P.ASSETS_READ,
+    P.LICENSES_READ,
+    P.LICENSES_CREATE,
+    P.LICENSES_UPDATE,
+    P.LICENSES_DELETE,
+    P.LICENSES_ASSIGN,
+    P.LICENSES_REVOKE,
+    P.LICENSES_RENEW,
     P.ASSETS_CREATE,
     P.ASSETS_UPDATE,
     P.ASSETS_IMPORT,
@@ -202,6 +221,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   FINANCE: [
     P.ASSETS_READ,
     P.ASSETS_COST_READ,
+    P.LICENSES_READ,
+    P.LICENSES_COST_READ,
+    P.LICENSES_RENEW,
     P.INVENTORY_READ,
     // Read-only: repair and service costs are financial data, so Finance can
     // see maintenance records — running repairs stays with IT (maintenance:manage).
@@ -255,6 +277,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.REPORTS_EXPORT,
     P.USERS_READ,
     P.AUDIT_READ,
+    P.LICENSES_READ,
   ],
 
   // Tenant owner. In single-company v1 this is grant-equivalent to Super Admin;
@@ -265,6 +288,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   // Executes IT work — deploy, assign, repair. A subset of IT_ADMIN (IT Manager).
   IT_TECHNICIAN: [
     P.ASSETS_READ,
+    P.LICENSES_READ,
+    P.LICENSES_ASSIGN,
+    P.LICENSES_REVOKE,
     P.ASSETS_UPDATE,
     P.ASSETS_ASSIGN,
     P.ASSETS_RETURN,
@@ -281,6 +307,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   // Sourcing and purchasing. Owns vendors + POs; approves requests.
   PROCUREMENT_MANAGER: [
     P.ASSETS_READ,
+    P.LICENSES_READ,
+    P.LICENSES_CREATE,
+    P.LICENSES_UPDATE,
+    P.LICENSES_RENEW,
     P.VENDORS_READ,
     P.VENDORS_MANAGE,
     P.PURCHASE_ORDERS_READ,

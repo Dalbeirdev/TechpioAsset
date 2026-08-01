@@ -375,6 +375,14 @@ enum AuditAction {
   DATA_EXPORTED
   SETTING_CHANGED
   DOCUMENT_DOWNLOADED
+  // v2.3 licenses. ASSIGN_BLOCKED is the flagship: refused 11th seats leave a trail.
+  LICENSE_CREATED
+  LICENSE_UPDATED
+  LICENSE_ASSIGNED
+  LICENSE_REVOKED
+  LICENSE_RENEWED
+  LICENSE_KEY_REVEALED
+  LICENSE_ASSIGN_BLOCKED
 }
 
 enum PhysicalInventoryStatus {
