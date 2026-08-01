@@ -435,6 +435,7 @@ model Company {
   scheduledReports          ScheduledReport[]
   physicalInventorySessions PhysicalInventorySession[]
   approvalDelegations       ApprovalDelegation[]
+  softwareLicenses          SoftwareLicense[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -506,6 +507,7 @@ model User {
   headedDepartments        Department[]               @relation("DepartmentHead")
   delegationsGiven         ApprovalDelegation[]       @relation("DelegationDelegator")
   delegationsReceived      ApprovalDelegation[]       @relation("DelegationDelegate")
+  licenseAssignments       LicenseAssignment[]        @relation("LicenseAssignee")
 
   /// Email is unique per tenant, not globally: the same person may exist in two companies.
   @@unique([companyId, email])
@@ -836,6 +838,7 @@ model Department {
   requests      AssetRequest[]
   transfersFrom AssetTransfer[] @relation("TransferFromDepartment")
   transfersTo   AssetTransfer[] @relation("TransferToDepartment")
+  seatPools     SeatPool[]
 
   @@unique([companyId, code])
   @@index([parentId])
@@ -990,6 +993,7 @@ model Asset {
   replacementFor AssetRequest[]          @relation("RequestReplacesAsset")
   fulfilledItems RequestItem[]           @relation("RequestItemFulfilledAsset")
   inventoryScans PhysicalInventoryScan[]
+  licenseAssignments LicenseAssignment[] @relation("LicenseAssignedAsset")
 
   /// Postgres treats NULLs as distinct in a unique index, so quantity-tracked
   /// rows (which carry no serial) coexist freely while real serials stay unique.
@@ -1327,6 +1331,7 @@ model Vendor {
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[]
   maintenance    MaintenanceRecord[]
+  softwareLicenses SoftwareLicense[]
 
   @@unique([companyId, code])
   @@index([companyId, name])
@@ -1436,6 +1441,7 @@ model Invoice {
   documents     InvoiceDocument[]
   extractions   InvoiceExtraction[]
   verifications InvoiceVerification[]
+  softwareLicenses SoftwareLicense[]
 
   /// Deterministic duplicate-invoice-number check (spec section 9).
   @@unique([companyId, invoiceNumber])
@@ -2202,4 +2208,200 @@ model ApprovalDelegation {
   @@index([companyId, delegateId])
   @@index([companyId, delegatorId])
   @@map("approval_delegations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2.3 License Management (blueprint Part A). Seat scarcity is enforced on
+// SeatPool.seatsReserved via an atomic conditional increment; the DB CHECK
+// (migration SQL) is the last line of defence. seats used/available are always
+// DERIVED — never stored authoritatively on the license row.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum LicenseFamily {
+  PRODUCTIVITY_SUITE
+  OPERATING_SYSTEM
+  SECURITY
+  DEVELOPER_TOOLS
+  DESIGN_CREATIVE
+  SAAS
+  DATABASE_SERVER
+  OTHER
+}
+
+enum LicenseSubscriptionType {
+  PERPETUAL
+  SUBSCRIPTION
+  OEM
+  VOLUME
+  OPEN
+}
+
+enum LicenseUnit {
+  USER
+  DEVICE
+}
+
+enum LicenseCostModel {
+  PER_SEAT
+  FLAT
+  PER_CPU
+  PER_CORE
+}
+
+enum LicenseStatus {
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  RETIRED
+}
+
+enum LicenseAssignmentStatus {
+  ACTIVE
+  REVOKED
+}
+
+model SoftwareLicense {
+  id        String @id @default(cuid())
+  companyId String
+
+  name             String
+  family           LicenseFamily
+  vendorId         String?
+  subscriptionType LicenseSubscriptionType
+  edition          String?
+  purchaseDate     DateTime
+  /// Null for perpetual licenses.
+  expiryDate       DateTime?
+  renewalDate      DateTime?
+  autoRenewal      Boolean                 @default(false)
+  /// Changes only via LicenseRenewal (seatsDelta) — append-only history.
+  seatsPurchased   Int
+  unitOfAssignment LicenseUnit
+
+  costAmount           Decimal?         @db.Decimal(14, 2)
+  costCurrency         String?          @db.Char(3)
+  costModel            LicenseCostModel @default(PER_SEAT)
+  invoiceId            String?
+  purchaseOrderNumber  String?
+
+  /// RETIRED is set explicitly; ACTIVE/EXPIRING/EXPIRED derive from expiryDate
+  /// (packages/domain/license.ts) and are cached here by the sweep.
+  status LicenseStatus @default(ACTIVE)
+  notes  String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor      Vendor?             @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  invoice     Invoice?            @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  pools       SeatPool[]
+  assignments LicenseAssignment[]
+  keys        LicenseKey[]
+  renewals    LicenseRenewal[]
+
+  @@index([companyId, status])
+  @@index([companyId, expiryDate])
+  @@index([deletedAt])
+  @@map("software_licenses")
+}
+
+model SeatPool {
+  id        String @id @default(cuid())
+  companyId String
+  licenseId String
+
+  name           String
+  /// Σ allocations across a license's pools ≤ seatsPurchased (service-enforced).
+  seatsAllocated Int
+  /// The scarce counter. 0 ≤ seatsReserved ≤ seatsAllocated (DB CHECK).
+  seatsReserved  Int     @default(0)
+  departmentId   String?
+  costCenter     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  license     SoftwareLicense     @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  department  Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignments LicenseAssignment[]
+
+  @@unique([licenseId, name])
+  @@index([companyId])
+  @@map("seat_pools")
+}
+
+model LicenseAssignment {
+  id         String @id @default(cuid())
+  companyId  String
+  licenseId  String
+  seatPoolId String
+
+  /// Exactly one of userId/assetId is set, matching the license's unit
+  /// (DB CHECK + partial unique indexes in the migration SQL).
+  userId  String?
+  assetId String?
+
+  status       LicenseAssignmentStatus @default(ACTIVE)
+  assignedAt   DateTime                @default(now())
+  assignedById String?
+  revokedAt    DateTime?
+  revokedById  String?
+  reason       String?
+
+  license  SoftwareLicense @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  seatPool SeatPool        @relation(fields: [seatPoolId], references: [id], onDelete: Cascade)
+  user     User?           @relation("LicenseAssignee", fields: [userId], references: [id], onDelete: Cascade)
+  asset    Asset?          @relation("LicenseAssignedAsset", fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([licenseId, status])
+  @@index([companyId, userId])
+  @@index([companyId, assetId])
+  @@map("license_assignments")
+}
+
+model LicenseKey {
+  id        String @id @default(cuid())
+  companyId String
+  licenseId String
+
+  /// AES-256-GCM ciphertext (LICENSE_KEY_SECRET). The API only ever returns the
+  /// masked form; reveals need licenses:keys:reveal and write an audit row.
+  keyCiphertext String
+  keyLast4      String
+  note          String?
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  license SoftwareLicense @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@index([licenseId])
+  @@map("license_keys")
+}
+
+model LicenseRenewal {
+  id        String @id @default(cuid())
+  companyId String
+  licenseId String
+
+  renewedAt      DateTime  @default(now())
+  previousExpiry DateTime?
+  newExpiry      DateTime?
+  /// Seats added (or removed, negative) by this renewal.
+  seatsDelta     Int       @default(0)
+  costAmount     Decimal?  @db.Decimal(14, 2)
+  costCurrency   String?   @db.Char(3)
+  notes          String?
+
+  createdById String?
+
+  license SoftwareLicense @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@index([licenseId, renewedAt])
+  @@map("license_renewals")
 }

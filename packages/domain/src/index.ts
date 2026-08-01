@@ -14,3 +14,4 @@ export * from './offline-sync';
 export * from './depreciation';
 export * from './warranty';
 export * from './maintenance-status';
+export * from './license';
