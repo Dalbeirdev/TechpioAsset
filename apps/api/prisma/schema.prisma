@@ -386,6 +386,13 @@ enum AuditAction {
   LICENSE_RENEWED
   LICENSE_KEY_REVEALED
   LICENSE_ASSIGN_BLOCKED
+  // v2.4 procurement
+  PR_SUBMITTED
+  PR_APPROVED
+  PR_REJECTED
+  PO_ISSUED
+  PO_CANCELLED
+  GRN_RECEIVED
 }
 
 enum PhysicalInventoryStatus {
