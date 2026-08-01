@@ -94,6 +94,19 @@ describe('custom role lifecycle', () => {
     expect(res.status).toBe(422);
   });
 
+  it('returns advisory SoD conflicts for a role combining both sides of a pair', async () => {
+    const create = await api(app).post(base).set(auth(s.superAdmin)).send({
+      name: 'SoD Probe',
+      permissions: ['requests:create', 'requests:approve'],
+    });
+    expect(create.status).toBe(201);
+    const role = create.body.data;
+    // Warned, not blocked: the role exists and carries the conflict detail.
+    expect(role.sodConflicts.map((c: { id: string }) => c.id)).toContain('request-and-approve');
+
+    await api(app).delete(`${base}/${role.id}`).set(auth(s.superAdmin));
+  });
+
   it('rejects an unknown permission key', async () => {
     const res = await api(app).post(base).set(auth(s.superAdmin)).send({
       name: 'Bogus Role',

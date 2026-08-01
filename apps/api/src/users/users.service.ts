@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AuditAction } from '@prisma/client';
 import type { SetUserRolesInput, SetUserStatusInput, UserListQuery } from '@techpioasset/contracts';
 import type { AuthUser } from '@techpioasset/contracts';
+import { findSodConflicts } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { userScopeFilter } from '../common/scope.js';
@@ -245,7 +246,17 @@ export class UsersService {
       newValues: { roles: nextKeys },
     });
 
-    return this.findOne(actor, id);
+    // WS-G — advisory SoD check over the UNION of the new roles: two
+    // individually-clean roles can conflict when held together. Warns, never
+    // blocks; the one hard SoD rule stays at decide time (BR-04).
+    const grants = await this.prisma.client.rolePermission.findMany({
+      where: { roleId: { in: roles.map((r) => r.id) } },
+      select: { permission: { select: { key: true } } },
+    });
+    const sodConflicts = findSodConflicts(grants.map((g) => g.permission.key));
+
+    const result = await this.findOne(actor, id);
+    return { ...result, sodConflicts };
   }
 
   /**

@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { AuditAction } from '@prisma/client';
 import type { AuthUser, CreateRoleInput, UpdateRoleInput } from '@techpioasset/contracts';
-import { ALL_PERMISSIONS, isReadOnlyPermission, type Permission } from '@techpioasset/domain';
+import {
+  ALL_PERMISSIONS,
+  findSodConflicts,
+  isReadOnlyPermission,
+  type Permission,
+} from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -37,7 +42,11 @@ export class RolesService {
     };
   }
 
-  /** Every role in the tenant, with grant and assignment counts. */
+  /**
+   * Every role in the tenant, with grant and assignment counts. Includes each
+   * role's permission keys so clients can compute live SoD warnings over the
+   * union of a selection without N follow-up requests.
+   */
   async list(actor: AuthUser) {
     const roles = await this.prisma.client.role.findMany({
       where: { companyId: actor.companyId, deletedAt: null },
@@ -49,12 +58,14 @@ export class RolesService {
         description: true,
         isSystem: true,
         isReadOnly: true,
-        _count: { select: { permissions: true, users: true } },
+        permissions: { select: { permission: { select: { key: true } } } },
+        _count: { select: { users: true } },
       },
     });
-    return roles.map(({ _count, ...r }) => ({
+    return roles.map(({ _count, permissions, ...r }) => ({
       ...r,
-      permissionCount: _count.permissions,
+      permissions: permissions.map((p) => p.permission.key),
+      permissionCount: permissions.length,
       userCount: _count.users,
     }));
   }
@@ -76,10 +87,14 @@ export class RolesService {
     });
     if (!role) throw AppError.notFound('Role', id);
     const { permissions, _count, ...rest } = role;
+    const keys = permissions.map((p) => p.permission.key);
     return {
       ...rest,
       userCount: _count.users,
-      permissions: permissions.map((p) => p.permission.key),
+      permissions: keys,
+      // WS-G — advisory segregation-of-duties warnings. Never blocking: a small
+      // company may combine duties knowingly (Super Admin always does).
+      sodConflicts: findSodConflicts(keys),
     };
   }
 
