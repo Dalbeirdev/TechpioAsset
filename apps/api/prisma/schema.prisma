@@ -394,6 +394,9 @@ enum AuditAction {
   PO_CANCELLED
   GRN_RECEIVED
   MATCH_OVERRIDDEN
+  // v2.5 discovery
+  DISCOVERY_INGESTED
+  DISCOVERY_REVIEWED
 }
 
 enum PhysicalInventoryStatus {
