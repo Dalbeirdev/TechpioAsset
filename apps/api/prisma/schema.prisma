@@ -322,6 +322,9 @@ enum NotificationType {
   // v2.5 work orders
   WORK_ORDER_ASSIGNED
   WORK_ORDER_ESCALATED
+  // v2.6 scheduled reports
+  REPORT_DELIVERED
+  REPORT_FAILED
 }
 
 /// Spec section 10 - individually switchable AI features.

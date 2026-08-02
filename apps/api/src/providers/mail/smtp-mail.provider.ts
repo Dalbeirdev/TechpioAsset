@@ -36,6 +36,15 @@ export class SmtpMailProvider extends MailProvider {
       text: message.text,
       ...(message.html ? { html: message.html } : {}),
       ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+      ...(message.attachments?.length
+        ? {
+            attachments: message.attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+              contentType: a.contentType,
+            })),
+          }
+        : {}),
     });
 
     this.logger.log(`Sent email to ${message.to} — "${message.subject}"`);

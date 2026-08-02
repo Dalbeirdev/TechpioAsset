@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Download } from 'lucide-react';
+import { CalendarClock, Download } from 'lucide-react';
 import { apiFetch, API_BASE, getAccessToken } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { PERMISSIONS } from '@techpioasset/domain';
@@ -97,6 +98,13 @@ export default function ReportsPage() {
                 <Download aria-hidden="true" className="size-4" />
                 Excel
               </Button>
+              <Link
+                href="/settings/schedules"
+                className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+              >
+                <CalendarClock aria-hidden="true" className="size-4" />
+                Schedules
+              </Link>
             </>
           ) : null}
         </div>
