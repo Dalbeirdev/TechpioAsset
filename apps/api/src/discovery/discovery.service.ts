@@ -9,6 +9,7 @@ import type {
 import { AppError } from '../common/errors/app-error.js';
 import { paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AssetHealthService } from '../asset-health/asset-health.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DiscoveryProvider } from '../providers/discovery/discovery.provider.js';
 
@@ -46,6 +47,7 @@ export class DiscoveryService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly provider: DiscoveryProvider,
+    private readonly health: AssetHealthService,
   ) {}
 
   // ── ingest ─────────────────────────────────────────────────────────────────
@@ -67,7 +69,13 @@ export class DiscoveryService {
         this.reconcileDevice(tx as Tx, actor.companyId, device, source),
       );
       summary[outcome.bucket] += 1;
-      if (outcome.applied) summary.applied += 1;
+      if (outcome.applied) {
+        summary.applied += 1;
+        // H4: fresh data changes the health picture; recompute after commit.
+        if (outcome.assetId) {
+          await this.health.recomputeForAsset(actor.companyId, outcome.assetId);
+        }
+      }
     }
 
     await this.audit.record({
@@ -94,7 +102,11 @@ export class DiscoveryService {
     companyId: string,
     device: DiscoveredDeviceInput,
     source: DiscoverySource,
-  ): Promise<{ bucket: 'matched' | 'proposed' | 'conflict' | 'unmatched'; applied: boolean }> {
+  ): Promise<{
+    bucket: 'matched' | 'proposed' | 'conflict' | 'unmatched';
+    applied: boolean;
+    assetId?: string | null;
+  }> {
     const serial = device.serialNumber?.trim() || null;
     const hostname = device.hostname?.trim() || null;
 
@@ -130,7 +142,7 @@ export class DiscoveryService {
         data: { lastSeenAt: new Date(), payload: device as unknown as Prisma.InputJsonValue },
       });
       await this.applyPayload(tx, companyId, existing.assetId, device, source);
-      return { bucket: 'matched', applied: true };
+      return { bucket: 'matched', applied: true, assetId: existing.assetId };
     }
 
     // Classify: exact serial → MATCHED (1) or CONFLICT (2+); hostname == asset
@@ -188,7 +200,7 @@ export class DiscoveryService {
 
     if (matchState === 'MATCHED' && assetId) {
       await this.applyPayload(tx, companyId, assetId, device, source);
-      return { bucket: 'matched', applied: true };
+      return { bucket: 'matched', applied: true, assetId };
     }
     const bucket =
       matchState === 'PROPOSED' ? 'proposed' : matchState === 'CONFLICT' ? 'conflict' : 'unmatched';
@@ -331,6 +343,8 @@ export class DiscoveryService {
       await this.applyPayload(tx, actor.companyId, assetId, payload, device.source);
       return row;
     });
+    // H4: the confirmed payload changes the health picture.
+    await this.health.recomputeForAsset(actor.companyId, assetId);
 
     await this.audit.record({
       companyId: actor.companyId,
