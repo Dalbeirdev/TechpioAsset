@@ -26,6 +26,15 @@ import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import {
+  HardwareTab,
+  HealthTab,
+  OsTab,
+  SoftwareTab,
+  type HardwareProfileDto,
+  type HealthDto,
+  type OsInfoDto,
+} from '@/components/assets/discovery-tabs';
 
 interface AssetDetail {
   id: string;
@@ -69,9 +78,14 @@ interface AssetDetail {
     newCondition: AssetCondition | null;
     reason: string | null;
   }[];
+  // v2.5 H4 payload — null/zero until discovery has reported this machine.
+  hardwareProfile: HardwareProfileDto | null;
+  osInfo: OsInfoDto | null;
+  health: HealthDto | null;
+  _count: { installedSoftware: number };
 }
 
-type AssetTab = 'overview' | 'history' | 'financials';
+type AssetTab = 'overview' | 'hardware' | 'os' | 'software' | 'health' | 'history' | 'financials';
 
 function fmtDate(value: string | null): string {
   if (!value) return '—';
@@ -186,6 +200,10 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         {(
           [
             ['overview', 'Overview'],
+            ['hardware', 'Hardware'],
+            ['os', 'OS & Security'],
+            ['software', `Software${data._count.installedSoftware ? ` (${data._count.installedSoftware})` : ''}`],
+            ['health', 'Health'],
             ['history', 'History'],
             ...(canSeeCost ? ([['financials', 'Financials']] as const) : []),
           ] as const
@@ -248,6 +266,13 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
             </p>
           ) : null}
         </Card>
+      ) : null}
+
+      {tab === 'hardware' ? <HardwareTab hw={data.hardwareProfile} /> : null}
+      {tab === 'os' ? <OsTab os={data.osInfo} /> : null}
+      {tab === 'software' ? <SoftwareTab assetId={id} /> : null}
+      {tab === 'health' ? (
+        <HealthTab assetId={id} health={data.health} canRecompute={can(PERMISSIONS.ASSETS_UPDATE)} />
       ) : null}
 
       {tab === 'history' ? (
