@@ -104,6 +104,9 @@ export const PERMISSIONS = {
   // ASSETS_COST_READ - the API gates per aggregate, never the UI alone.
   ANALYTICS_READ: 'analytics:read',
 
+  // Integrations (v2.6). Webhooks, SCIM token, hub - Super Admin only via ALL.
+  INTEGRATIONS_MANAGE: 'integrations:manage',
+
   // AI
   AI_CONFIGURE: 'ai:configure',
   AI_REVIEW_RESULTS: 'ai:review-results',

@@ -13,6 +13,7 @@ import { requestScopeFilter, tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { WebhooksService } from '../integrations/webhooks.service.js';
 import { WorkflowService } from './workflow.service.js';
 
 const SORTABLE = ['createdAt', 'requestNumber', 'status', 'priority', 'requiredBy'] as const;
@@ -24,6 +25,7 @@ export class RequestsService {
     private readonly workflow: WorkflowService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -523,6 +525,14 @@ export class RequestsService {
         entityId: id,
       });
 
+      // v2.6 A3: terminal outcome - integrations may care.
+      void this.webhooks.publish(actor.companyId, 'request.decided', {
+        requestId: id,
+        requestNumber: request.requestNumber,
+        decision: 'REJECTED',
+        step: approval.stepName,
+      });
+
       return this.findOne(actor, id);
     }
 
@@ -600,6 +610,13 @@ export class RequestsService {
         linkPath: `/requests/${id}`,
         entityType: 'AssetRequest',
         entityId: id,
+      });
+      // v2.6 A3: fully approved - a terminal outcome.
+      void this.webhooks.publish(actor.companyId, 'request.decided', {
+        requestId: id,
+        requestNumber: request.requestNumber,
+        decision: 'APPROVED',
+        step: approval.stepName,
       });
     }
 
