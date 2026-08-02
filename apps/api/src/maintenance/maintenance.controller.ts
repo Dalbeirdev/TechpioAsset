@@ -1,14 +1,25 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
+  assignWorkOrderSchema,
   completeMaintenanceSchema,
+  consumePartSchema,
   createMaintenanceSchema,
+  createMaintenanceScheduleSchema,
+  diagnosisSchema,
+  holdWorkOrderSchema,
   maintenanceListQuerySchema,
   scheduleMaintenanceSchema,
+  updateMaintenanceScheduleSchema,
+  type AssignWorkOrderInput,
   type AuthUser,
+  type ConsumePartInput,
   type CreateMaintenanceInput,
+  type CreateMaintenanceScheduleInput,
+  type HoldWorkOrderInput,
   type MaintenanceListQuery,
+  type UpdateMaintenanceScheduleInput,
 } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
@@ -32,11 +43,94 @@ export class MaintenanceController {
     return this.maintenance.list(actor, query);
   }
 
+  // Static routes stay ABOVE ':id' so Express does not swallow them as ids.
+  @Get('schedules')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_READ)
+  @ApiOperation({ summary: 'Preventive maintenance schedules' })
+  listSchedules(@CurrentUser() actor: AuthUser, @Query('assetId') assetId?: string) {
+    return this.maintenance.listSchedules(actor, assetId);
+  }
+
+  @Post('schedules')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  @ApiOperation({ summary: 'Create a preventive schedule (sweep spawns the orders)' })
+  createSchedule(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(createMaintenanceScheduleSchema)) body: CreateMaintenanceScheduleInput,
+  ) {
+    return this.maintenance.createSchedule(actor, body);
+  }
+
+  @Patch('schedules/:id')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  @ApiOperation({ summary: 'Retitle, retime or de/activate a schedule' })
+  updateSchedule(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(updateMaintenanceScheduleSchema)) body: UpdateMaintenanceScheduleInput,
+  ) {
+    return this.maintenance.updateSchedule(actor, id, body);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.MAINTENANCE_READ)
-  @ApiOperation({ summary: 'Read a maintenance record' })
+  @ApiOperation({ summary: 'Read a maintenance record (with parts drawn)' })
   findOne(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
     return this.maintenance.findOne(actor, id);
+  }
+
+  @Post(':id/assign')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  @ApiOperation({ summary: 'Assign a technician (optionally with an SLA deadline)' })
+  assign(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(assignWorkOrderSchema)) body: AssignWorkOrderInput,
+  ) {
+    return this.maintenance.assign(actor, id, body);
+  }
+
+  @Patch(':id/diagnosis')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  @ApiOperation({ summary: 'Record the diagnosis' })
+  setDiagnosis(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(diagnosisSchema)) body: { diagnosis: string },
+  ) {
+    return this.maintenance.setDiagnosis(actor, id, body.diagnosis);
+  }
+
+  @Post(':id/hold')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  @ApiOperation({ summary: 'Pause in-progress work' })
+  hold(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(holdWorkOrderSchema)) body: HoldWorkOrderInput,
+  ) {
+    return this.maintenance.hold(actor, id, body.reason);
+  }
+
+  @Post(':id/resume')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  @ApiOperation({ summary: 'Resume held work' })
+  resume(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.maintenance.resume(actor, id);
+  }
+
+  @Post(':id/consume-part')
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  @ApiOperation({
+    summary: 'Draw a part from stock for this work order',
+    description: 'The v2.4 guarded take; refusals return the honest numbers.',
+  })
+  consumePart(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(consumePartSchema)) body: ConsumePartInput,
+  ) {
+    return this.maintenance.consumePart(actor, id, body);
   }
 
   @Post()

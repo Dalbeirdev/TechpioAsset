@@ -159,6 +159,20 @@ export const NOTIFICATION_CATALOGUE: Readonly<Record<NotificationType, Notificat
     mandatory: true,
     channels: ['IN_APP', 'EMAIL'],
   },
+  // v2.5 work orders — the technician must know, and an overdue SLA must not
+  // pass silently.
+  WORK_ORDER_ASSIGNED: {
+    type: 'WORK_ORDER_ASSIGNED',
+    title: 'Work order assigned',
+    mandatory: false,
+    channels: ['IN_APP'],
+  },
+  WORK_ORDER_ESCALATED: {
+    type: 'WORK_ORDER_ESCALATED',
+    title: 'Work order overdue',
+    mandatory: true,
+    channels: ['IN_APP', 'EMAIL'],
+  },
 };
 
 export function isMandatory(type: NotificationType): boolean {

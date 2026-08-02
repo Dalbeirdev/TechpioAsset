@@ -23,6 +23,7 @@ import {
   changeAssetStatusSchema,
   type BulkChangeStatusInput,
   createAssetSchema,
+  pageQuerySchema,
   returnAssetSchema,
   setAssetPriceSchema,
   updateAssetSchema,
@@ -30,6 +31,7 @@ import {
   type AssignAssetInput,
   type AuthUser,
   type CreateAssetInput,
+  type PageQuery,
   type ReturnAssetInput,
   type UpdateAssetInput,
 } from '@techpioasset/contracts';
@@ -39,6 +41,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AssetsService } from './assets.service.js';
 import { AssetImportService } from './asset-import.service.js';
+import { AssetHealthService } from '../asset-health/asset-health.service.js';
 
 @ApiTags('Assets')
 @Controller('assets')
@@ -46,6 +49,7 @@ export class AssetsController {
   constructor(
     private readonly assets: AssetsService,
     private readonly imports: AssetImportService,
+    private readonly health: AssetHealthService,
   ) {}
 
   @Post('import')
@@ -121,9 +125,34 @@ export class AssetsController {
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.ASSETS_READ)
-  @ApiOperation({ summary: 'Read one asset with its assignment and condition history' })
+  @ApiOperation({
+    summary: 'Read one asset with history, discovered hardware/OS and health',
+  })
   findOne(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
     return this.assets.findOne(actor, id);
+  }
+
+  @Get(':id/software')
+  @RequirePermissions(PERMISSIONS.ASSETS_READ)
+  @ApiOperation({ summary: 'Discovered software inventory, paginated' })
+  listSoftware(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Query(zodBody(pageQuerySchema)) query: PageQuery,
+  ) {
+    return this.assets.listSoftware(actor, id, query);
+  }
+
+  @Post(':id/health/recompute')
+  @RequirePermissions(PERMISSIONS.ASSETS_UPDATE)
+  @ApiOperation({
+    summary: 'Recompute the health score now',
+    description: 'Returns null when nothing is known about the machine - never a fabricated score.',
+  })
+  async recomputeHealth(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    // Scope check first: the service recomputes by companyId, the actor must see the asset.
+    await this.assets.findOne(actor, id);
+    return this.health.recomputeForAsset(actor.companyId, id);
   }
 
   @Post()

@@ -31,6 +31,9 @@ import { QueueModule } from './providers/queue/queue.module.js';
 import { CacheModule } from './providers/cache/cache.module.js';
 import { StorageModule } from './providers/storage/storage.module.js';
 import { AiModule } from './providers/ai/ai.module.js';
+import { DiscoveryProviderModule } from './providers/discovery/discovery.module.js';
+import { DiscoveryModule } from './discovery/discovery.module.js';
+import { AssetHealthModule } from './asset-health/asset-health.module.js';
 import { PushModule } from './providers/push/push.module.js';
 import { ChatModule } from './providers/chat/chat.module.js';
 import { SsoModule } from './providers/sso/sso.module.js';
@@ -67,6 +70,8 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     CacheModule,
     StorageModule,
     AiModule,
+    DiscoveryProviderModule,
+    AssetHealthModule,
     PushModule,
     ChatModule,
     SsoModule,
@@ -88,6 +93,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     StorageHttpModule,
     MobileModule,
     MaintenanceModule,
+    DiscoveryModule,
     ReportsModule,
     ScheduledModule,
   ],

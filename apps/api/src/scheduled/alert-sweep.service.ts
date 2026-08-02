@@ -1,13 +1,18 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import {
   deriveLicenseStatus,
+  shouldEscalateWorkOrder,
   expiryBucket,
   isHighUtilization,
   isWarrantyAlertable,
   seatsAvailable,
   warrantyBucket,
 } from '@techpioasset/domain';
+import { AuditAction } from '@prisma/client';
 import { AppConfig } from '../config/config.module.js';
+import { AuditService } from '../audit/audit.service.js';
+import { AssetHealthService } from '../asset-health/asset-health.service.js';
+import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -31,6 +36,9 @@ export class AlertSweepService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly config: AppConfig,
+    private readonly audit: AuditService,
+    private readonly maintenance: MaintenanceService,
+    private readonly assetHealth: AssetHealthService,
   ) {}
 
   onModuleInit(): void {
@@ -43,6 +51,9 @@ export class AlertSweepService implements OnModuleInit {
       void this.runApprovalEscalationSweep();
       void this.runLicenseSweep();
       void this.runStockSweep();
+      void this.runWorkOrderSweep();
+      void this.runHealthSweep();
+      void this.runDiscoveryStalenessSweep();
     };
     this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
     this.timer.unref?.();
@@ -367,6 +378,100 @@ export class AlertSweepService implements OnModuleInit {
       this.logger.log(`Stock sweep: ${drift} drift warning(s), ${lowStock} low-stock alert(s)`);
     }
     return { drift, lowStock };
+  }
+
+  /**
+   * v2.5 H3 — work-order housekeeping in one daily pass:
+   * 1. spawn work orders for due preventive schedules (idempotent: the due date
+   *    advances strictly into the future in the same transaction);
+   * 2. escalate overdue work orders EXACTLY ONCE (the approvals pattern):
+   *    notify, audit, stamp escalatedAt.
+   */
+  async runWorkOrderSweep(now: Date = new Date()): Promise<{ spawned: number; escalated: number }> {
+    const spawned = await this.maintenance.spawnDueSchedules(now);
+
+    const candidates = await this.prisma.client.maintenanceRecord.findMany({
+      where: {
+        escalatedAt: null,
+        slaDueAt: { lt: now },
+        status: { in: ['SCHEDULED', 'IN_PROGRESS', 'ON_HOLD'] },
+      },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        slaDueAt: true,
+        escalatedAt: true,
+        technicianId: true,
+        requestedById: true,
+        asset: { select: { companyId: true, assetTag: true, createdById: true } },
+      },
+    });
+
+    let escalated = 0;
+    for (const order of candidates) {
+      if (!shouldEscalateWorkOrder(order, now)) continue;
+
+      // The technician on the hook first; the requester, then whoever manages
+      // the asset, as fallbacks.
+      const recipientId = order.technicianId ?? order.requestedById ?? order.asset.createdById;
+      if (recipientId) {
+        await this.notifications.notify({
+          companyId: order.asset.companyId,
+          userId: recipientId,
+          type: 'WORK_ORDER_ESCALATED',
+          title: `Work order overdue: ${order.title}`,
+          body: `${order.asset.assetTag}: the SLA deadline (${order.slaDueAt?.toDateString()}) has passed.`,
+          linkPath: `/maintenance/${order.id}`,
+          entityType: 'MaintenanceRecord',
+          entityId: order.id,
+        });
+      }
+      await this.audit.record({
+        companyId: order.asset.companyId,
+        action: AuditAction.WORK_ORDER_ESCALATED,
+        entityType: 'MaintenanceRecord',
+        entityId: order.id,
+        newValues: { slaDueAt: order.slaDueAt, status: order.status },
+      });
+      // Stamp regardless of recipient so an orphaned order is not rescanned.
+      await this.prisma.client.maintenanceRecord.update({
+        where: { id: order.id },
+        data: { escalatedAt: now },
+      });
+      escalated += 1;
+    }
+
+    if (spawned > 0 || escalated > 0) {
+      this.logger.log(`Work-order sweep spawned ${spawned}, escalated ${escalated}`);
+    }
+    return { spawned, escalated };
+  }
+
+  /**
+   * v2.5 H7 - discovery staleness. A machine last reported more than 30 days
+   * ago is running blind: its health score rests on old facts. The sweep WARNS
+   * (it never fabricates a fresher picture) and returns the stale count so
+   * operators and tests can see it.
+   */
+  async runDiscoveryStalenessSweep(now: Date = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - 30 * 86_400_000);
+    const stale = await this.prisma.client.hardwareProfile.findMany({
+      where: { lastDiscoveredAt: { lt: cutoff }, asset: { deletedAt: null } },
+      select: { assetId: true, lastDiscoveredAt: true, asset: { select: { assetTag: true } } },
+    });
+    for (const profile of stale) {
+      this.logger.warn(
+        `Discovery stale: ${profile.asset.assetTag} last reported ` +
+          `${profile.lastDiscoveredAt.toISOString().slice(0, 10)} (>30 days) - health rests on old facts`,
+      );
+    }
+    return stale.length;
+  }
+
+  /** v2.5 H4 - daily recompute keeps every cached health score honest. */
+  async runHealthSweep(now: Date = new Date()): Promise<number> {
+    return this.assetHealth.recomputeAll(now);
   }
 
   private async alreadyAlertedToday(

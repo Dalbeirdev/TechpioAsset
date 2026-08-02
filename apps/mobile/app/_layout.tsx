@@ -38,6 +38,8 @@ export default function RootLayout() {
           <Stack.Screen name="my-licenses" options={{ headerShown: true, title: 'My licenses' }} />
           <Stack.Screen name="invoices" options={{ headerShown: true, title: 'Invoices' }} />
           <Stack.Screen name="maintenance" options={{ headerShown: true, title: 'Maintenance' }} />
+          <Stack.Screen name="work-orders" options={{ headerShown: true, title: 'Work orders' }} />
+          <Stack.Screen name="work-order/[id]" options={{ headerShown: true, title: 'Work order' }} />
           <Stack.Screen name="people" options={{ headerShown: true, title: 'People' }} />
           <Stack.Screen name="reports" options={{ headerShown: true, title: 'Reports' }} />
           <Stack.Screen name="audit" options={{ headerShown: true, title: 'Audit log' }} />

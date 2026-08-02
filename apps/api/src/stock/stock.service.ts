@@ -403,6 +403,59 @@ export class StockService {
     return { asset, level: await this.levelOf(input.inventoryItemId, input.stockLocationId) };
   }
 
+  /**
+   * v2.5 H3 — draw a part for a work order. The exact same guarded take and
+   * ledger discipline as issue(), but the movement row carries the work-order
+   * reference so the record shows what was used to fix what.
+   */
+  async consumeForWorkOrder(
+    actor: AuthUser,
+    input: {
+      inventoryItemId: string;
+      stockLocationId: string;
+      quantity: number;
+      workOrderId: string;
+      note?: string | null;
+    },
+  ) {
+    await this.assertRefs(actor, input.inventoryItemId, input.stockLocationId);
+    await this.takeStock(actor, {
+      inventoryItemId: input.inventoryItemId,
+      stockLocationId: input.stockLocationId,
+      quantity: input.quantity,
+      movementType: 'ISSUE',
+      reason: input.note ?? null,
+      refType: 'MaintenanceRecord',
+      refId: input.workOrderId,
+      bumpGlobal: true,
+    });
+    await this.auditMovement(
+      actor,
+      input.inventoryItemId,
+      'WORK_ORDER_PART',
+      input.quantity,
+      input.note,
+    );
+    await this.maybeLowStockAlert(actor, input.inventoryItemId, input.stockLocationId);
+    return this.levelOf(input.inventoryItemId, input.stockLocationId);
+  }
+
+  /** The parts drawn against one work order, newest first. */
+  async partsForWorkOrder(companyId: string, workOrderId: string) {
+    return this.prisma.client.stockMovement.findMany({
+      where: { companyId, refType: 'MaintenanceRecord', refId: workOrderId, type: 'ISSUE' },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        quantity: true,
+        reason: true,
+        createdAt: true,
+        actorId: true,
+        inventoryItem: { select: { id: true, sku: true, name: true, unit: true } },
+      },
+    });
+  }
+
   // ── internals ──────────────────────────────────────────────────────────────
 
   private async assertRefs(actor: AuthUser, inventoryItemId: string, stockLocationId: string) {
