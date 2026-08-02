@@ -94,6 +94,12 @@ export const PERMISSIONS = {
   /** Accept a mismatched three-way match anyway - always audited. */
   PROCUREMENT_MATCH_OVERRIDE: 'procurement:match:override',
 
+  // Discovery (v2.5). Ingest is for agents/admins; reconcile resolves the
+  // review queue. Discovery proposes - humans (or exact serials) decide.
+  DISCOVERY_READ: 'discovery:read',
+  DISCOVERY_INGEST: 'discovery:ingest',
+  DISCOVERY_RECONCILE: 'discovery:reconcile',
+
   // AI
   AI_CONFIGURE: 'ai:configure',
   AI_REVIEW_RESULTS: 'ai:review-results',
@@ -141,7 +147,7 @@ const P = PERMISSIONS;
 
 /** Actions that only read. Used to prove the Auditor role can never mutate. */
 const WRITE_ACTION_PATTERN =
-  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal|convert|issue|receive|override)$/;
+  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal|convert|issue|receive|override|ingest|reconcile)$/;
 
 export function isReadOnlyPermission(permission: Permission): boolean {
   return !WRITE_ACTION_PATTERN.test(permission);
@@ -152,6 +158,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
 
   IT_ADMIN: [
     P.ASSETS_READ,
+    P.DISCOVERY_READ,
+    P.DISCOVERY_INGEST,
+    P.DISCOVERY_RECONCILE,
     P.PROCUREMENT_PR_CREATE,
     P.PROCUREMENT_PR_READ,
     P.INVENTORY_TRANSFER,
@@ -303,6 +312,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.AUDIT_READ,
     P.LICENSES_READ,
     P.PROCUREMENT_PR_READ,
+    P.DISCOVERY_READ,
   ],
 
   // Tenant owner. In single-company v1 this is grant-equivalent to Super Admin;
@@ -313,6 +323,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   // Executes IT work — deploy, assign, repair. A subset of IT_ADMIN (IT Manager).
   IT_TECHNICIAN: [
     P.ASSETS_READ,
+    P.DISCOVERY_READ,
+    P.DISCOVERY_RECONCILE,
     P.LICENSES_READ,
     P.LICENSES_ASSIGN,
     P.LICENSES_REVOKE,
