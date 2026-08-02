@@ -34,6 +34,7 @@ import { AiModule } from './providers/ai/ai.module.js';
 import { DiscoveryProviderModule } from './providers/discovery/discovery.module.js';
 import { DiscoveryModule } from './discovery/discovery.module.js';
 import { AssetHealthModule } from './asset-health/asset-health.module.js';
+import { AnalyticsModule } from './analytics/analytics.module.js';
 import { PushModule } from './providers/push/push.module.js';
 import { ChatModule } from './providers/chat/chat.module.js';
 import { SsoModule } from './providers/sso/sso.module.js';
@@ -94,6 +95,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
     MobileModule,
     MaintenanceModule,
     DiscoveryModule,
+    AnalyticsModule,
     ReportsModule,
     ScheduledModule,
   ],
