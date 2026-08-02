@@ -24,6 +24,7 @@ import { buildOrderBy, paginate } from '../common/paginate.js';
 import { assetScopeFilter, canSeeCost, tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { WebhooksService } from '../integrations/webhooks.service.js';
 
 const SORTABLE = ['createdAt', 'name', 'assetTag', 'status', 'purchaseDate'] as const;
 
@@ -50,6 +51,7 @@ export class AssetsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -382,6 +384,13 @@ export class AssetsService {
       entityType: 'Asset',
       entityId: asset.id,
       newValues: { assetTag: input.assetTag, name: input.name, status: input.status },
+    });
+
+    // v2.6 A3: integrations may care about new assets.
+    void this.webhooks.publish(actor.companyId, 'asset.created', {
+      assetId: asset.id,
+      assetTag: input.assetTag,
+      name: input.name,
     });
 
     return asset;
