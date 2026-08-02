@@ -7,6 +7,13 @@
  * delivered email.
  */
 
+export interface MailAttachment {
+  filename: string;
+  /** Text content; reports are CSV/SpreadsheetML strings (v2.6 A2). */
+  content: string;
+  contentType: string;
+}
+
 export interface MailMessage {
   to: string;
   subject: string;
@@ -14,6 +21,7 @@ export interface MailMessage {
   text: string;
   html?: string;
   replyTo?: string;
+  attachments?: MailAttachment[];
 }
 
 export interface MailResult {

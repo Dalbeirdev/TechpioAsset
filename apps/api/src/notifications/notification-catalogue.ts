@@ -173,6 +173,20 @@ export const NOTIFICATION_CATALOGUE: Readonly<Record<NotificationType, Notificat
     mandatory: true,
     channels: ['IN_APP', 'EMAIL'],
   },
+  // v2.6 scheduled reports - the owner always learns the outcome, especially
+  // failure: a report that silently stopped arriving is a lie by omission.
+  REPORT_DELIVERED: {
+    type: 'REPORT_DELIVERED',
+    title: 'Scheduled report delivered',
+    mandatory: false,
+    channels: ['IN_APP'],
+  },
+  REPORT_FAILED: {
+    type: 'REPORT_FAILED',
+    title: 'Scheduled report failed',
+    mandatory: true,
+    channels: ['IN_APP', 'EMAIL'],
+  },
 };
 
 export function isMandatory(type: NotificationType): boolean {
