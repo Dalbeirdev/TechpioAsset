@@ -53,6 +53,7 @@ export class AlertSweepService implements OnModuleInit {
       void this.runStockSweep();
       void this.runWorkOrderSweep();
       void this.runHealthSweep();
+      void this.runDiscoveryStalenessSweep();
     };
     this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
     this.timer.unref?.();
@@ -445,6 +446,27 @@ export class AlertSweepService implements OnModuleInit {
       this.logger.log(`Work-order sweep spawned ${spawned}, escalated ${escalated}`);
     }
     return { spawned, escalated };
+  }
+
+  /**
+   * v2.5 H7 - discovery staleness. A machine last reported more than 30 days
+   * ago is running blind: its health score rests on old facts. The sweep WARNS
+   * (it never fabricates a fresher picture) and returns the stale count so
+   * operators and tests can see it.
+   */
+  async runDiscoveryStalenessSweep(now: Date = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - 30 * 86_400_000);
+    const stale = await this.prisma.client.hardwareProfile.findMany({
+      where: { lastDiscoveredAt: { lt: cutoff }, asset: { deletedAt: null } },
+      select: { assetId: true, lastDiscoveredAt: true, asset: { select: { assetTag: true } } },
+    });
+    for (const profile of stale) {
+      this.logger.warn(
+        `Discovery stale: ${profile.asset.assetTag} last reported ` +
+          `${profile.lastDiscoveredAt.toISOString().slice(0, 10)} (>30 days) - health rests on old facts`,
+      );
+    }
+    return stale.length;
   }
 
   /** v2.5 H4 - daily recompute keeps every cached health score honest. */
