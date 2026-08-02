@@ -117,6 +117,8 @@ export const envSchema = z
      */
     LICENSE_KEY_SECRET: z.string().min(16).optional(),
 
+    /** v2.5 - RAM the health score treats as the role baseline (B.7 Memory). */
+    HEALTH_RAM_BASELINE_GB: z.coerce.number().min(1).max(1024).default(8),
     /** v2.5 - device discovery: mock (default) | intune (built to contract). */
     DISCOVERY_PROVIDER: z.enum(['mock', 'intune']).default('mock'),
     INTUNE_TENANT_ID: z.string().optional(),

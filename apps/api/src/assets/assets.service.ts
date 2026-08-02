@@ -6,6 +6,7 @@ import type {
   AssignAssetInput,
   AuthUser,
   CreateAssetInput,
+  PageQuery,
   ReturnAssetInput,
   UpdateAssetInput,
 } from '@techpioasset/contracts';
@@ -260,11 +261,53 @@ export class AssetsService {
             reason: true,
           },
         },
+        // v2.5 H4 — what discovery knows about this machine, and the derived
+        // health. All null/empty until an agent or connector has reported.
+        hardwareProfile: true,
+        osInfo: true,
+        health: {
+          select: {
+            overall: true,
+            grade: true,
+            subScores: true,
+            recommendations: true,
+            capped: true,
+            computedAt: true,
+          },
+        },
+        _count: { select: { installedSoftware: true } },
       },
     });
 
     if (!asset) throw AppError.notFound('Asset', id);
     return asset;
+  }
+
+  /** v2.5 H4 — the discovered software inventory, paginated (Software tab). */
+  async listSoftware(actor: AuthUser, id: string, query: PageQuery) {
+    const asset = await this.prisma.client.asset.findFirst({
+      where: { id, ...assetScopeFilter(actor) },
+      select: { id: true },
+    });
+    if (!asset) throw AppError.notFound('Asset', id);
+    return paginate(query, {
+      count: () => this.prisma.client.installedSoftware.count({ where: { assetId: id } }),
+      findMany: ({ skip, take }) =>
+        this.prisma.client.installedSoftware.findMany({
+          where: { assetId: id },
+          orderBy: { name: 'asc' },
+          skip,
+          take,
+          select: {
+            id: true,
+            name: true,
+            version: true,
+            publisher: true,
+            installedAt: true,
+            lastDiscoveredAt: true,
+          },
+        }),
+    });
   }
 
   /** Resolves a QR token to an asset, subject to the same scope rules. */

@@ -11,6 +11,7 @@ import {
 import { AuditAction } from '@prisma/client';
 import { AppConfig } from '../config/config.module.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AssetHealthService } from '../asset-health/asset-health.service.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -37,6 +38,7 @@ export class AlertSweepService implements OnModuleInit {
     private readonly config: AppConfig,
     private readonly audit: AuditService,
     private readonly maintenance: MaintenanceService,
+    private readonly assetHealth: AssetHealthService,
   ) {}
 
   onModuleInit(): void {
@@ -50,6 +52,7 @@ export class AlertSweepService implements OnModuleInit {
       void this.runLicenseSweep();
       void this.runStockSweep();
       void this.runWorkOrderSweep();
+      void this.runHealthSweep();
     };
     this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
     this.timer.unref?.();
@@ -442,6 +445,11 @@ export class AlertSweepService implements OnModuleInit {
       this.logger.log(`Work-order sweep spawned ${spawned}, escalated ${escalated}`);
     }
     return { spawned, escalated };
+  }
+
+  /** v2.5 H4 - daily recompute keeps every cached health score honest. */
+  async runHealthSweep(now: Date = new Date()): Promise<number> {
+    return this.assetHealth.recomputeAll(now);
   }
 
   private async alreadyAlertedToday(
