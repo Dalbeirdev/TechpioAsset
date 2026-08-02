@@ -249,6 +249,8 @@ enum MaintenanceStatus {
   REQUESTED
   SCHEDULED
   IN_PROGRESS
+  // v2.5 work orders: paused, waiting on a part/user/vendor
+  ON_HOLD
   COMPLETED
   CANCELLED
   FAILED
@@ -317,6 +319,9 @@ enum NotificationType {
   // v2.3 licenses
   LICENSE_EXPIRING
   SEAT_LIMIT_REACHED
+  // v2.5 work orders
+  WORK_ORDER_ASSIGNED
+  WORK_ORDER_ESCALATED
 }
 
 /// Spec section 10 - individually switchable AI features.
@@ -397,6 +402,8 @@ enum AuditAction {
   // v2.5 discovery
   DISCOVERY_INGESTED
   DISCOVERY_REVIEWED
+  // v2.5 work orders
+  WORK_ORDER_ESCALATED
 }
 
 enum PhysicalInventoryStatus {

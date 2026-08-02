@@ -52,5 +52,52 @@ export const maintenanceListQuerySchema = z.object({
   status: maintenanceStatusEnum.optional(),
   assetId: z.string().optional(),
   type: maintenanceTypeEnum.optional(),
+  /** v2.5: filter to one technician's work orders (mobile "my work orders"). */
+  technicianId: z.string().optional(),
 });
 export type MaintenanceListQuery = z.infer<typeof maintenanceListQuerySchema>;
+
+// ── v2.5 work orders (plan section H3) ─────────────────────────────────────────
+
+export const assignWorkOrderSchema = z.object({
+  technicianId: z.string().min(1),
+  /** Agreed completion deadline; the escalation sweep watches it. */
+  slaDueAt: z.coerce.date().optional().nullable(),
+});
+export type AssignWorkOrderInput = z.infer<typeof assignWorkOrderSchema>;
+
+export const diagnosisSchema = z.object({
+  diagnosis: z.string().trim().min(1).max(4000),
+});
+export type DiagnosisInput = z.infer<typeof diagnosisSchema>;
+
+export const holdWorkOrderSchema = z.object({
+  reason: z.string().trim().max(500).optional().nullable(),
+});
+export type HoldWorkOrderInput = z.infer<typeof holdWorkOrderSchema>;
+
+export const consumePartSchema = z.object({
+  inventoryItemId: z.string().min(1),
+  stockLocationId: z.string().min(1),
+  quantity: z.number().int().min(1).max(10_000),
+  note: z.string().trim().max(500).optional().nullable(),
+});
+export type ConsumePartInput = z.infer<typeof consumePartSchema>;
+
+export const createMaintenanceScheduleSchema = z.object({
+  assetId: z.string().min(1),
+  title: z.string().trim().min(1).max(200),
+  /** Whole days between occurrences; 1..3650. */
+  intervalDays: z.number().int().min(1).max(3650),
+  /** First due date; defaults server-side to now + intervalDays. */
+  firstDueAt: z.coerce.date().optional().nullable(),
+});
+export type CreateMaintenanceScheduleInput = z.infer<typeof createMaintenanceScheduleSchema>;
+
+export const updateMaintenanceScheduleSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  intervalDays: z.number().int().min(1).max(3650).optional(),
+  nextDueAt: z.coerce.date().optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdateMaintenanceScheduleInput = z.infer<typeof updateMaintenanceScheduleSchema>;

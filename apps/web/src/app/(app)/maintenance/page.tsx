@@ -21,6 +21,7 @@ const STATUS_TONE: Record<string, string> = {
   REQUESTED: 'neutral',
   SCHEDULED: 'info',
   IN_PROGRESS: 'warning',
+  ON_HOLD: 'neutral',
   COMPLETED: 'success',
   CANCELLED: 'muted',
   FAILED: 'critical',

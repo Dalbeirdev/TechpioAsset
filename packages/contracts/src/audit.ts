@@ -51,6 +51,7 @@ export const AUDIT_ACTIONS = [
   'MATCH_OVERRIDDEN',
   'DISCOVERY_INGESTED',
   'DISCOVERY_REVIEWED',
+  'WORK_ORDER_ESCALATED',
 ] as const;
 export type AuditActionName = (typeof AUDIT_ACTIONS)[number];
 

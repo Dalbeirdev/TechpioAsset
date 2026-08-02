@@ -1,10 +1,11 @@
 import type { StateMachine } from './state-machine';
 
-/** Maintenance record lifecycle (spec section 14). Mirrors the schema enum. */
+/** Maintenance record lifecycle (spec section 14 + v2.5 work orders). */
 export const MAINTENANCE_STATUSES = [
   'REQUESTED',
   'SCHEDULED',
   'IN_PROGRESS',
+  'ON_HOLD',
   'COMPLETED',
   'CANCELLED',
   'FAILED',
@@ -21,7 +22,10 @@ export const maintenanceStatusMachine: StateMachine<MaintenanceStatus> = {
     // A scheduled job can start, be rescheduled (self, handled by canTransition),
     // or be cancelled before it begins.
     SCHEDULED: ['IN_PROGRESS', 'CANCELLED'],
-    IN_PROGRESS: ['COMPLETED', 'FAILED', 'CANCELLED'],
+    // v2.5: a technician can pause work (waiting on a part, on the user, on a
+    // vendor). Held work resumes or is abandoned - it cannot complete unseen.
+    IN_PROGRESS: ['ON_HOLD', 'COMPLETED', 'FAILED', 'CANCELLED'],
+    ON_HOLD: ['IN_PROGRESS', 'CANCELLED'],
     COMPLETED: [],
     CANCELLED: [],
     FAILED: [],
@@ -32,4 +36,5 @@ export const maintenanceStatusMachine: StateMachine<MaintenanceStatus> = {
 export const MAINTENANCE_ACTIVE_STATUSES: readonly MaintenanceStatus[] = [
   'SCHEDULED',
   'IN_PROGRESS',
+  'ON_HOLD',
 ];
