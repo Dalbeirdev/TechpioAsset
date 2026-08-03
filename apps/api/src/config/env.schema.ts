@@ -78,6 +78,14 @@ export const envSchema = z
       .transform(csv),
 
     AZURE_STORAGE_CONNECTION_STRING: z.string().optional(),
+    /** v2.8 S1 - off-site backup destination (S3-compatible; any provider).
+     *  Unset means backups stay local only, which /health/ready reports. */
+    BACKUP_S3_BUCKET: z.string().optional(),
+    BACKUP_S3_REGION: z.string().optional(),
+    BACKUP_S3_ACCESS_KEY_ID: z.string().optional(),
+    BACKUP_S3_SECRET_ACCESS_KEY: z.string().optional(),
+    BACKUP_S3_ENDPOINT: z.string().optional(),
+    BACKUP_S3_PREFIX: z.string().optional(),
     S3_REGION: z.string().optional(),
     S3_BUCKET: z.string().optional(),
     S3_ACCESS_KEY_ID: z.string().optional(),

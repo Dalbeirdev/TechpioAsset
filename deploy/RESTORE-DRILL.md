@@ -68,9 +68,40 @@ gunzip -c /var/backups/techpioasset/<dump>.sql.gz \
 docker compose -f docker-compose.vps.yml --env-file .env.prod start api
 ```
 
-## Still open (honest)
+## Off-site copies (v2.8 S1)
 
-- **Off-site copies.** Backups live only on the VPS; a host loss loses them.
+`backup-db.sh` ships a verified copy to S3-compatible storage when the destination is
+configured. Set these in `.env.prod` (any S3-compatible provider works - AWS, Backblaze
+B2, Wasabi, Cloudflare R2, MinIO):
+
+```bash
+BACKUP_S3_BUCKET=techpio-backups
+BACKUP_S3_ACCESS_KEY_ID=...
+BACKUP_S3_SECRET_ACCESS_KEY=...
+BACKUP_S3_REGION=us-east-1          # optional, defaults to us-east-1
+BACKUP_S3_ENDPOINT=https://...      # optional, for non-AWS providers
+BACKUP_S3_PREFIX=techpioasset       # optional key prefix
+```
+
+Behaviour:
+
+- The upload runs **inside the api container**, so the host needs no cloud tooling.
+- It is **verified**, not assumed: after the PUT the object's size is read back from the
+  destination and compared. A truncating proxy or a quota that silently drops the body
+  fails the check rather than leaving you believing you have a backup.
+- Off-site retention mirrors `KEEP_DAYS`, and only objects under this deployment's prefix
+  are ever deleted.
+- **A failed upload never destroys a good local backup.** The step exits non-fatally after
+  logging `OFF-SITE UPLOAD FAILED`; the local dump stays exactly where it is.
+- With no destination configured the log says `off-site SKIPPED (no destination configured
+  - the local copy is the only copy)`, so the weaker posture is stated rather than implied.
+
+**Not yet verified against a real cloud account** - no credentials exist in this
+environment. The upload path is exercised end-to-end against an S3-compatible endpoint in
+the test suite (`src/backup/backup-storage.test.ts`, including the truncated-object case),
+which proves the protocol conversation but not a given vendor's quirks.
+
+## Still open (honest)
 - **PITR / WAL archiving.** Recovery granularity is one night, not one minute.
 - **Automated drill.** This one was operator-run; scheduling it monthly (and
   alerting on failure) is the obvious next step.
