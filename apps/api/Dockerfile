@@ -37,4 +37,10 @@ EXPOSE 3001
 
 # Apply any pending migrations, then start the API. `migrate deploy` is safe to
 # run on every boot: it only applies migrations not yet recorded in the DB.
-CMD ["sh", "-c", "pnpm exec prisma migrate deploy && node dist/main.js"]
+#
+# The migration step may need a DIFFERENT connection from the serving one: under
+# RLS enforcement the API connects as a restricted, non-superuser role that
+# cannot create tables, while migrations must run as the schema owner. Set
+# MIGRATE_DATABASE_URL to the owner URL in that case; it defaults to
+# DATABASE_URL, so a deployment that has not switched roles is unaffected.
+CMD ["sh", "-c", "DATABASE_URL=\"${MIGRATE_DATABASE_URL:-$DATABASE_URL}\" pnpm exec prisma migrate deploy && node dist/main.js"]
