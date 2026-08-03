@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/co
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import type { AuthUser } from '@techpioasset/contracts';
-import { CurrentUser } from '../auth/decorators.js';
+import { CurrentUser, SkipRls } from '../auth/decorators.js';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { PlatformGuard } from './platform.guard.js';
 import { PlatformService, type CreateTenantInput } from './platform.service.js';
@@ -24,6 +24,7 @@ const setActiveSchema = z.object({ isActive: z.boolean() });
  * this door. Every action is audited against the target tenant.
  */
 @ApiTags('platform')
+@SkipRls()
 @UseGuards(PlatformGuard)
 @Controller('platform')
 export class PlatformController {
