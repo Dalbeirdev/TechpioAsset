@@ -19,6 +19,10 @@ Staged, reversible at every step.
 
 ## Preconditions
 
+- **Run `deploy/preflight.sh` first** ([PREFLIGHT.md](./PREFLIGHT.md)). It checks the
+  serving credential over the real auth path, the migrate/serve split, RLS coherence and
+  backup freshness — the checks that would have stopped the 2026-08-03 incident.
+
 - v2.7 deployed (contains the `rls_policy_empty_guc` migration and the `@SkipRls` plane).
 - A fresh backup (`deploy/backup-db.sh`).
 
