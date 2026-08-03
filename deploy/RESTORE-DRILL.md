@@ -103,5 +103,22 @@ which proves the protocol conversation but not a given vendor's quirks.
 
 ## Still open (honest)
 - **PITR / WAL archiving.** Recovery granularity is one night, not one minute.
-- **Automated drill.** This one was operator-run; scheduling it monthly (and
-  alerting on failure) is the obvious next step.
+## Scheduled drill (v2.8 S2)
+
+The drill runs itself on the 1st of each month at 04:30 and **shouts when it fails**:
+
+```bash
+( crontab -l 2>/dev/null; echo '30 4 1 * * /opt/techpioasset/deploy/restore-db.sh >> /var/log/techpioasset-drill.log 2>&1' ) | crontab -
+```
+
+- Every outcome is appended to `/var/log/techpioasset-drill.log`.
+- A **failure** emails `OPS_ALERT_EMAIL` through the application's own MailProvider (real
+  SMTP where configured, a readable `.eml` otherwise). Success is quiet by default -
+  `DRILL_NOTIFY_ON_SUCCESS=1` opts in - because an alert channel that cries wolf is one
+  people mute.
+- Failure is detected at three points: no backup file exists at all, the dump does not
+  restore, or the restored database is missing an expected table.
+
+Verified by deliberately drilling a corrupted dump on the production host: the drill
+exited non-zero, recorded `drill failed`, left the **live database untouched** and dropped
+its scratch database.
