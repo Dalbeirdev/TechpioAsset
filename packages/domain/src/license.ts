@@ -20,7 +20,8 @@ export const LICENSE_EXPIRY_WARN_DAYS = 90;
 export const HIGH_UTILIZATION_THRESHOLD = 0.9;
 
 /** Sweep notification buckets, in days-until-expiry (checked in this order). */
-export const LICENSE_EXPIRY_BUCKETS = [30, 60, 90] as const;
+/** v2.7 R4: 7 joins the ladder - a week out is the last useful nudge. */
+export const LICENSE_EXPIRY_BUCKETS = [7, 30, 60, 90] as const;
 export type LicenseExpiryBucket = (typeof LICENSE_EXPIRY_BUCKETS)[number];
 
 const DAY = 86_400_000;

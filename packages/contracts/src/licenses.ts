@@ -149,3 +149,10 @@ export const transferSeatSchema = z
     message: 'Give exactly one of toUserId or toAssetId',
   });
 export type TransferSeatInput = z.infer<typeof transferSeatSchema>;
+
+/** v2.7 R4: reclaiming a seat from a departed holder needs a stated reason. */
+export const reclaimSeatsSchema = z.object({
+  assignmentIds: z.array(z.string().min(1)).min(1).max(500),
+  reason: z.string().trim().min(5).max(500),
+});
+export type ReclaimSeatsInput = z.infer<typeof reclaimSeatsSchema>;
