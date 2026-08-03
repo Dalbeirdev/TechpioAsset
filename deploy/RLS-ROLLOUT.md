@@ -78,3 +78,16 @@ enforcement — exactly the state production ran in from v2.2 through v2.6.
   booted as `techpioasset_app` with `RLS_ENFORCE=true`: identical behaviour for correct
   code, foreign rows invisible, platform plane intact
   (`pnpm --filter @techpioasset/api test:integration:rls`).
+
+## Rollout record — 2026-08-03
+
+Executed on production. RLS enforcement is **live**: the API connects as
+`techpioasset_app` (`rolsuper=f`, `rolbypassrls=f`), `RLS_ENFORCE=true`, and all 43
+tenant tables carry FORCE row-level security with the `NULLIF` policies.
+
+The first switch attempt caused ~5 minutes of API downtime and surfaced three latent
+defects in this very runbook's scripts. Both are written up in
+[docs/incident-2026-08-03-rls-switch.md](../docs/incident-2026-08-03-rls-switch.md) —
+read it before running a similar change: the short version is **verify the credential
+over the real auth path (`-h postgres`) before editing any config**, because
+`pg_hba`'s `127.0.0.1 trust` rule makes local psql tests succeed regardless.
