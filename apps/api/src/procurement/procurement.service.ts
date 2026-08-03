@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AuditAction, Prisma } from '@prisma/client';
+import { ulid } from 'ulid';
 import type {
   AuthUser,
   ConvertPurchaseRequestInput,
@@ -297,7 +298,35 @@ export class ProcurementService {
       if (line.intake === 'STOCK' && (!line.stockLocationId || !line.inventoryItemId)) {
         throw new AppError('VALIDATION_FAILED', 'STOCK intake needs a location and an inventory item');
       }
+      if (line.intake === 'ASSET') {
+        if (!line.categoryId) {
+          throw new AppError('VALIDATION_FAILED', 'ASSET intake needs a category - every asset is filed under one');
+        }
+        // Half a laptop cannot be an asset. Fractions belong to STOCK intake.
+        if (!Number.isInteger(Number(line.quantity))) {
+          throw new AppError(
+            'VALIDATION_FAILED',
+            `ASSET intake must be a whole number of units, not ${line.quantity}`,
+          );
+        }
+        for (const [field, values] of [
+          ['serialNumbers', line.serialNumbers],
+          ['assetTags', line.assetTags],
+        ] as const) {
+          if (!values?.length) continue;
+          if (values.length > Number(line.quantity)) {
+            throw new AppError(
+              'VALIDATION_FAILED',
+              `${values.length} ${field} given for ${line.quantity} unit(s) - there is nothing to attach the extras to`,
+            );
+          }
+          if (new Set(values).size !== values.length) {
+            throw new AppError('VALIDATION_FAILED', `Two units cannot share the same ${field.slice(0, -1)}`);
+          }
+        }
+      }
     }
+    await this.assertAssetIntakeIsReceivable(actor, input.lines);
     // Validate stock refs inside the tenant before mutating anything.
     for (const line of input.lines.filter((l) => l.intake === 'STOCK')) {
       const [location, item] = await Promise.all([
@@ -338,7 +367,9 @@ export class ProcurementService {
         }
       }
 
-      // 2. The receipt itself - an append-only fact.
+      // 2. The receipt itself - an append-only fact. Lines are created one at a
+      // time rather than nested, so each stored line stays paired with the input
+      // that produced it; steps 3 and 3b both need that pairing.
       const created = await tx.goodsReceipt.create({
         data: {
           companyId: actor.companyId,
@@ -346,22 +377,35 @@ export class ProcurementService {
           purchaseOrderId,
           receivedById: actor.id,
           notes: input.notes ?? null,
-          lines: {
-            create: input.lines.map((l) => ({
-              purchaseOrderLineId: l.purchaseOrderLineId,
-              quantity: new Prisma.Decimal(l.quantity),
-              intake: l.intake,
-              stockLocationId: l.stockLocationId ?? null,
-              inventoryItemId: l.inventoryItemId ?? null,
-              note: l.note ?? null,
-            })),
-          },
         },
-        select: { id: true, grnNumber: true, lines: { select: { id: true, intake: true, quantity: true, stockLocationId: true, inventoryItemId: true } } },
+        select: { id: true, grnNumber: true },
       });
+      const receiptLines: { input: (typeof input.lines)[number]; id: string; quantity: Prisma.Decimal }[] = [];
+      for (const l of input.lines) {
+        const stored = await tx.goodsReceiptLine.create({
+          data: {
+            goodsReceiptId: created.id,
+            purchaseOrderLineId: l.purchaseOrderLineId,
+            quantity: new Prisma.Decimal(l.quantity),
+            intake: l.intake,
+            stockLocationId: l.stockLocationId ?? null,
+            inventoryItemId: l.inventoryItemId ?? null,
+            note: l.note ?? null,
+          },
+          select: { id: true, quantity: true },
+        });
+        receiptLines.push({ input: l, id: stored.id, quantity: stored.quantity });
+      }
 
       // 3. STOCK intake posts to the ledger and bumps the caches.
-      for (const grnLine of created.lines) {
+      for (const { input: inputLine, id, quantity } of receiptLines) {
+        const grnLine = {
+          id,
+          quantity,
+          intake: inputLine.intake,
+          stockLocationId: inputLine.stockLocationId ?? null,
+          inventoryItemId: inputLine.inventoryItemId ?? null,
+        };
         if (grnLine.intake !== 'STOCK') continue;
         await tx.stockMovement.create({
           data: {
@@ -396,6 +440,60 @@ export class ProcurementService {
         });
       }
 
+      // 3b. ASSET intake brings the things themselves into existence - v2.9 C1.
+      // Before this, receiving a laptop recorded that a laptop had arrived and
+      // then left somebody to re-type it into the asset register by hand.
+      // Declared per attempt: withGrnNumberRetry rolls the whole transaction
+      // back and runs it again, and a list that outlived that would double.
+      const createdAssets: { id: string; assetTag: string; name: string; serialNumber: string | null }[] = [];
+      const assetLines = receiptLines.filter((l) => l.input.intake === 'ASSET');
+      if (assetLines.length) {
+        const detail = await tx.purchaseOrder.findUniqueOrThrow({
+          where: { id: purchaseOrderId },
+          select: {
+            poNumber: true,
+            vendorId: true,
+            currency: true,
+            lines: { select: { id: true, lineNumber: true, description: true, unitPrice: true } },
+          },
+        });
+        const poLineById = new Map(detail.lines.map((l) => [l.id, l]));
+        const receivedAt = new Date();
+        for (const line of assetLines) {
+          const poLine = poLineById.get(line.input.purchaseOrderLineId)!;
+          const units = Number(line.quantity);
+          for (let unit = 0; unit < units; unit += 1) {
+            createdAssets.push(
+              await tx.asset.create({
+                data: {
+                  companyId: actor.companyId,
+                  // A provisional label that says where the thing came from; the
+                  // completion step renames it to whatever is on the sticker.
+                  assetTag: line.input.assetTags?.[unit] ?? `${grnNumber}-${poLine.lineNumber}-${unit + 1}`,
+                  name: poLine.description,
+                  categoryId: line.input.categoryId!,
+                  subcategoryId: line.input.subcategoryId ?? null,
+                  serialNumber: line.input.serialNumbers?.[unit] ?? null,
+                  qrToken: ulid(),
+                  // Received, not available: it is in the building but nobody has
+                  // checked, configured or tagged it yet.
+                  status: 'RECEIVED',
+                  purchaseDate: receivedAt,
+                  purchaseCost: poLine.unitPrice,
+                  currency: detail.currency,
+                  vendorId: detail.vendorId,
+                  purchaseOrderNumber: detail.poNumber,
+                  sourceGrnLineId: line.id,
+                  sourceUnitIndex: unit + 1,
+                  createdById: actor.id,
+                },
+                select: { id: true, assetTag: true, name: true, serialNumber: true },
+              }),
+            );
+          }
+        }
+      }
+
       // 4. The PO status its lines now imply.
       const lines = await tx.purchaseOrderLine.findMany({
         where: { purchaseOrderId },
@@ -410,7 +508,7 @@ export class ProcurementService {
           updatedById: actor.id,
         },
       });
-        return created;
+        return { ...created, assets: createdAssets };
       }),
     );
 
@@ -420,21 +518,42 @@ export class ProcurementService {
       action: AuditAction.GRN_RECEIVED,
       entityType: 'PurchaseOrder',
       entityId: purchaseOrderId,
-      newValues: { grnNumber: grn.grnNumber, lines: input.lines.length },
+      newValues: { grnNumber: grn.grnNumber, lines: input.lines.length, assetsCreated: grn.assets.length },
     });
+    // One row per asset, so "where did this laptop come from?" is answerable
+    // from the asset's own history rather than only from the receipt's.
+    for (const asset of grn.assets) {
+      await this.audit.record({
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.ASSET_CREATED,
+        entityType: 'Asset',
+        entityId: asset.id,
+        newValues: {
+          assetTag: asset.assetTag,
+          name: asset.name,
+          serialNumber: asset.serialNumber,
+          source: `Goods receipt ${grn.grnNumber}`,
+        },
+      });
+    }
     if (po.createdById && po.createdById !== actor.id) {
       await this.notifications.notify({
         companyId: actor.companyId,
         userId: po.createdById,
         type: 'ASSET_RECEIVED',
         title: `Goods received: ${grn.grnNumber}`,
-        body: `${input.lines.length} line(s) received against ${po.poNumber}.`,
+        body: grn.assets.length
+          ? `${input.lines.length} line(s) received against ${po.poNumber}; ${grn.assets.length} asset(s) created.`
+          : `${input.lines.length} line(s) received against ${po.poNumber}.`,
         linkPath: `/procurement/orders/${purchaseOrderId}`,
         entityType: 'PurchaseOrder',
         entityId: purchaseOrderId,
       });
     }
-    return this.loadPo(actor, purchaseOrderId);
+    // Additive: callers that only read the PO are unaffected, and the receiving
+    // screen can now show what it just brought into existence.
+    return { ...(await this.loadPo(actor, purchaseOrderId)), grnNumber: grn.grnNumber, assetsCreated: grn.assets };
   }
 
   async listPos(actor: AuthUser, query: PrListQuery) {
@@ -514,6 +633,79 @@ export class ProcurementService {
     });
     if (!pr) throw AppError.notFound('Purchase request', id);
     return pr;
+  }
+
+  /**
+   * v2.9 C1 — everything an ASSET line needs, checked before the receipt starts.
+   * A receipt that fails halfway is worse than one refused up front: the goods
+   * are physically on the dock either way, and the clerk needs to know now.
+   */
+  private async assertAssetIntakeIsReceivable(actor: AuthUser, lines: ReceiveGrnInput['lines']) {
+    const assetLines = lines.filter((l) => l.intake === 'ASSET');
+    if (!assetLines.length) return;
+
+    const categoryIds = [...new Set(assetLines.map((l) => l.categoryId!))];
+    const subcategoryIds = [...new Set(assetLines.flatMap((l) => (l.subcategoryId ? [l.subcategoryId] : [])))];
+    const [categories, subcategories] = await Promise.all([
+      this.prisma.client.category.findMany({
+        where: { id: { in: categoryIds }, companyId: actor.companyId, deletedAt: null },
+        select: { id: true },
+      }),
+      subcategoryIds.length
+        ? // Subcategories are scoped through their category, not directly.
+          this.prisma.client.subcategory.findMany({
+            where: { id: { in: subcategoryIds }, deletedAt: null, category: { companyId: actor.companyId } },
+            select: { id: true, categoryId: true },
+          })
+        : Promise.resolve([] as { id: string; categoryId: string }[]),
+    ]);
+    const foundCategories = new Set(categories.map((c) => c.id));
+    for (const id of categoryIds) if (!foundCategories.has(id)) throw AppError.notFound('Category', id);
+    const parentOf = new Map(subcategories.map((s) => [s.id, s.categoryId]));
+    for (const line of assetLines) {
+      if (!line.subcategoryId) continue;
+      const parent = parentOf.get(line.subcategoryId);
+      if (!parent) throw AppError.notFound('Subcategory', line.subcategoryId);
+      if (parent !== line.categoryId) {
+        throw new AppError('VALIDATION_FAILED', 'That subcategory belongs to a different category');
+      }
+    }
+
+    // Serials and tags are unique per company. The database enforces it, but a
+    // constraint violation mid-receipt is a 409 with no useful detail, so say
+    // which value clashes with which existing asset while we still can.
+    const serials = assetLines.flatMap((l) => l.serialNumbers ?? []);
+    const tags = assetLines.flatMap((l) => l.assetTags ?? []);
+    for (const [label, values] of [
+      ['Serial number', serials],
+      ['Asset tag', tags],
+    ] as const) {
+      if (new Set(values).size !== values.length) {
+        throw new AppError('VALIDATION_FAILED', `The same ${label.toLowerCase()} appears on two lines of this receipt`);
+      }
+    }
+    const clashes = await this.prisma.client.asset.findMany({
+      where: {
+        companyId: actor.companyId,
+        deletedAt: null,
+        OR: [
+          ...(serials.length ? [{ serialNumber: { in: serials } }] : []),
+          ...(tags.length ? [{ assetTag: { in: tags } }] : []),
+        ],
+      },
+      select: { assetTag: true, serialNumber: true },
+      take: 5,
+    });
+    if (clashes.length) {
+      const clash = clashes[0]!;
+      const isSerial = clash.serialNumber !== null && serials.includes(clash.serialNumber);
+      throw AppError.conflict(
+        'CONFLICT',
+        isSerial
+          ? `Serial number ${clash.serialNumber} is already recorded on asset ${clash.assetTag}`
+          : `Asset tag ${clash.assetTag} is already in use`,
+      );
+    }
   }
 
   private async loadPo(actor: AuthUser, id: string) {
