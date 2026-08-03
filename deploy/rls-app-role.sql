@@ -15,14 +15,22 @@
 
 \set ON_ERROR_STOP on
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'techpioasset_app') THEN
-    -- NOSUPERUSER + NOBYPASSRLS are the whole point: this role is subject to RLS.
-    EXECUTE format('CREATE ROLE techpioasset_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD %L', :'app_password');
-  END IF;
-END
-$$;
+-- NOTE (v2.7): psql does NOT substitute :'variables' inside dollar-quoted
+-- blocks, so the original DO $$ ... $$ form sent the literal `:'app_password'`
+-- to the server and failed with a syntax error. Discovered the first time this
+-- script was actually executed, during the production RLS rollout. The
+-- conditional below keeps it idempotent using psql's own \if, where
+-- interpolation works.
+
+SELECT NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'techpioasset_app') AS need_create \gset
+
+\if :need_create
+  -- NOSUPERUSER + NOBYPASSRLS are the whole point: this role is subject to RLS.
+  CREATE ROLE techpioasset_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD :'app_password';
+\else
+  -- Re-running rotates the password and re-asserts the RLS-subject flags.
+  ALTER ROLE techpioasset_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD :'app_password';
+\endif
 
 -- Least-privilege DML on the current schema.
 GRANT CONNECT ON DATABASE techpioasset TO techpioasset_app;
