@@ -83,6 +83,9 @@ export const envSchema = z
     /** v2.8 S2 - where operational alerts go (failed restore drills today).
      *  Unset means the drill still records and exits non-zero, but tells nobody. */
     OPS_ALERT_EMAIL: z.string().email().optional(),
+    /** v2.8 S4 - OTLP collector base URL, e.g. http://collector:4318. Unset
+     *  means tracing is off and no SDK is constructed at all. */
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     BACKUP_S3_BUCKET: z.string().optional(),
     BACKUP_S3_REGION: z.string().optional(),
     BACKUP_S3_ACCESS_KEY_ID: z.string().optional(),

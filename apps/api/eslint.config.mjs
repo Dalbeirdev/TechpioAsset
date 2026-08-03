@@ -11,10 +11,12 @@ export default [
     },
   },
   {
-    files: ['prisma/**/*.ts', 'scripts/**/*.mjs'],
+    files: ['prisma/**/*.ts', 'scripts/**/*.mjs', 'src/**/*-cli.ts'],
     rules: {
       // Seed and operator scripts report progress to the console; that is their
-      // entire output, not stray debugging.
+      // entire output, not stray debugging. The same applies to the *-cli.ts
+      // entry points (v2.8): shell scripts parse their stdout, so printing IS
+      // the interface.
       'no-console': 'off',
     },
   },
