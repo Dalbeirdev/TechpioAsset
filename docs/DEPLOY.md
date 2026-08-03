@@ -105,10 +105,29 @@ docker compose -f docker-compose.prod.yml exec api pnpm seed:admin
 
 **Deploy new code:**
 ```bash
+bash deploy/preflight.sh          # refuses the deploy if it cannot prove the state is safe
 git pull
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 # migrations run automatically on api start
 ```
+
+**Two steps that are NOT automatic**, and are needed only when a release says so:
+
+```bash
+# 1. Re-run the seed when a release adds permission keys. Existing roles do not
+#    gain a new permission on their own, so the feature is invisible - and its
+#    endpoints return 403 - until this runs. The seed is idempotent.
+docker compose -f docker-compose.prod.yml exec api pnpm seed
+
+# 2. Rebuild the APK when the mobile app changed. An old APK keeps calling the
+#    old request shapes; when an API contract tightened in the same release,
+#    that is a 4xx on a phone somebody is holding at a loading dock.
+```
+
+Which releases needed them so far: **v2.6** (seed), **v2.9** (seed **and** APK —
+two new permission keys, and mobile receiving gained the category picker and
+serial capture). Every release's requirements are stated in its QA scorecard
+under *Deploy notes*.
 
 **Logs / restart / stop:**
 ```bash
