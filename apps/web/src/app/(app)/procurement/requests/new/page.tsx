@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Plus, ShoppingCart, Trash2 } from 'lucide-react';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, Field, Input } from '@/components/ui';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,7 +20,14 @@ export default function NewPurchaseRequestPage() {
   const toast = useToast();
   const router = useRouter();
   const [justification, setJustification] = useState('');
+  // v2.9 C2 - optional: a company with no cost centres never sees this.
+  const [costCentreId, setCostCentreId] = useState('');
   const [lines, setLines] = useState<Line[]>([{ description: '', quantity: 1, estimatedUnitPrice: '' }]);
+
+  const costCentres = useQuery({
+    queryKey: ['cost-centres'],
+    queryFn: () => apiFetchPage<{ id: string; code: string; name: string }>('/cost-centres?pageSize=100&activeOnly=true'),
+  });
 
   const setLine = (i: number, patch: Partial<Line>) =>
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -36,6 +43,7 @@ export default function NewPurchaseRequestPage() {
         method: 'POST',
         body: {
           justification: justification.trim(),
+          ...(costCentreId ? { costCentreId } : {}),
           lines: lines
             .filter((l) => l.description.trim())
             .map((l) => ({
@@ -75,6 +83,26 @@ export default function NewPurchaseRequestPage() {
             maxLength={2000}
           />
         </Field>
+
+        {(costCentres.data?.data.length ?? 0) > 0 ? (
+          <Field label="Charge to" htmlFor="pr-cc">
+            <select
+              id="pr-cc"
+              value={costCentreId}
+              onChange={(e) => setCostCentreId(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">No cost centre</option>
+              {(costCentres.data?.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+              Charging a cost centre holds this request&apos;s estimate against its budget when the
+              request is approved — and needs an estimated price on every line.
+            </p>
+          </Field>
+        ) : null}
 
         <div>
           <p className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">

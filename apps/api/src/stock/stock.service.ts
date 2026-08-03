@@ -119,7 +119,16 @@ export class StockService {
     return this.prisma.client.inventoryItem.findMany({
       where: { companyId: actor.companyId, deletedAt: null, isActive: true },
       orderBy: { name: 'asc' },
-      select: { id: true, sku: true, name: true, unit: true, minStock: true, quantityOnHand: true },
+      // batchTracked so the receiving screen knows to ask for a lot number.
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        unit: true,
+        minStock: true,
+        quantityOnHand: true,
+        batchTracked: true,
+      },
     });
   }
 

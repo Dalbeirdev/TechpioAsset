@@ -11,6 +11,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { PR_STATUS_TONE, TonePill, fmtDate, inputCls } from '@/components/procurement/shared';
+import { RfqPanel } from '@/components/procurement/rfq-panel';
 
 interface PrDetail {
   id: string;
@@ -22,6 +23,10 @@ interface PrDetail {
   rejectedReason: string | null;
   convertedPoId: string | null;
   createdAt: string;
+  // v2.9 C2 - what it is charged to, and what it is holding.
+  costCentre: { id: string; code: string; name: string } | null;
+  committedAmount: string | null;
+  committedAt: string | null;
   requester: { id: string; email: string; profile: { firstName: string; lastName: string } | null };
   lines: { id: string; lineNumber: number; description: string; quantity: string; estimatedUnitPrice: string | null }[];
 }
@@ -61,7 +66,13 @@ export default function PurchaseRequestPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not decide'),
   });
   const convert = useMutation({
-    mutationFn: () => apiFetch<{ purchaseOrderId: string }>(`/procurement/requests/${id}/convert`, { method: 'POST', body: { vendorId } }),
+    mutationFn: () =>
+      apiFetch<{ purchaseOrderId: string }>(`/procurement/requests/${id}/convert`, {
+        method: 'POST',
+        // v2.9 C3: when a quote has been awarded the API takes the vendor and
+        // the prices from it, and refuses a different vendor outright.
+        body: vendorId ? { vendorId } : {},
+      }),
     onSuccess: (r) => { toast.success('Purchase order drafted'); window.location.href = `/procurement/orders/${r.purchaseOrderId}`; },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not convert'),
   });
@@ -102,6 +113,41 @@ export default function PurchaseRequestPage() {
           </p>
         ) : null}
       </Card>
+
+      {pr.costCentre ? (
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+              Charged to
+            </p>
+            <p className="mt-0.5 text-sm font-medium">
+              {pr.costCentre.code} — {pr.costCentre.name}
+            </p>
+          </div>
+          <div className="text-right">
+            {pr.committedAmount ? (
+              <>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                  Holding against the budget
+                </p>
+                <p className="mt-0.5 text-sm font-semibold tabular-nums">
+                  {Number(pr.committedAmount).toLocaleString()}
+                  <span className="font-normal text-[var(--color-content-muted)]">
+                    {' '}
+                    since {fmtDate(pr.committedAt)}
+                  </span>
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-[var(--color-content-muted)]">
+                {pr.status === 'CANCELLED'
+                  ? 'Cancelled — the budget was released.'
+                  : 'Nothing held yet; approval commits the estimate.'}
+              </p>
+            )}
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
@@ -171,12 +217,12 @@ export default function PurchaseRequestPage() {
               onChange={(e) => setVendorId(e.target.value)}
               className={`${inputCls} max-w-xs`}
             >
-              <option value="">Choose the vendor…</option>
+              <option value="">Vendor (or leave blank if a quote was awarded)</option>
               {(vendors.data?.data ?? []).map((v) => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
-            <Button loading={convert.isPending} disabled={!vendorId} onClick={() => convert.mutate()}>
+            <Button loading={convert.isPending} onClick={() => convert.mutate()}>
               Convert to purchase order
             </Button>
           </>
@@ -188,6 +234,8 @@ export default function PurchaseRequestPage() {
           </Link>
         ) : null}
       </Card>
+
+      <RfqPanel purchaseRequestId={pr.id} prStatus={pr.status} lines={pr.lines} />
     </div>
   );
 }
