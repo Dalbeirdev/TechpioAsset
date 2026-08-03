@@ -1,6 +1,7 @@
 import { Injectable, type NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { ulid } from 'ulid';
+import { startRequestSpan } from '../../observability/tracing.js';
 import { runWithRequestContext } from '../request-context.js';
 
 export const REQUEST_ID_HEADER = 'x-request-id';
@@ -17,7 +18,13 @@ export const CORRELATION_ID_HEADER = 'x-correlation-id';
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction): void {
-    const requestId = `req_${ulid()}`;
+    // v2.8 S4: when tracing is on, the trace id IS the request id - so a log
+    // line and a trace are one identifier, not two things an operator has to
+    // join by timestamp at 3am. Null when tracing is off, and everything below
+    // behaves exactly as it did before.
+    const span = startRequestSpan(`${req.method} ${req.path}`);
+    const requestId = span?.traceId ?? `req_${ulid()}`;
+    if (span) res.on('finish', () => span.end(res.statusCode));
     const incoming = req.header(CORRELATION_ID_HEADER);
     const correlationId =
       incoming && /^[A-Za-z0-9._-]{1,128}$/.test(incoming) ? incoming : requestId;
@@ -25,15 +32,21 @@ export class RequestContextMiddleware implements NestMiddleware {
     res.setHeader(REQUEST_ID_HEADER, requestId);
     res.setHeader(CORRELATION_ID_HEADER, correlationId);
 
-    runWithRequestContext(
-      {
-        requestId,
-        correlationId,
-        ipAddress: req.ip,
-        userAgent: req.header('user-agent'),
-        clientType: req.header('x-client-type'),
-      },
-      () => next(),
-    );
+    const proceed = (): void =>
+      runWithRequestContext(
+        {
+          requestId,
+          correlationId,
+          ipAddress: req.ip,
+          userAgent: req.header('user-agent'),
+          clientType: req.header('x-client-type'),
+        },
+        () => next(),
+      );
+
+    // Everything downstream runs inside the request's trace context, so any
+    // span the handlers create hangs off this one instead of floating free.
+    if (span) span.runInContext(proceed);
+    else proceed();
   }
 }
