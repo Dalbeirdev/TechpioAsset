@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { AuditAction } from '@prisma/client';
+import { AuditAction, Prisma, type ApproverType, type RequestType } from '@prisma/client';
 import type { AuthUser } from '@techpioasset/contracts';
 import {
+  ONBOARDING_TEMPLATE,
   ROLE_LABELS,
+  WORKFLOW_TEMPLATES,
   ROLE_PERMISSIONS,
   READ_ONLY_ROLES,
   SYSTEM_ROLES,
@@ -165,6 +167,71 @@ export class PlatformService {
           humanReviewRequired: true,
           providerName: 'mock',
         },
+      });
+
+      // v2.7 R5: the standard approval chains, from the SAME templates the
+      // seed uses. Without these a provisioned tenant's requests found no
+      // workflow definition and skipped approval entirely - a fresh tenant
+      // must be governed from its first request, not after someone notices.
+      const roleIdByKey = new Map(
+        (
+          await tx.role.findMany({
+            where: { companyId: created.id },
+            select: { id: true, key: true },
+          })
+        ).map((r) => [r.key, r.id]),
+      );
+      for (const workflow of WORKFLOW_TEMPLATES) {
+        const definition = await tx.workflowDefinition.create({
+          data: {
+            companyId: created.id,
+            key: workflow.key,
+            name: workflow.name,
+            description: workflow.description,
+            requestType: (workflow.requestType ?? null) as RequestType | null,
+            createdById: actor.id,
+          },
+          select: { id: true },
+        });
+        for (const step of workflow.steps) {
+          await tx.workflowStep.create({
+            data: {
+              workflowDefinitionId: definition.id,
+              stepOrder: step.order,
+              name: step.name,
+              approverType: step.approverType as ApproverType,
+              approverRoleId: step.roleKey ? (roleIdByKey.get(step.roleKey) ?? null) : null,
+              costThreshold: step.costThreshold ? new Prisma.Decimal(step.costThreshold) : null,
+              isSkippable: step.isSkippable ?? false,
+              slaHours: step.slaHours ?? null,
+            },
+          });
+        }
+      }
+
+      // The standard onboarding kit, so an HR-initiated onboarding has
+      // something to draw from on day one.
+      const categoryIdByKey = new Map(
+        (
+          await tx.category.findMany({
+            where: { companyId: created.id },
+            select: { id: true, key: true },
+          })
+        ).map((c) => [c.key, c.id]),
+      );
+      const template = await tx.onboardingTemplate.create({
+        data: { companyId: created.id, key: ONBOARDING_TEMPLATE.key, name: ONBOARDING_TEMPLATE.name },
+        select: { id: true },
+      });
+      await tx.onboardingTemplateItem.createMany({
+        data: ONBOARDING_TEMPLATE.items.map((item, index) => ({
+          templateId: template.id,
+          description: item.description,
+          quantity: new Prisma.Decimal(item.quantity),
+          isRequired: item.isRequired,
+          sortOrder: index,
+          categoryId: categoryIdByKey.get(item.categoryKey) ?? null,
+        })),
       });
 
       const admin = await tx.user.create({

@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, User } from 'lucide-react';
 import { apiFetchPage } from '@/lib/api-client';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { SchedulesPanel } from '@/components/maintenance/schedules-panel';
 
 /**
  * v2.5 H5 — the work-order board. Open work grouped by status with SLA
@@ -64,10 +66,20 @@ function slaBadge(row: MaintenanceRow) {
 }
 
 export default function MaintenancePage() {
+  const [view, setView] = useState<'board' | 'schedules'>('board');
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['maintenance'],
     queryFn: () => apiFetchPage<MaintenanceRow>('/maintenance?pageSize=100'),
   });
+
+  if (view === 'schedules') {
+    return (
+      <div className="grid gap-4">
+        <MaintenanceHeader view={view} setView={setView} />
+        <SchedulesPanel />
+      </div>
+    );
+  }
 
   if (isPending) {
     return (
@@ -87,12 +99,7 @@ export default function MaintenancePage() {
 
   return (
     <div className="grid gap-4">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Maintenance</h1>
-        <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-          Work orders across the estate — overdue SLAs read red and escalate once, automatically.
-        </p>
-      </header>
+      <MaintenanceHeader view={view} setView={setView} />
 
       {open.length === 0 ? (
         <EmptyState title="No open work orders" description="Repairs and inspections appear here." />
@@ -208,5 +215,50 @@ export default function MaintenancePage() {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+/** Board / schedules switch shared by both views. */
+function MaintenanceHeader({
+  view,
+  setView,
+}: {
+  view: 'board' | 'schedules';
+  setView: (v: 'board' | 'schedules') => void;
+}) {
+  return (
+    <header className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">Maintenance</h1>
+        <p className="mt-1 text-sm text-[var(--color-content-muted)]">
+          {view === 'board'
+            ? 'Work orders across the estate — overdue SLAs read red and escalate once, automatically.'
+            : 'Recurring service. The daily sweep raises each schedule’s work order when it falls due.'}
+        </p>
+      </div>
+      <div role="tablist" aria-label="Maintenance view" className="flex gap-1">
+        {(
+          [
+            ['board', 'Work orders'],
+            ['schedules', 'Schedules'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            onClick={() => setView(key)}
+            className={
+              view === key
+                ? 'rounded-[var(--radius-control)] bg-[var(--color-brand)] px-3 py-1.5 text-sm font-semibold text-white'
+                : 'rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 py-1.5 text-sm font-medium text-[var(--color-content-muted)] hover:bg-[var(--color-surface-sunken)]'
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </header>
   );
 }
