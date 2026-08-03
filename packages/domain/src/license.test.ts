@@ -41,7 +41,10 @@ describe('deriveLicenseStatus', () => {
 
 describe('expiryBucket', () => {
   it('places an expiry in the tightest bucket that holds it', () => {
-    expect(expiryBucket(days(5), NOW)).toBe(30);
+    // v2.7 R4: inside a week the nudge is the 7-day bucket, not 30.
+    expect(expiryBucket(days(5), NOW)).toBe(7);
+    expect(expiryBucket(days(7), NOW)).toBe(7);
+    expect(expiryBucket(days(8), NOW)).toBe(30);
     expect(expiryBucket(days(30), NOW)).toBe(30);
     expect(expiryBucket(days(31), NOW)).toBe(60);
     expect(expiryBucket(days(60), NOW)).toBe(60);

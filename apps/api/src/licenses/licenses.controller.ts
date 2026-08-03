@@ -5,6 +5,7 @@ import {
   assignSeatSchema,
   bulkAssignSchema,
   bulkRevokeSchema,
+  reclaimSeatsSchema,
   transferSeatSchema,
   createLicenseSchema,
   createRenewalSchema,
@@ -15,6 +16,7 @@ import {
   type AssignSeatInput,
   type BulkAssignInput,
   type BulkRevokeInput,
+  type ReclaimSeatsInput,
   type TransferSeatInput,
   type AuthUser,
   type CreateLicenseInput,
@@ -43,6 +45,26 @@ export class LicensesController {
   @ApiOperation({ summary: 'The caller’s own active licence seats' })
   mine(@CurrentUser() actor: AuthUser) {
     return this.licenses.mine(actor);
+  }
+
+  @Get('reclaimable')
+  @RequirePermissions(PERMISSIONS.LICENSES_READ)
+  @ApiOperation({
+    summary: 'Seats still held by departed people',
+    description: 'Deactivated, suspended or deleted holders keep consuming paid seats until reclaimed.',
+  })
+  reclaimable(@CurrentUser() actor: AuthUser, @Query('licenseId') licenseId?: string) {
+    return this.licenses.reclaimable(actor, licenseId);
+  }
+
+  @Post('reclaim')
+  @RequirePermissions(PERMISSIONS.LICENSES_REVOKE)
+  @ApiOperation({ summary: 'Reclaim seats from departed holders (reason required)' })
+  reclaim(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(reclaimSeatsSchema)) body: ReclaimSeatsInput,
+  ) {
+    return this.licenses.reclaim(actor, body);
   }
 
   @Get()

@@ -6,6 +6,7 @@ import type {
   AuthUser,
   BulkAssignInput,
   BulkRevokeInput,
+  ReclaimSeatsInput,
   TransferSeatInput,
   CreateLicenseInput,
   CreateRenewalInput,
@@ -650,6 +651,91 @@ export class LicensesService {
       reason: input.reason ?? undefined,
     });
     return this.findOne(actor, licenseId);
+  }
+
+  /**
+   * v2.7 R4 — seats held by people who are no longer here.
+   *
+   * A deactivated or suspended employee keeps consuming a paid seat until
+   * somebody notices; this surfaces exactly those, tenant-wide, so the waste
+   * is visible rather than discovered at renewal. It only ever REPORTS -
+   * reclaiming is a deliberate act with a stated reason (see reclaim).
+   */
+  async reclaimable(actor: AuthUser, licenseId?: string) {
+    const rows = await this.prisma.client.licenseAssignment.findMany({
+      where: {
+        companyId: actor.companyId,
+        status: 'ACTIVE',
+        ...(licenseId ? { licenseId } : {}),
+        user: { OR: [{ status: { in: ['DEACTIVATED', 'SUSPENDED'] } }, { deletedAt: { not: null } }] },
+      },
+      orderBy: { assignedAt: 'asc' },
+      select: {
+        id: true,
+        assignedAt: true,
+        license: { select: { id: true, name: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            deletedAt: true,
+            profile: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+    return {
+      count: rows.length,
+      assignments: rows.map((r) => ({
+        assignmentId: r.id,
+        assignedAt: r.assignedAt,
+        license: r.license,
+        holder: {
+          id: r.user!.id,
+          email: r.user!.email,
+          name: r.user!.profile
+            ? `${r.user!.profile.firstName} ${r.user!.profile.lastName}`
+            : r.user!.email,
+          // Why it is reclaimable, in the response - no guessing at the UI.
+          reason: r.user!.deletedAt ? 'DELETED' : r.user!.status,
+        },
+      })),
+    };
+  }
+
+  /**
+   * Reclaim seats from departed holders. Each is the ordinary guarded revoke
+   * (so the counter can never drift) with a mandatory reason on the record.
+   */
+  async reclaim(actor: AuthUser, input: ReclaimSeatsInput) {
+    const targets = await this.prisma.client.licenseAssignment.findMany({
+      where: {
+        id: { in: input.assignmentIds },
+        companyId: actor.companyId,
+        status: 'ACTIVE',
+      },
+      select: { id: true, licenseId: true },
+    });
+    const found = new Set(targets.map((t) => t.id));
+    const skipped = input.assignmentIds
+      .filter((id) => !found.has(id))
+      .map((assignmentId) => ({ assignmentId, reason: 'No active assignment with that id' }));
+
+    let reclaimed = 0;
+    for (const target of targets) {
+      await this.revoke(actor, target.licenseId, {
+        assignmentId: target.id,
+        reason: input.reason,
+      });
+      reclaimed += 1;
+    }
+    return {
+      requested: input.assignmentIds.length,
+      reclaimedCount: reclaimed,
+      skippedCount: skipped.length,
+      skipped,
+    };
   }
 
   /** Shared loader: the licence must exist and be in an assignable state. */
