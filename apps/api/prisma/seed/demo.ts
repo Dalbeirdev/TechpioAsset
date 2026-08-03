@@ -575,7 +575,16 @@ export async function seedDemo(prisma: PrismaClient, companyId: string): Promise
   // ── Quantity-tracked consumables ──────────────────────────────────────────
   const consumables = catByKey.get('consumables');
   if (consumables) {
-    const stock = [
+    const stock: {
+      sku: string;
+      name: string;
+      sub: string;
+      qty: number;
+      min: number;
+      reorder: number;
+      cost: string;
+      batchTracked?: boolean;
+    }[] = [
       {
         sku: 'CON-PAPER-A4',
         name: 'A4 paper (ream)',
@@ -593,6 +602,8 @@ export async function seedDemo(prisma: PrismaClient, companyId: string): Promise
         min: 4,
         reorder: 6,
         cost: '148.00',
+        // v2.9 C4: toner dries out, so the demo tenant tracks it by lot.
+        batchTracked: true,
       },
       {
         sku: 'CON-COFFEE',
@@ -611,6 +622,7 @@ export async function seedDemo(prisma: PrismaClient, companyId: string): Promise
         min: 20,
         reorder: 30,
         cost: '9.90',
+        batchTracked: true,
       },
     ];
 
@@ -627,6 +639,7 @@ export async function seedDemo(prisma: PrismaClient, companyId: string): Promise
           categoryId: consumables.id,
           subcategoryId: subId('consumables', item.sub),
           unit: 'unit',
+          batchTracked: item.batchTracked ?? false,
           quantityOnHand: new Prisma.Decimal(item.qty),
           minStock: new Prisma.Decimal(item.min),
           // CON-COFFEE is deliberately below its reorder level so the low-stock
