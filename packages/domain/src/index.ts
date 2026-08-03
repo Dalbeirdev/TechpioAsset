@@ -21,3 +21,4 @@ export * from './health';
 export * from './work-order';
 export * from './analytics';
 export * from './role-labels';
+export * from './workflow-templates';
