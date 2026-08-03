@@ -407,6 +407,8 @@ enum AuditAction {
   DISCOVERY_REVIEWED
   // v2.5 work orders
   WORK_ORDER_ESCALATED
+  // v2.7 export audit (AUD-009)
+  REPORT_EXPORTED
   // v2.6 platform plane
   TENANT_CREATED
   TENANT_SUSPENDED

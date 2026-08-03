@@ -42,6 +42,8 @@ import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AssetsService } from './assets.service.js';
 import { AssetImportService } from './asset-import.service.js';
 import { AssetHealthService } from '../asset-health/asset-health.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { AuditAction } from '@prisma/client';
 
 @ApiTags('Assets')
 @Controller('assets')
@@ -50,6 +52,7 @@ export class AssetsController {
     private readonly assets: AssetsService,
     private readonly imports: AssetImportService,
     private readonly health: AssetHealthService,
+    private readonly audit: AuditService,
   ) {}
 
   @Post('import')
@@ -105,6 +108,15 @@ export class AssetsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { columns, rows } = await this.assets.exportRows(actor, query);
+    // v2.7 R2 (AUD-009): the asset CSV is an export like any other.
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.REPORT_EXPORTED,
+      entityType: 'Report',
+      entityId: 'ASSET_CSV',
+      newValues: { format: 'CSV', rows: rows.length, delivery: 'DOWNLOAD' },
+    });
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="assets-${new Date().toISOString().slice(0, 10)}.csv"`,
