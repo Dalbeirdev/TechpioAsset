@@ -20,9 +20,10 @@ import {
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
+import { BudgetsService } from '../budgets/budgets.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { PrismaService, type TenantTxClient } from '../prisma/prisma.service.js';
 
 const SORTABLE = ['createdAt', 'prNumber', 'status'] as const;
 
@@ -39,6 +40,7 @@ export class ProcurementService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly config: AppConfig,
+    private readonly budgets: BudgetsService,
   ) {}
 
   // ── purchase requests ──────────────────────────────────────────────────────
@@ -73,18 +75,23 @@ export class ProcurementService {
   }
 
   async createPr(actor: AuthUser, input: CreatePurchaseRequestInput) {
+    // v2.9 C2: charging is optional. A company with no cost centres keeps the
+    // v2.4 behaviour exactly - budgets are additive, not a rewrite.
+    if (input.costCentreId) await this.budgets.assertChargeable(actor, input.costCentreId);
     const estimatedTotal = input.lines.reduce(
       (sum, l) => sum + (l.estimatedUnitPrice ? Number(l.estimatedUnitPrice) * l.quantity : 0),
       0,
     );
-    const pr = await this.prisma.client.purchaseRequest.create({
+    const pr = await this.withNumberedTransaction(actor.companyId, 'purchaseRequest', 'PR', (tx, prNumber) =>
+      tx.purchaseRequest.create({
       data: {
         companyId: actor.companyId,
-        prNumber: await this.nextNumber('purchaseRequest', 'PR'),
+        prNumber,
         requesterId: actor.id,
         justification: input.justification,
         neededBy: input.neededBy ?? null,
         currency: input.currency ?? null,
+        costCentreId: input.costCentreId ?? null,
         estimatedTotal: estimatedTotal > 0 ? new Prisma.Decimal(estimatedTotal.toFixed(2)) : null,
         createdById: actor.id,
         updatedById: actor.id,
@@ -99,7 +106,8 @@ export class ProcurementService {
         },
       },
       select: { id: true },
-    });
+      }),
+    );
     return this.findPr(actor, pr.id);
   }
 
@@ -143,16 +151,45 @@ export class ProcurementService {
       );
     }
 
-    await this.prisma.client.purchaseRequest.update({
-      where: { id },
-      data: {
-        status: target,
-        ...(target === 'APPROVED'
-          ? { approvedById: actor.id, approvedAt: new Date() }
-          : { rejectedReason: input.reason ?? null }),
-        updatedById: actor.id,
-      },
+    // v2.9 C2 — approving a charged request commits its estimate against the
+    // budget. The commitment and the approval it pays for are one transaction:
+    // an approval that outlived a failed commit would be spend with no cover.
+    const charge =
+      target === 'APPROVED' && pr.costCentreId
+        ? { costCentreId: pr.costCentreId, requested: this.estimateForBudget(pr) }
+        : null;
+    const committed = await this.prisma.client.$transaction(async (tx) => {
+      const budget = charge ? await this.budgets.commit(tx, actor, { ...charge, when: new Date() }) : null;
+      await tx.purchaseRequest.update({
+        where: { id },
+        data: {
+          status: target,
+          ...(target === 'APPROVED'
+            ? { approvedById: actor.id, approvedAt: new Date() }
+            : { rejectedReason: input.reason ?? null }),
+          ...(budget && charge
+            ? { budgetId: budget.id, committedAmount: charge.requested, committedAt: new Date() }
+            : {}),
+          updatedById: actor.id,
+        },
+      });
+      return budget && charge ? { budget, amount: charge.requested } : null;
     });
+    if (committed) {
+      await this.audit.record({
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.BUDGET_COMMITTED,
+        entityType: 'Budget',
+        entityId: committed.budget.id,
+        newValues: {
+          purchaseRequestId: id,
+          amount: committed.amount.toFixed(2),
+          budget: committed.budget.name,
+          currency: committed.budget.currency,
+        },
+      });
+    }
     await this.audit.record({
       companyId: actor.companyId,
       actorId: actor.id,
@@ -165,6 +202,73 @@ export class ProcurementService {
   }
 
   /** APPROVED -> CONVERTED: spawns a draft PO carrying the PR's lines. */
+  /**
+   * v2.9 C2 — cancelling gives the money back.
+   *
+   * A budget that only ever goes up is a budget nobody can correct, so the
+   * release is part of the same transaction as the cancellation and is guarded
+   * so it can happen exactly once.
+   */
+  async cancelPr(actor: AuthUser, id: string, reason?: string | null) {
+    const pr = await this.loadPr(actor, id);
+    // Requesters cancel their own; approvers cancel anyone's.
+    if (pr.requesterId !== actor.id && !actor.permissions.includes(PERMISSIONS.PROCUREMENT_PR_APPROVE)) {
+      throw AppError.forbidden('Only the requester or an approver can cancel this request');
+    }
+    this.assertTransition(pr.status, 'CANCELLED');
+
+    const released = await this.prisma.client.$transaction(async (tx) => {
+      // The cancellation itself is a guarded conditional update: two people
+      // cancelling at once both read APPROVED, and only one may act on it.
+      const cancelled = await tx.$executeRaw`
+        UPDATE "purchase_requests"
+           SET "status" = 'CANCELLED'::"PurchaseRequestStatus",
+               "rejectedReason" = ${reason ?? null},
+               "updatedById" = ${actor.id},
+               "updatedAt" = NOW()
+         WHERE "id" = ${id}
+           AND "companyId" = ${actor.companyId}
+           AND "status" <> 'CANCELLED'::"PurchaseRequestStatus"
+           AND "status" <> 'CONVERTED'::"PurchaseRequestStatus"`;
+      if (cancelled === 0) {
+        throw new AppError(
+          'ILLEGAL_STATE_TRANSITION',
+          'This purchase request has already been cancelled or converted',
+        );
+      }
+      // Only the winner gives the money back - and release is itself guarded,
+      // so even that cannot credit the budget twice.
+      return this.budgets.release(tx, actor.companyId, id);
+    });
+    if (released) await this.recordRelease(actor, id, released, 'purchase request cancelled');
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.PR_CANCELLED,
+      entityType: 'PurchaseRequest',
+      entityId: id,
+      reason: reason ?? undefined,
+    });
+    return this.findPr(actor, id);
+  }
+
+  private async recordRelease(
+    actor: AuthUser,
+    purchaseRequestId: string,
+    released: { budgetId: string; amount: Prisma.Decimal },
+    why: string,
+  ) {
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.BUDGET_RELEASED,
+      entityType: 'Budget',
+      entityId: released.budgetId,
+      previousValues: { purchaseRequestId, amount: released.amount.toFixed(2) },
+      reason: why,
+    });
+  }
+
   async convertPr(actor: AuthUser, id: string, input: ConvertPurchaseRequestInput) {
     const pr = await this.prisma.client.purchaseRequest.findFirst({
       where: { id, companyId: actor.companyId },
@@ -184,11 +288,11 @@ export class ProcurementService {
       0,
     );
 
-    const po = await this.prisma.client.$transaction(async (tx) => {
+    const po = await this.withNumberedTransaction(actor.companyId, 'purchaseOrder', 'PO', async (tx, poNumber) => {
       const created = await tx.purchaseOrder.create({
         data: {
           companyId: actor.companyId,
-          poNumber: await this.nextNumber('purchaseOrder', 'PO'),
+          poNumber,
           vendorId: vendor.id,
           currency,
           subtotal: new Prisma.Decimal(subtotal.toFixed(2)),
@@ -269,10 +373,27 @@ export class ProcurementService {
     if (receipts > 0) {
       throw AppError.conflict('CONFLICT', 'Goods were already received against this PO - close it instead');
     }
-    await this.prisma.client.purchaseOrder.update({
-      where: { id },
-      data: { status: 'CANCELLED', updatedById: actor.id },
+    // v2.9 C2 — no goods, no spend: give the originating request's commitment
+    // back. Without this a cancelled order would hold its budget forever.
+    const sourceRequests = await this.prisma.client.purchaseRequest.findMany({
+      where: { convertedPoId: id, companyId: actor.companyId, committedAmount: { not: null } },
+      select: { id: true },
     });
+    const released = await this.prisma.client.$transaction(async (tx) => {
+      const backs: { id: string; budgetId: string; amount: Prisma.Decimal }[] = [];
+      for (const request of sourceRequests) {
+        const back = await this.budgets.release(tx, actor.companyId, request.id);
+        if (back) backs.push({ id: request.id, ...back });
+      }
+      await tx.purchaseOrder.update({
+        where: { id },
+        data: { status: 'CANCELLED', updatedById: actor.id },
+      });
+      return backs;
+    });
+    for (const back of released) {
+      await this.recordRelease(actor, back.id, back, `purchase order ${po.poNumber} cancelled`);
+    }
     await this.audit.record({
       companyId: actor.companyId,
       actorId: actor.id,
@@ -629,10 +750,34 @@ export class ProcurementService {
   private async loadPr(actor: AuthUser, id: string) {
     const pr = await this.prisma.client.purchaseRequest.findFirst({
       where: { id, companyId: actor.companyId },
-      select: { id: true, status: true, requesterId: true, estimatedTotal: true },
+      select: {
+        id: true,
+        status: true,
+        requesterId: true,
+        estimatedTotal: true,
+        costCentreId: true,
+        prNumber: true,
+      },
     });
     if (!pr) throw AppError.notFound('Purchase request', id);
     return pr;
+  }
+
+  /**
+   * v2.9 C2 — what a charged request holds against its budget.
+   *
+   * A request with no estimate cannot commit: reserving zero would let an
+   * unpriced purchase pass a limit it has not been measured against, which is
+   * exactly the hole a budget exists to close.
+   */
+  private estimateForBudget(pr: { estimatedTotal: Prisma.Decimal | null; prNumber: string }) {
+    if (pr.estimatedTotal === null || pr.estimatedTotal.lessThanOrEqualTo(0)) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `${pr.prNumber} is charged to a cost centre, so it needs an estimated cost before approval`,
+      );
+    }
+    return pr.estimatedTotal;
   }
 
   /**
@@ -737,6 +882,12 @@ export class ProcurementService {
       rejectedReason: true,
       convertedPoId: true,
       createdAt: true,
+      // v2.9 C2 - what it is charged to and what it is holding. The estimate is
+      // already on this payload, so the commitment adds no new class of data.
+      costCentre: { select: { id: true, code: true, name: true } },
+      budgetId: true,
+      committedAmount: true,
+      committedAt: true,
       requester: { select: { id: true, email: true, profile: { select: { firstName: true, lastName: true } } } },
     } satisfies Prisma.PurchaseRequestSelect;
   }
@@ -756,14 +907,37 @@ export class ProcurementService {
   }
 
   /** `PR-2026-000042`-style numbers, per entity, unique per company. */
+  /**
+   * v2.9 C2 — allocates a document number and runs `fn` in one transaction,
+   * holding an advisory lock on the company's series for the whole of it.
+   *
+   * The numbers are a max()+1 scan, so without this two people raising a
+   * request in the same instant both read the same latest number and one is
+   * refused with "a record with these values already exists" - a database
+   * detail leaking out as a failure the user can do nothing about. The lock is
+   * per company and per series, so it never serialises unrelated work.
+   */
+  private async withNumberedTransaction<T>(
+    companyId: string,
+    entity: 'purchaseRequest' | 'purchaseOrder',
+    prefix: string,
+    fn: (tx: TenantTxClient, documentNumber: string) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.client.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${prefix}:${companyId}`}))`;
+      return fn(tx, await this.nextNumber(entity, prefix, tx));
+    });
+  }
+
   private async nextNumber(
     entity: 'purchaseRequest' | 'purchaseOrder' | 'goodsReceipt',
     prefix: string,
+    tx?: TenantTxClient,
   ): Promise<string> {
     const year = new Date().getFullYear();
     const full = `${prefix}-${year}-`;
     const field = entity === 'purchaseRequest' ? 'prNumber' : entity === 'purchaseOrder' ? 'poNumber' : 'grnNumber';
-    const client = this.prisma.client[entity] as unknown as {
+    const client = (tx ?? this.prisma.client)[entity] as unknown as {
       findFirst: (args: object) => Promise<Record<string, string> | null>;
     };
     const latest = await client.findFirst({

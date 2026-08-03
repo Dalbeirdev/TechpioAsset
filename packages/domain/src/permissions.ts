@@ -94,6 +94,11 @@ export const PERMISSIONS = {
   /** Accept a mismatched three-way match anyway - always audited. */
   PROCUREMENT_MATCH_OVERRIDE: 'procurement:match:override',
 
+  // Budgets (v2.9). Setting the limit is a Finance act; SEEING the numbers
+  // rides on ASSETS_COST_READ, because a budget is a money figure and the
+  // standing rule is that money is Finance + Super Admin only.
+  FINANCE_BUDGETS_MANAGE: 'finance:budgets:manage',
+
   // Discovery (v2.5). Ingest is for agents/admins; reconcile resolves the
   // review queue. Discovery proposes - humans (or exact serials) decide.
   DISCOVERY_READ: 'discovery:read',
@@ -257,6 +262,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ANALYTICS_READ,
     P.ASSETS_READ,
     P.ASSETS_COST_READ,
+    P.FINANCE_BUDGETS_MANAGE,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_PR_APPROVE,
     P.PROCUREMENT_MATCH_OVERRIDE,

@@ -15,6 +15,7 @@ import { RolesModule } from './roles/roles.module.js';
 import { LicensesModule } from './licenses/licenses.module.js';
 import { ProcurementModule } from './procurement/procurement.module.js';
 import { StockModule } from './stock/stock.module.js';
+import { BudgetsModule } from './budgets/budgets.module.js';
 import { RequestsModule } from './requests/requests.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { LifecycleModule } from './lifecycle/lifecycle.module.js';
@@ -88,6 +89,7 @@ import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard.js'
     LicensesModule,
     ProcurementModule,
     StockModule,
+    BudgetsModule,
     OrgModule,
     AssetsModule,
     RequestsModule,

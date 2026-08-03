@@ -37,6 +37,10 @@ export const SOFT_DELETABLE_MODELS = new Set<string>([
   'OnboardingTemplate',
   'SavedFilter',
   'ScheduledReport',
+  // v2.9 C2: a retired cost centre still has to explain last year's spend, so
+  // both soft-delete rather than vanish from the history that references them.
+  'CostCentre',
+  'Budget',
 ]);
 
 /**
