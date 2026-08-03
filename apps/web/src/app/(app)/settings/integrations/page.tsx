@@ -1,0 +1,339 @@
+'use client';
+
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { WEBHOOK_EVENTS } from '@techpioasset/contracts';
+import { apiFetch, ApiError } from '@/lib/api-client';
+import { useToast } from '@/providers/toast-provider';
+import { useConfirm } from '@/providers/confirm-provider';
+import { Button, Card, EmptyState, ErrorState, Field, Input, Skeleton } from '@/components/ui';
+import { Tone } from '@/components/assets/discovery-tabs';
+
+/**
+ * v2.6 A5 — the integrations hub. Secrets and tokens are shown exactly once,
+ * in an amber "copy it now" panel; dead-lettered deliveries are surfaced, not
+ * hidden. The API enforces integrations:manage regardless of what renders.
+ */
+
+interface Hub {
+  sso: { provider: string; enabled: boolean };
+  scim: { enabled: boolean; createdAt: string | null; lastUsedAt: string | null };
+  webhooks: { events: string[]; deadDeliveries: number };
+}
+
+interface WebhookRow {
+  id: string;
+  url: string;
+  events: string[];
+  isActive: boolean;
+  deliveries: Record<string, number>;
+}
+
+interface DeliveryRow {
+  id: string;
+  event: string;
+  status: string;
+  attempts: number;
+  responseStatus: number | null;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+}
+
+const STATUS_TONE: Record<string, string> = {
+  PENDING: 'neutral',
+  DELIVERED: 'success',
+  FAILED: 'warning',
+  DEAD: 'critical',
+};
+
+function SecretPanel({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      className="rounded-[var(--radius-control)] border px-3 py-2.5 text-sm"
+      style={{
+        color: 'var(--tone-warning-fg)',
+        backgroundColor: 'var(--tone-warning-bg)',
+        borderColor: 'var(--tone-warning-border)',
+      }}
+    >
+      <p className="font-semibold">{label} — shown once, copy it now:</p>
+      <code className="mt-1 block select-all break-all text-xs">{value}</code>
+    </div>
+  );
+}
+
+export default function IntegrationsPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+
+  const [url, setUrl] = useState('');
+  const [events, setEvents] = useState<string[]>([]);
+  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [newToken, setNewToken] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const hub = useQuery({ queryKey: ['integrations-hub'], queryFn: () => apiFetch<Hub>('/integrations') });
+  const webhooks = useQuery({
+    queryKey: ['integrations-webhooks'],
+    queryFn: () => apiFetch<WebhookRow[]>('/integrations/webhooks'),
+  });
+  const deliveries = useQuery({
+    queryKey: ['integrations-deliveries', expanded],
+    queryFn: () => apiFetch<DeliveryRow[]>(`/integrations/webhooks/${expanded}/deliveries`),
+    enabled: expanded !== null,
+  });
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['integrations-hub'] });
+    void queryClient.invalidateQueries({ queryKey: ['integrations-webhooks'] });
+  };
+
+  const onError = (caught: unknown) =>
+    toast.error(
+      caught instanceof ApiError ? (caught.problem.detail ?? caught.problem.title) : 'The action failed.',
+    );
+
+  const createWebhook = useMutation({
+    mutationFn: () => apiFetch<{ secret: string }>('/integrations/webhooks', { method: 'POST', body: { url: url.trim(), events } }),
+    onSuccess: (data) => {
+      setNewSecret(data.secret);
+      setUrl('');
+      setEvents([]);
+      refresh();
+    },
+    onError,
+  });
+  const toggleWebhook = useMutation({
+    mutationFn: (input: { id: string; isActive: boolean }) =>
+      apiFetch(`/integrations/webhooks/${input.id}`, { method: 'PATCH', body: { isActive: input.isActive } }),
+    onSuccess: refresh,
+    onError,
+  });
+  const removeWebhook = useMutation({
+    mutationFn: (id: string) => apiFetch(`/integrations/webhooks/${id}`, { method: 'DELETE' }),
+    onSuccess: refresh,
+    onError,
+  });
+  const mintToken = useMutation({
+    mutationFn: () => apiFetch<{ token: string; endpoint: string }>('/integrations/scim/token', { method: 'POST', body: {} }),
+    onSuccess: (data) => {
+      setNewToken(data.token);
+      refresh();
+    },
+    onError,
+  });
+  const revokeToken = useMutation({
+    mutationFn: () => apiFetch('/integrations/scim/token', { method: 'DELETE' }),
+    onSuccess: () => {
+      setNewToken(null);
+      toast.success('SCIM token revoked.');
+      refresh();
+    },
+    onError,
+  });
+
+  if (hub.isPending) return <Skeleton className="h-80" />;
+  if (hub.isError) {
+    return <ErrorState title="Could not load integrations" detail={(hub.error as Error).message} />;
+  }
+
+  return (
+    <div className="mx-auto grid max-w-4xl gap-4">
+      <header>
+        <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
+        <p className="mt-1 text-sm text-[var(--color-content-muted)]">
+          Webhooks out, SCIM provisioning in, SSO status. Secrets appear exactly once.
+        </p>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="p-4">
+          <p className="text-xs font-medium text-[var(--color-content-subtle)]">Single sign-on</p>
+          <p className="mt-1 text-sm font-semibold">
+            {hub.data.sso.enabled ? `Enabled (${hub.data.sso.provider})` : 'Disabled'}
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+            Configured via ENTRA_* environment variables.
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs font-medium text-[var(--color-content-subtle)]">SCIM provisioning</p>
+          <p className="mt-1 text-sm font-semibold">{hub.data.scim.enabled ? 'Token active' : 'No token'}</p>
+          <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+            {hub.data.scim.lastUsedAt
+              ? `Last used ${new Date(hub.data.scim.lastUsedAt).toLocaleString()}`
+              : hub.data.scim.enabled
+                ? 'Never used yet'
+                : 'Mint a token to enable /scim/v2'}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs font-medium text-[var(--color-content-subtle)]">Dead-lettered deliveries</p>
+          <p
+            className="mt-1 text-sm font-semibold"
+            style={hub.data.webhooks.deadDeliveries > 0 ? { color: 'var(--tone-critical-fg)' } : undefined}
+          >
+            {hub.data.webhooks.deadDeliveries}
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+            Gave up after 5 attempts — inspect below.
+          </p>
+        </Card>
+      </div>
+
+      <Card className="grid gap-3 p-5">
+        <h2 className="text-sm font-semibold">SCIM token</h2>
+        {newToken ? <SecretPanel label="SCIM bearer token" value={newToken} /> : null}
+        <p className="text-xs text-[var(--color-content-subtle)]">
+          Point your identity provider at <code>/api/v1/scim/v2</code> with this bearer token.
+          Minting again rotates it; the old token stops working immediately.
+        </p>
+        <div className="flex gap-2">
+          <Button size="sm" loading={mintToken.isPending} onClick={() => mintToken.mutate()}>
+            {hub.data.scim.enabled ? 'Rotate token' : 'Mint token'}
+          </Button>
+          {hub.data.scim.enabled ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={revokeToken.isPending}
+              onClick={() => {
+                void confirm({
+                  title: 'Revoke the SCIM token?',
+                  body: 'Provisioning from your IdP stops until a new token is minted.',
+                  destructive: true,
+                }).then((ok) => ok && revokeToken.mutate());
+              }}
+            >
+              Revoke
+            </Button>
+          ) : null}
+        </div>
+      </Card>
+
+      <Card className="grid gap-3 p-5">
+        <h2 className="text-sm font-semibold">Register a webhook</h2>
+        {newSecret ? <SecretPanel label="Signing secret" value={newSecret} /> : null}
+        <Field label="Endpoint URL (https)" htmlFor="wh-url">
+          <Input
+            id="wh-url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com/hooks/techpioasset"
+          />
+        </Field>
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-[var(--color-content-muted)]">Events</p>
+          <div className="flex flex-wrap gap-1.5">
+            {WEBHOOK_EVENTS.map((event) => {
+              const active = events.includes(event);
+              return (
+                <button
+                  key={event}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() =>
+                    setEvents((prev) => (active ? prev.filter((e) => e !== event) : [...prev, event]))
+                  }
+                  className={
+                    active
+                      ? 'rounded-full bg-[var(--color-brand)] px-3 py-1 text-xs font-semibold text-white'
+                      : 'rounded-full border border-[var(--color-border-strong)] px-3 py-1 text-xs font-medium text-[var(--color-content-muted)] hover:bg-[var(--color-surface-sunken)]'
+                  }
+                >
+                  {event}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <Button
+          className="justify-self-start"
+          size="sm"
+          loading={createWebhook.isPending}
+          disabled={!url.trim() || events.length === 0}
+          onClick={() => createWebhook.mutate()}
+        >
+          Register webhook
+        </Button>
+      </Card>
+
+      <Card>
+        <h2 className="border-b border-[var(--color-border)] px-4 py-3 text-sm font-semibold">Webhooks</h2>
+        {webhooks.isPending ? (
+          <div className="grid gap-2 p-4">
+            <Skeleton className="h-10" />
+          </div>
+        ) : webhooks.isError || !webhooks.data || webhooks.data.length === 0 ? (
+          <EmptyState title="No webhooks" description="Register one above to push events out." />
+        ) : (
+          <div className="divide-y divide-[var(--color-border)]">
+            {webhooks.data.map((row) => (
+              <div key={row.id} className="grid gap-2 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="text-sm font-medium">{row.url}</code>
+                  {!row.isActive ? <Tone tone="muted">paused</Tone> : null}
+                  {(row.deliveries.DEAD ?? 0) > 0 ? (
+                    <Tone tone="critical">{row.deliveries.DEAD} dead</Tone>
+                  ) : null}
+                  <span className="ml-auto flex gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setExpanded(expanded === row.id ? null : row.id)}
+                    >
+                      {expanded === row.id ? 'Hide deliveries' : 'Deliveries'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={toggleWebhook.isPending}
+                      onClick={() => toggleWebhook.mutate({ id: row.id, isActive: !row.isActive })}
+                    >
+                      {row.isActive ? 'Pause' : 'Resume'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={removeWebhook.isPending}
+                      onClick={() => removeWebhook.mutate(row.id)}
+                    >
+                      Delete
+                    </Button>
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--color-content-subtle)]">
+                  {row.events.join(' · ')} — delivered {row.deliveries.DELIVERED ?? 0}, failed{' '}
+                  {row.deliveries.FAILED ?? 0}, dead {row.deliveries.DEAD ?? 0}
+                </p>
+                {expanded === row.id ? (
+                  deliveries.isPending ? (
+                    <Skeleton className="h-16" />
+                  ) : deliveries.data && deliveries.data.length > 0 ? (
+                    <div className="grid gap-1 rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] p-2.5">
+                      {deliveries.data.map((d) => (
+                        <div key={d.id} className="flex flex-wrap items-center gap-2 text-xs">
+                          <Tone tone={STATUS_TONE[d.status] ?? 'neutral'}>{d.status.toLowerCase()}</Tone>
+                          <span className="font-medium">{d.event}</span>
+                          <span className="text-[var(--color-content-subtle)]">
+                            {d.attempts} attempt(s)
+                            {d.responseStatus ? ` · HTTP ${d.responseStatus}` : ''}
+                            {d.lastError ? ` · ${d.lastError}` : ''}
+                            {d.lastAttemptAt ? ` · ${new Date(d.lastAttemptAt).toLocaleString()}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--color-content-subtle)]">No deliveries yet.</p>
+                  )
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
