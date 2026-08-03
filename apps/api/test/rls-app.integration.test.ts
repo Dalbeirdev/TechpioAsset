@@ -57,6 +57,18 @@ afterAll(async () => {
   await app?.close();
 });
 
+describe('the readiness probe tells the truth under enforcement', () => {
+  it('reports rlsEnforced true - the same probe that says false in the normal lane', async () => {
+    const res = await api(app).get('/health/ready');
+    expect(res.status).toBe(200);
+    // The claim is verified against the DATABASE (can this role bypass RLS?),
+    // not merely echoed from the env var - so "configured" cannot masquerade
+    // as "enforcing".
+    expect(res.body.data.protection.rlsEnforced).toBe(true);
+    expect(res.body.data.protection.rlsDetail).toBeUndefined();
+  });
+});
+
 describe('enforcement changes nothing for correct code', () => {
   it('login, list, detail and aggregates all work as the RLS-subject role', async () => {
     const list = await api(app).get('/api/v1/assets?pageSize=5').set(auth(s.superAdmin));

@@ -1,14 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
-import type { DependencyHealth, HealthResponse } from '@techpioasset/contracts';
+import type { DependencyHealth, HealthResponse, ProtectionHealth } from '@techpioasset/contracts';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { latestBackup, targetFromEnv } from '../backup/backup-storage.js';
 
 const startedAt = Date.now();
+/** A readiness probe runs every few seconds; object storage does not need that. */
+const OFFSITE_CACHE_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
+  private offsiteCache: {
+    at: number;
+    value: Pick<ProtectionHealth, 'offsiteBackups' | 'lastOffsiteBackupAgeHours' | 'offsiteDetail'>;
+  } | null = null;
 
   constructor(
     private readonly config: AppConfig,
@@ -50,11 +57,94 @@ export class HealthService {
       environment: this.config.get('NODE_ENV'),
       uptimeSeconds: this.uptimeSeconds(),
       dependencies,
+      protection: await this.checkProtection(),
     };
   }
 
   private uptimeSeconds(): number {
     return Math.floor((Date.now() - startedAt) / 1000);
+  }
+
+  /**
+   * v2.8 S6 - the protection posture, answerable from outside without
+   * credentials. Twice now the honest answer has been "less than you think":
+   * RLS was installed but dormant for six releases, and every backup lived on
+   * the machine it was protecting. Neither was visible from anywhere.
+   */
+  private async checkProtection(): Promise<ProtectionHealth> {
+    return {
+      ...(await this.checkRls()),
+      ...(await this.checkOffsiteBackups()),
+    };
+  }
+
+  /**
+   * Configured enforcement is not enforcement: a superuser (or a role with
+   * BYPASSRLS) ignores every policy. Report what is TRUE, not what is asked for.
+   */
+  private async checkRls(): Promise<Pick<ProtectionHealth, 'rlsEnforced' | 'rlsDetail'>> {
+    if (!this.config.get('RLS_ENFORCE')) {
+      return {
+        rlsEnforced: false,
+        rlsDetail: 'RLS_ENFORCE is off - tenant isolation rests on the application layer alone',
+      };
+    }
+    try {
+      const rows = await this.prisma.client.$queryRawUnsafe<{ bypass: boolean }[]>(
+        'SELECT rolbypassrls AS bypass FROM pg_roles WHERE rolname = current_user',
+      );
+      const bypasses = rows[0]?.bypass ?? true;
+      return bypasses
+        ? {
+            rlsEnforced: false,
+            rlsDetail:
+              'RLS_ENFORCE is on but the serving role can bypass row-level security - enforcement is not in effect',
+          }
+        : { rlsEnforced: true };
+    } catch {
+      return { rlsEnforced: false, rlsDetail: 'could not determine the serving role privileges' };
+    }
+  }
+
+  /** Off-site copies, cached: a health probe must not call object storage every few seconds. */
+  private async checkOffsiteBackups(): Promise<
+    Pick<ProtectionHealth, 'offsiteBackups' | 'lastOffsiteBackupAgeHours' | 'offsiteDetail'>
+  > {
+    const target = targetFromEnv();
+    if (!target) {
+      return {
+        offsiteBackups: 'not-configured',
+        lastOffsiteBackupAgeHours: null,
+        offsiteDetail: 'no destination configured - the local copy is the only copy',
+      };
+    }
+    const now = Date.now();
+    if (this.offsiteCache && now - this.offsiteCache.at < OFFSITE_CACHE_MS) {
+      return this.offsiteCache.value;
+    }
+    let value: Pick<ProtectionHealth, 'offsiteBackups' | 'lastOffsiteBackupAgeHours' | 'offsiteDetail'>;
+    try {
+      const latest = await latestBackup(target);
+      value = latest
+        ? {
+            offsiteBackups: 'configured',
+            lastOffsiteBackupAgeHours:
+              Math.round(((now - latest.lastModified.getTime()) / 3_600_000) * 10) / 10,
+          }
+        : {
+            offsiteBackups: 'configured',
+            lastOffsiteBackupAgeHours: null,
+            offsiteDetail: 'destination is reachable but holds no backup yet',
+          };
+    } catch (error) {
+      value = {
+        offsiteBackups: 'unreachable',
+        lastOffsiteBackupAgeHours: null,
+        offsiteDetail: `destination configured but unreachable: ${(error as Error).message}`,
+      };
+    }
+    this.offsiteCache = { at: now, value };
+    return value;
   }
 
   private async checkPostgres(): Promise<DependencyHealth> {
