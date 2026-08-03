@@ -1007,6 +1007,13 @@ model Asset {
   duplicateExceptionReason String?
   duplicateExceptionById   String?
 
+  /// v2.9 C1 — set when a goods receipt created this asset. The receipt line
+  /// plus the unit's position within it IS the identity: the unique index below
+  /// means a replayed or retried receipt cannot create the same asset twice,
+  /// so idempotency is a database guarantee rather than a code convention.
+  sourceGrnLineId String?
+  sourceUnitIndex Int?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -1019,6 +1026,7 @@ model Asset {
   subcategory  Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   vendor       Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   invoiceLine  InvoiceLine? @relation(fields: [invoiceLineId], references: [id], onDelete: SetNull)
+  sourceGrnLine GoodsReceiptLine? @relation("AssetFromReceipt", fields: [sourceGrnLineId], references: [id], onDelete: SetNull)
   office       Office?      @relation(fields: [officeId], references: [id], onDelete: SetNull)
   building     Building?    @relation(fields: [buildingId], references: [id], onDelete: SetNull)
   floor        Floor?       @relation(fields: [floorId], references: [id], onDelete: SetNull)
@@ -1049,6 +1057,10 @@ model Asset {
   /// rows (which carry no serial) coexist freely while real serials stay unique.
   @@unique([companyId, assetTag])
   @@unique([companyId, serialNumber])
+  /// v2.9 C1 — the idempotency backstop. Both columns are null for every asset
+  /// not born of a receipt, and Postgres treats NULLs as distinct, so those rows
+  /// coexist freely while receipt-born units stay one-per-unit.
+  @@unique([sourceGrnLineId, sourceUnitIndex])
   @@index([companyId, status])
   // v2.1 Workstream A — powers the flagship multi-dimension filter (AST-051).
   @@index([companyId, lifecycleState, availabilityState])
@@ -2606,6 +2618,8 @@ model GoodsReceiptLine {
   purchaseOrderLine PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Cascade)
   stockLocation     StockLocation?    @relation(fields: [stockLocationId], references: [id], onDelete: SetNull)
   inventoryItem     InventoryItem?    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  /// v2.9 C1 — the assets this line brought into existence.
+  assets            Asset[]           @relation("AssetFromReceipt")
 
   @@index([purchaseOrderLineId])
   @@map("goods_receipt_lines")

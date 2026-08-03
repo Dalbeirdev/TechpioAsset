@@ -66,6 +66,14 @@ export const receiveGrnSchema = z.object({
         /// STOCK intake must say where and as which item.
         stockLocationId: z.string().optional().nullable(),
         inventoryItemId: z.string().optional().nullable(),
+        /// ASSET intake must say what kind of thing arrived, because every asset
+        /// needs a category. v2.9 C1.
+        categoryId: z.string().optional().nullable(),
+        subcategoryId: z.string().optional().nullable(),
+        /// Serials and labels captured at the dock, in unit order. Shorter than
+        /// the quantity is fine - unknown units are created without one.
+        serialNumbers: z.array(z.string().trim().min(1).max(120)).max(500).optional(),
+        assetTags: z.array(z.string().trim().min(1).max(60)).max(500).optional(),
         note: z.string().trim().max(500).optional().nullable(),
       }),
     )
