@@ -36,6 +36,19 @@ export const issueStockSchema = z.object({
   ...itemAtLocation,
   quantity: qty,
   reason: z.string().trim().max(500).optional().nullable(),
+  /**
+   * v2.9 C4 - permission to fall back on expired stock, never an instruction to
+   * reach for it. Usable lots are always consumed first, and the reason is
+   * recorded on the movement and the audit log.
+   */
+  allowExpired: z.boolean().optional(),
+  expiredReason: z
+    .string()
+    .trim()
+    .min(10, 'Say why expired stock is still fit for use - it goes on the record')
+    .max(500)
+    .optional()
+    .nullable(),
 });
 export type IssueStockInput = z.infer<typeof issueStockSchema>;
 
@@ -85,3 +98,13 @@ export const convertToAssetSchema = z.object({
   notes: z.string().trim().max(1000).optional().nullable(),
 });
 export type ConvertToAssetInput = z.infer<typeof convertToAssetSchema>;
+
+/** v2.9 C4 - lots on the shelf, with what is about to go off. */
+export const batchListQuerySchema = z.object({
+  inventoryItemId: z.string().optional(),
+  stockLocationId: z.string().optional(),
+  /// Only lots expiring within this many days (or already expired).
+  expiringWithinDays: z.coerce.number().int().min(0).max(3650).optional(),
+  includeEmpty: z.coerce.boolean().optional(),
+});
+export type BatchListQuery = z.infer<typeof batchListQuerySchema>;

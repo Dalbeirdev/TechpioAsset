@@ -3,6 +3,7 @@ import {
   deriveLicenseStatus,
   shouldEscalateWorkOrder,
   expiryBucket,
+  expiryState,
   isHighUtilization,
   isWarrantyAlertable,
   seatsAvailable,
@@ -28,6 +29,9 @@ import { withSpan } from '../observability/tracing.js';
  * De-duplication: it will not raise a second alert for the same asset+window
  * inside a day, so a sweep that runs hourly does not spam.
  */
+/** Matches the warning window the batch list reports against. */
+const EXPIRY_WARN_DAYS = 30;
+
 @Injectable()
 export class AlertSweepService implements OnModuleInit {
   private readonly logger = new Logger(AlertSweepService.name);
@@ -55,6 +59,7 @@ export class AlertSweepService implements OnModuleInit {
       void this.runApprovalEscalationSweep();
       void this.runLicenseSweep();
       void this.runStockSweep();
+      void this.runExpirySweep();
       void this.runWorkOrderSweep();
       void this.runHealthSweep();
       void this.runDiscoveryStalenessSweep();
@@ -386,6 +391,66 @@ export class AlertSweepService implements OnModuleInit {
   }
 
   /**
+   * v2.9 C4 - lots about to go off, and lots that already have.
+   *
+   * Expiry is the one stock problem nobody discovers by looking: the number on
+   * the shelf does not change on the day it stops being usable. So the sweep
+   * says so, once per lot per day, while there is still time to use it up.
+   */
+  async runExpirySweep(now: Date = new Date()): Promise<{ expiring: number; expired: number }> {
+    const horizon = new Date(now);
+    horizon.setDate(horizon.getDate() + EXPIRY_WARN_DAYS);
+
+    const batches = await this.prisma.client.stockBatch.findMany({
+      where: { quantity: { gt: 0 }, expiryDate: { not: null, lte: horizon } },
+      orderBy: { expiryDate: 'asc' },
+      select: {
+        id: true,
+        companyId: true,
+        batchNumber: true,
+        quantity: true,
+        expiryDate: true,
+        inventoryItem: { select: { name: true, createdById: true } },
+        stockLocation: { select: { name: true } },
+      },
+    });
+
+    let expiring = 0;
+    let expired = 0;
+    for (const batch of batches) {
+      const state = expiryState(batch, now, EXPIRY_WARN_DAYS);
+      if (state !== 'EXPIRED' && state !== 'EXPIRING_SOON') continue;
+      const recipientId = batch.inventoryItem.createdById;
+      if (!recipientId) continue;
+      if (await this.alreadyAlertedToday(batch.id, 'STOCK_EXPIRING', now)) continue;
+
+      const day = batch.expiryDate!.toISOString().slice(0, 10);
+      await this.notifications.notify({
+        companyId: batch.companyId,
+        userId: recipientId,
+        type: 'STOCK_EXPIRING',
+        title:
+          state === 'EXPIRED'
+            ? `Expired stock: ${batch.inventoryItem.name}`
+            : `Stock expiring: ${batch.inventoryItem.name}`,
+        body:
+          `Lot ${batch.batchNumber} at ${batch.stockLocation.name} holds ${Number(batch.quantity)} ` +
+          (state === 'EXPIRED' ? `and expired on ${day}.` : `and expires on ${day}.`),
+        linkPath: '/inventory',
+        entityType: 'StockBatch',
+        entityId: batch.id,
+      });
+      if (state === 'EXPIRED') expired += 1;
+      else expiring += 1;
+    }
+
+    if (expiring + expired > 0) {
+      this.logger.log(`Expiry sweep: ${expiring} expiring soon, ${expired} already expired`);
+    }
+    return { expiring, expired };
+  }
+
+  /**
    * v2.5 H3 — work-order housekeeping in one daily pass:
    * 1. spawn work orders for due preventive schedules (idempotent: the due date
    *    advances strictly into the future in the same transaction);
@@ -481,7 +546,13 @@ export class AlertSweepService implements OnModuleInit {
 
   private async alreadyAlertedToday(
     entityId: string,
-    type: 'WARRANTY_EXPIRATION' | 'MAINTENANCE_DUE' | 'LICENSE_EXPIRING' | 'SEAT_LIMIT_REACHED' | 'LOW_STOCK',
+    type:
+      | 'WARRANTY_EXPIRATION'
+      | 'MAINTENANCE_DUE'
+      | 'LICENSE_EXPIRING'
+      | 'SEAT_LIMIT_REACHED'
+      | 'LOW_STOCK'
+      | 'STOCK_EXPIRING',
     now: Date,
   ): Promise<boolean> {
     const startOfDay = new Date(now);

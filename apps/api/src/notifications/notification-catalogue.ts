@@ -134,6 +134,14 @@ export const NOTIFICATION_CATALOGUE: Readonly<Record<NotificationType, Notificat
     channels: ['IN_APP'],
   },
   LOW_STOCK: { type: 'LOW_STOCK', title: 'Low stock', mandatory: false, channels: ['IN_APP'] },
+  // v2.9 C4: email as well as in-app, because stock going off is a deadline
+  // rather than a state - nobody discovers it by opening the app in time.
+  STOCK_EXPIRING: {
+    type: 'STOCK_EXPIRING',
+    title: 'Stock expiring',
+    mandatory: false,
+    channels: ['IN_APP', 'EMAIL'],
+  },
   REPLACEMENT_DUE: {
     type: 'REPLACEMENT_DUE',
     title: 'Replacement due',
