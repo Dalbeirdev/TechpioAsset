@@ -56,6 +56,7 @@ known to work, however carefully it was reviewed.**
 | Verify credentials over the **real** auth path (`-h postgres`) *before* editing any config | rollout script |
 | Switch script auto-rolls-back if `/health/ready` does not return 200 within 100s | rollout script |
 | Nested-transaction path (licence assign) pinned in the RLS lane | #124 |
+| All of the above folded into one reviewed tool, tested positive **and** negative | `deploy/preflight.sh` (v2.8 S3) |
 
 The corrected sequence — rotate → verify over the real path → back up env → switch →
 health-gate → auto-rollback — was then used for both the role switch and the enforcement
