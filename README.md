@@ -42,7 +42,7 @@ Two documentation sets live in [`docs/`](./docs):
 
 The blueprint is a design specification for the next major version — it is not yet reflected in the code in this repository, which implements the as-built v1 above.
 
-**Getting there:** [Implementation Plan v2.1](./docs/IMPLEMENTATION-PLAN-v2.1.md) sequences the blueprint into shippable releases (v2.1–v2.6) mapped to the real codebase. v2.1 (foundation & status model), v2.2 (core ITAM & RBAC), v2.3 (License Management, the flagship seat-limit-enforcement module), v2.4 (Procurement & Warehouse Inventory) and v2.5 ([Discovery, Hardware Detail & Work Orders](./docs/IMPLEMENTATION-PLAN-v2.5-HARDWARE.md)) are live; the final mapped release is detailed in [Implementation Plan v2.6 — Analytics, Integrations & the Platform Plane](./docs/IMPLEMENTATION-PLAN-v2.6-ANALYTICS.md).
+**Getting there:** [Implementation Plan v2.1](./docs/IMPLEMENTATION-PLAN-v2.1.md) sequences the blueprint into shippable releases (v2.1–v2.6) mapped to the real codebase. v2.1 (foundation & status model), v2.2 (core ITAM & RBAC), v2.3 (License Management, the flagship seat-limit-enforcement module), v2.4 (Procurement & Warehouse Inventory) and v2.5 ([Discovery, Hardware Detail & Work Orders](./docs/IMPLEMENTATION-PLAN-v2.5-HARDWARE.md)) are live; v2.6 ([Analytics, Integrations & the Platform Plane](./docs/IMPLEMENTATION-PLAN-v2.6-ANALYTICS.md)) completed the mapped plan; the first post-roadmap release is proposed in [Implementation Plan v2.7 — Trust Hardening & License Completion](./docs/IMPLEMENTATION-PLAN-v2.7-HARDENING.md).
 
 ---
 
