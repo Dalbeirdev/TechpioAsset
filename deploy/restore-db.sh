@@ -103,7 +103,7 @@ done
 echo
 if [[ "$FAILED" == "1" ]]; then
   echo "DRILL FAILED: at least one table did not restore." >&2
-  record failed "$(basename "$DUMP") restored but a expected table was missing - see $DRILL_LOG."
+  record failed "$(basename "$DUMP") restored but an expected table was missing - see $DRILL_LOG."
   exit 1
 fi
 echo "Drill passed: the dump restores into a working database."
