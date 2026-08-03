@@ -92,6 +92,48 @@ describe('enforcement changes nothing for correct code', () => {
     expect(names).toContain(`RLS Lane Tenant ${run}`); // the operator sees the other tenant
   });
 
+  it('a service that opens its OWN transaction still works under enforcement', async () => {
+    // The path RLS could plausibly break: licence assign runs $transaction with
+    // a raw guarded UPDATE inside it, nested within the interceptor's tenant
+    // transaction. The proxy flattens the inner transaction into the outer one;
+    // without that this 500s under RLS_ENFORCE, and no health check would say so.
+    const created = await api(app)
+      .post('/api/v1/licenses')
+      .set(auth(s.superAdmin))
+      .send({
+        name: `RLS Tx Probe ${run}`,
+        family: 'OTHER',
+        subscriptionType: 'SUBSCRIPTION',
+        purchaseDate: new Date().toISOString(),
+        expiryDate: new Date(Date.now() + 200 * 86_400_000).toISOString(),
+        seatsPurchased: 1,
+        unitOfAssignment: 'USER',
+      });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const licenseId = created.body.data.id;
+
+    const assigned = await api(app)
+      .post(`/api/v1/licenses/${licenseId}/assign`)
+      .set(auth(s.superAdmin))
+      .send({ userId: s.employee.user.id });
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(201);
+
+    // The guarded counter moved exactly once, inside the nested transaction.
+    const pool = await admin.seatPool.findFirstOrThrow({ where: { licenseId } });
+    expect(pool.seatsReserved).toBe(1);
+
+    // And the honest refusal still fires on the last seat.
+    const refused = await api(app)
+      .post(`/api/v1/licenses/${licenseId}/assign`)
+      .set(auth(s.superAdmin))
+      .send({ userId: s.employee2.user.id });
+    expect(refused.status).toBe(409);
+
+    await admin.licenseAssignment.deleteMany({ where: { licenseId } });
+    await admin.seatPool.deleteMany({ where: { licenseId } });
+    await admin.softwareLicense.delete({ where: { id: licenseId } });
+  });
+
   it('writes work in-tenant and the created row lands in the right tenant', async () => {
     const categories = await api(app).get('/api/v1/categories').set(auth(s.superAdmin));
     const categoryId = categories.body.data[0].id;
