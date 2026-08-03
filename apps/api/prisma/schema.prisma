@@ -402,6 +402,16 @@ enum AuditAction {
   PO_ISSUED
   PO_CANCELLED
   GRN_RECEIVED
+
+  // v2.9 C2 - budgets. Committing and releasing move real money commitments,
+  // so both are audited with the figures involved.
+  COST_CENTRE_CREATED
+  COST_CENTRE_UPDATED
+  BUDGET_CREATED
+  BUDGET_UPDATED
+  BUDGET_COMMITTED
+  BUDGET_RELEASED
+  PR_CANCELLED
   MATCH_OVERRIDDEN
   // v2.5 discovery
   DISCOVERY_INGESTED
@@ -478,6 +488,8 @@ model Company {
   purchaseRequests          PurchaseRequest[]
   goodsReceipts             GoodsReceipt[]
   stockLocations            StockLocation[]
+  costCentres               CostCentre[]
+  budgets                   Budget[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -519,6 +531,7 @@ model User {
   verificationTokens       VerificationToken[]
   deviceTokens             DeviceToken[]
   assignedAssets           Asset[]                    @relation("AssetCurrentAssignee")
+  ownedCostCentres         CostCentre[]               @relation("CostCentreOwner")
   assignmentsHeld          AssetAssignment[]          @relation("AssignmentHolder")
   assignmentsGranted       AssetAssignment[]          @relation("AssignmentGrantedBy")
   returnsReceived          AssetReturn[]              @relation("ReturnReceivedBy")
@@ -883,6 +896,7 @@ model Department {
   transfersFrom AssetTransfer[] @relation("TransferFromDepartment")
   transfersTo   AssetTransfer[] @relation("TransferToDepartment")
   seatPools     SeatPool[]
+  costCentres   CostCentre[]
 
   @@unique([companyId, code])
   @@index([parentId])
@@ -2491,6 +2505,77 @@ model LicenseRenewal {
 // PurchaseOrderLine.receivedQuantity (CHECK-backed, like seat pools).
 // -----------------------------------------------------------------------------
 
+/// v2.9 C2 — who the money belongs to. A cost centre is the unit a budget is
+/// set for and a purchase request is charged to; departments are an org chart,
+/// which is a different question and often a different shape.
+model CostCentre {
+  id        String @id @default(cuid())
+  companyId String
+
+  code         String
+  name         String
+  departmentId String?
+  /// Accountable for the spend; notified when their budget runs low.
+  ownerId  String?
+  isActive Boolean @default(true)
+  notes    String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department       Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  owner            User?             @relation("CostCentreOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  budgets          Budget[]
+  purchaseRequests PurchaseRequest[]
+
+  @@unique([companyId, code])
+  @@index([companyId, isActive])
+  @@map("cost_centres")
+}
+
+/// v2.9 C2 — a hard limit, not a warning.
+///
+/// `committed` is money promised but not yet invoiced: an approved purchase
+/// request holds its estimate here until it is cancelled. Every write to it is
+/// an atomic conditional UPDATE whose WHERE clause is the limit, with the CHECK
+/// constraint in the migration as the backstop - the same shape that guards
+/// licence seats and purchase-order receipts.
+model Budget {
+  id        String @id @default(cuid())
+  companyId String
+
+  costCentreId String
+  /// What a human calls it: "FY26 Q1 - IT".
+  name        String
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+  currency    String   @db.Char(3)
+  amount      Decimal  @db.Decimal(14, 2)
+  committed   Decimal  @default(0) @db.Decimal(14, 2)
+  notes       String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+  version     Int       @default(0)
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  costCentre       CostCentre        @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  purchaseRequests PurchaseRequest[]
+
+  /// One budget per cost centre per period; overlapping periods are refused in
+  /// the service, because "which budget does this charge?" must have one answer.
+  @@unique([costCentreId, periodStart, periodEnd])
+  @@index([companyId, costCentreId])
+  @@map("budgets")
+}
+
 enum PurchaseRequestStatus {
   DRAFT
   SUBMITTED
@@ -2544,6 +2629,15 @@ model PurchaseRequest {
   /// Set when converted; the PO carries the lines from there on.
   convertedPoId String?
 
+  /// v2.9 C2 — what this spend is charged to, and what it is holding.
+  /// `committedAmount` is non-null only while the commitment is live; releasing
+  /// clears it in the same guarded step that gives the money back, so a double
+  /// release is impossible rather than merely unlikely.
+  costCentreId    String?
+  budgetId        String?
+  committedAmount Decimal?  @db.Decimal(14, 2)
+  committedAt     DateTime?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -2553,6 +2647,8 @@ model PurchaseRequest {
   company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   requester   User                  @relation("PurchaseRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   convertedPo PurchaseOrder?        @relation("RequestConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  costCentre  CostCentre?           @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  budget      Budget?               @relation(fields: [budgetId], references: [id], onDelete: Restrict)
   lines       PurchaseRequestLine[]
 
   @@unique([companyId, prNumber])

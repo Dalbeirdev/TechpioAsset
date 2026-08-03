@@ -146,6 +146,45 @@ describe('enforcement changes nothing for correct code', () => {
     await admin.softwareLicense.delete({ where: { id: licenseId } });
   });
 
+  it('tables added after the role existed are protected too - v2.9 C2 budgets', async () => {
+    // New tables inherit the app role's grants through ALTER DEFAULT PRIVILEGES.
+    // If that had not held, this whole test would fail with a permission error
+    // rather than a tenancy one - which is exactly why it is worth asserting.
+    const centre = await api(app)
+      .post('/api/v1/cost-centres')
+      .set(auth(s.finance))
+      .send({ code: `RLS-${run}`, name: 'RLS lane cost centre' });
+    expect(centre.status, JSON.stringify(centre.body)).toBe(201);
+
+    // A budget planted in the foreign tenant, by the superuser, out of reach.
+    const foreignCentre = await admin.costCentre.create({
+      data: { companyId: foreignCompanyId, code: `FOREIGN-${run}`, name: 'Foreign centre' },
+      select: { id: true },
+    });
+    const foreignBudget = await admin.budget.create({
+      data: {
+        companyId: foreignCompanyId,
+        costCentreId: foreignCentre.id,
+        name: 'Foreign budget',
+        periodStart: new Date('2026-01-01'),
+        periodEnd: new Date('2026-12-31'),
+        currency: 'USD',
+        amount: '999999.00',
+      },
+      select: { id: true },
+    });
+
+    const mine = await api(app).get('/api/v1/budgets').set(auth(s.finance));
+    expect(mine.status).toBe(200);
+    expect(JSON.stringify(mine.body)).not.toContain('Foreign budget');
+    // Named directly, it is still not there - RLS, not a filtered query.
+    expect((await api(app).get(`/api/v1/budgets/${foreignBudget.id}`).set(auth(s.finance))).status).toBe(404);
+
+    await admin.budget.delete({ where: { id: foreignBudget.id } });
+    await admin.costCentre.delete({ where: { id: foreignCentre.id } });
+    await admin.costCentre.deleteMany({ where: { code: `RLS-${run}` } });
+  });
+
   it('writes work in-tenant and the created row lands in the right tenant', async () => {
     const categories = await api(app).get('/api/v1/categories').set(auth(s.superAdmin));
     const categoryId = categories.body.data[0].id;

@@ -30,6 +30,9 @@ export const createPurchaseRequestSchema = z.object({
     .optional()
     .nullable(),
   currency: z.string().trim().length(3).optional().nullable(),
+  /// v2.9 C2 - what this spend is charged to. Optional: a company with no cost
+  /// centres keeps the v2.4 behaviour exactly.
+  costCentreId: z.string().optional().nullable(),
   lines: z
     .array(
       z.object({

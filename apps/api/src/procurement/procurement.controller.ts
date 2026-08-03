@@ -66,6 +66,22 @@ export class ProcurementController {
     return this.procurement.submitPr(actor, id);
   }
 
+  @Post('requests/:id/cancel')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_PR_READ)
+  @ApiOperation({
+    summary: 'Cancel a purchase request',
+    description:
+      'The requester or an approver may cancel. If the request was holding budget, cancelling ' +
+      'gives it back in the same transaction - exactly once, however many times it is called.',
+  })
+  cancelPr(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.procurement.cancelPr(actor, id, body?.reason ?? null);
+  }
+
   @Post('requests/:id/decision')
   @RequirePermissions(PERMISSIONS.PROCUREMENT_PR_APPROVE)
   @ApiOperation({
