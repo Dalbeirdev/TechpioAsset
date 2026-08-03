@@ -39,11 +39,20 @@ Staged, reversible at every step.
    SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'techpioasset_app';
    ```
 
-3. **Switch the API's connection** in `.env.prod` — change ONLY the API `DATABASE_URL`
-   user/password to `techpioasset_app:<password>`. Keep the owner URL at hand for
-   migrations (the api container's migrate-on-start step needs the owner; if migrate and
-   serve share one URL today, split them first: run `prisma migrate deploy` manually as the
-   owner before switching, or add a `MIGRATE_DATABASE_URL`).
+3. **Switch the API's connection** in `.env.prod`:
+
+   ```bash
+   # The owner URL migrations keep using (copy of today's DATABASE_URL):
+   MIGRATE_DATABASE_URL=postgresql://techpioasset:<owner-password>@postgres:5432/techpioasset?schema=public
+   # The restricted role the API serves as:
+   DATABASE_URL=postgresql://techpioasset_app:<app-password>@postgres:5432/techpioasset?schema=public
+   ```
+
+   The container's start command runs `prisma migrate deploy` under
+   `MIGRATE_DATABASE_URL` (defaulting to `DATABASE_URL`, so a stack that has not switched
+   is unaffected) and then serves under `DATABASE_URL`. The seed, if you ever re-run it,
+   works either way: it runs without the tenant GUC, and the policies are permissive when
+   the GUC is unset.
 
 4. **Canary with enforcement off**: restart the api container, confirm `/health/ready`
    shows postgres up and the app serves normally (the role's grants are the only change).
