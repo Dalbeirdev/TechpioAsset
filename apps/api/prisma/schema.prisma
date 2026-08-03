@@ -314,6 +314,8 @@ enum NotificationType {
   WARRANTY_EXPIRATION
   MAINTENANCE_DUE
   LOW_STOCK
+  /// v2.9 C4 - a lot is about to go off, or already has.
+  STOCK_EXPIRING
   REPLACEMENT_DUE
   SECURITY_ALERT
   // v2.3 licenses
@@ -419,6 +421,11 @@ enum AuditAction {
   RFQ_QUOTE_RECORDED
   RFQ_AWARDED
   RFQ_CANCELLED
+
+  // v2.9 C4 - lots and expiry. Issuing expired stock is always audited, with
+  // the reason somebody gave for doing it.
+  STOCK_BATCH_RECEIVED
+  STOCK_EXPIRED_ISSUED
   MATCH_OVERRIDDEN
   // v2.5 discovery
   DISCOVERY_INGESTED
@@ -497,6 +504,7 @@ model Company {
   stockLocations            StockLocation[]
   costCentres               CostCentre[]
   budgets                   Budget[]
+  stockBatches              StockBatch[]
   quoteRequests             QuoteRequest[]
   quotes                    Quote[]
 
@@ -1107,6 +1115,9 @@ model InventoryItem {
   categoryId    String
   subcategoryId String?
 
+  /// v2.9 C4 - when true, every receipt names a lot and every issue consumes
+  /// batches FIFO by expiry. Off by default: most kit has no shelf life.
+  batchTracked   Boolean  @default(false)
   unit           String   @default("unit")
   quantityOnHand Decimal  @default(0) @db.Decimal(14, 3)
   quantityIssued Decimal  @default(0) @db.Decimal(14, 3)
@@ -1143,6 +1154,7 @@ model InventoryItem {
   stockLevels   StockLevel[]
   stockMovements StockMovement[]
   stockTransfers StockTransfer[]
+  stockBatches   StockBatch[]
 
   @@unique([companyId, sku])
   @@index([companyId, categoryId])
@@ -2886,6 +2898,7 @@ model StockLocation {
   office   Office?            @relation(fields: [officeId], references: [id], onDelete: SetNull)
   levels   StockLevel[]
   grnLines GoodsReceiptLine[]
+  batches  StockBatch[]
 
   @@unique([companyId, code])
   @@index([deletedAt])
@@ -2914,6 +2927,39 @@ model StockLevel {
 }
 
 /// The append-only truth. quantity is always positive; the type carries the sign.
+/// v2.9 C4 - a lot of one item at one location.
+///
+/// `quantity` is a guarded cache in exactly the way stock_levels is: every
+/// change is an atomic conditional UPDATE, with a CHECK constraint stopping it
+/// going negative, and the movement ledger remains the truth it summarises.
+model StockBatch {
+  id        String @id @default(cuid())
+  companyId String
+
+  inventoryItemId String
+  stockLocationId String
+  /// The vendor's lot code, or whatever the receiving clerk wrote on the box.
+  batchNumber String
+  expiryDate  DateTime? @db.Date
+  quantity    Decimal   @default(0) @db.Decimal(14, 3)
+  receivedAt  DateTime  @default(now())
+  /// Which receipt line brought it in, when it came through procurement.
+  sourceGrnLineId String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Cascade)
+  movements     StockMovement[]
+
+  @@unique([inventoryItemId, stockLocationId, batchNumber])
+  @@index([companyId, expiryDate])
+  @@map("stock_batches")
+}
+
 model StockMovement {
   id        String @id @default(cuid())
   companyId String
@@ -2927,10 +2973,14 @@ model StockMovement {
   refId   String?
   reason  String?
   actorId String?
+  /// v2.9 C4 - which lot this movement drew on. Batches are a dimension of the
+  /// existing ledger, not a parallel truth, so the movement rows stay the fact.
+  stockBatchId String?
 
   createdAt DateTime @default(now())
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  stockBatch    StockBatch?   @relation(fields: [stockBatchId], references: [id], onDelete: SetNull)
 
   @@index([inventoryItemId, stockLocationId, createdAt])
   @@index([companyId, createdAt])

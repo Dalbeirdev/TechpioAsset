@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   adjustStockSchema,
+  batchListQuerySchema,
   convertToAssetSchema,
   countCorrectionSchema,
   createStockLocationSchema,
@@ -12,6 +13,7 @@ import {
   updateStockLocationSchema,
   type AdjustStockInput,
   type AuthUser,
+  type BatchListQuery,
   type ConvertToAssetInput,
   type CountCorrectionInput,
   type CreateStockLocationInput,
@@ -40,6 +42,21 @@ export class StockController {
   @ApiOperation({ summary: 'Stock locations with level counts' })
   listLocations(@CurrentUser() actor: AuthUser) {
     return this.stock.listLocations(actor);
+  }
+
+  @Get('batches')
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  @ApiOperation({
+    summary: 'Lots on the shelf, soonest expiry first',
+    description:
+      'Each lot reports whether it is fine, going off soon or already expired - computed from ' +
+      'the calendar, never stored, because a batch expires without anything happening to the row.',
+  })
+  listBatches(
+    @CurrentUser() actor: AuthUser,
+    @Query(zodBody(batchListQuerySchema)) query: BatchListQuery,
+  ) {
+    return this.stock.listBatches(actor, query);
   }
 
   @Post('locations')

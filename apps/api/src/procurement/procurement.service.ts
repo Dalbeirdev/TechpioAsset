@@ -23,6 +23,7 @@ import { buildOrderBy, paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
 import { BudgetsService } from '../budgets/budgets.service.js';
 import { RfqService } from './rfq.service.js';
+import { StockService } from '../stock/stock.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService, type TenantTxClient } from '../prisma/prisma.service.js';
@@ -44,6 +45,7 @@ export class ProcurementService {
     private readonly config: AppConfig,
     private readonly budgets: BudgetsService,
     private readonly rfq: RfqService,
+    private readonly stock: StockService,
   ) {}
 
   // ── purchase requests ──────────────────────────────────────────────────────
@@ -462,6 +464,17 @@ export class ProcurementService {
       if (line.intake === 'STOCK' && (!line.stockLocationId || !line.inventoryItemId)) {
         throw new AppError('VALIDATION_FAILED', 'STOCK intake needs a location and an inventory item');
       }
+      if (line.intake === 'STOCK' && line.inventoryItemId) {
+        // v2.9 C4: a lot-tracked item cannot arrive anonymously, or nothing
+        // downstream could tell one batch from another.
+        const tracking = await this.stock.batchTrackingFor(actor.companyId, line.inventoryItemId);
+        if (tracking?.batchTracked && !line.batchNumber) {
+          throw new AppError(
+            'VALIDATION_FAILED',
+            `${tracking.name} is lot-tracked, so this receipt needs the batch number from the box`,
+          );
+        }
+      }
       if (line.intake === 'ASSET') {
         if (!line.categoryId) {
           throw new AppError('VALIDATION_FAILED', 'ASSET intake needs a category - every asset is filed under one');
@@ -561,6 +574,8 @@ export class ProcurementService {
         receiptLines.push({ input: l, id: stored.id, quantity: stored.quantity });
       }
 
+      // Declared per attempt, for the same reason as createdAssets below.
+      const batchesReceived: { batchId: string; batchNumber: string }[] = [];
       // 3. STOCK intake posts to the ledger and bumps the caches.
       for (const { input: inputLine, id, quantity } of receiptLines) {
         const grnLine = {
@@ -598,6 +613,24 @@ export class ProcurementService {
           },
           update: { quantity: { increment: grnLine.quantity } },
         });
+        if (inputLine.batchNumber) {
+          // The batch and the receipt that created it cannot exist without each
+          // other: same transaction, and the lot carries the line that brought
+          // it in, so "where did this come from?" survives.
+          const batchId = await this.stock.receiveIntoBatch(tx, actor, {
+            inventoryItemId: grnLine.inventoryItemId!,
+            stockLocationId: grnLine.stockLocationId!,
+            quantity: grnLine.quantity,
+            batchNumber: inputLine.batchNumber,
+            expiryDate: inputLine.expiryDate ?? null,
+            sourceGrnLineId: grnLine.id,
+          });
+          batchesReceived.push({ batchId, batchNumber: inputLine.batchNumber });
+          await tx.stockMovement.updateMany({
+            where: { refType: 'GoodsReceiptLine', refId: grnLine.id },
+            data: { stockBatchId: batchId },
+          });
+        }
         await tx.inventoryItem.update({
           where: { id: grnLine.inventoryItemId! },
           data: { quantityOnHand: { increment: grnLine.quantity }, lastPurchaseDate: new Date() },
@@ -672,7 +705,7 @@ export class ProcurementService {
           updatedById: actor.id,
         },
       });
-        return { ...created, assets: createdAssets };
+        return { ...created, assets: createdAssets, batches: batchesReceived };
       }),
     );
 
@@ -682,7 +715,12 @@ export class ProcurementService {
       action: AuditAction.GRN_RECEIVED,
       entityType: 'PurchaseOrder',
       entityId: purchaseOrderId,
-      newValues: { grnNumber: grn.grnNumber, lines: input.lines.length, assetsCreated: grn.assets.length },
+      newValues: {
+        grnNumber: grn.grnNumber,
+        lines: input.lines.length,
+        assetsCreated: grn.assets.length,
+        ...(grn.batches.length ? { lots: grn.batches.map((b) => b.batchNumber) } : {}),
+      },
     });
     // One row per asset, so "where did this laptop come from?" is answerable
     // from the asset's own history rather than only from the receipt's.
@@ -717,7 +755,12 @@ export class ProcurementService {
     }
     // Additive: callers that only read the PO are unaffected, and the receiving
     // screen can now show what it just brought into existence.
-    return { ...(await this.loadPo(actor, purchaseOrderId)), grnNumber: grn.grnNumber, assetsCreated: grn.assets };
+    return {
+      ...(await this.loadPo(actor, purchaseOrderId)),
+      grnNumber: grn.grnNumber,
+      assetsCreated: grn.assets,
+      batchesReceived: grn.batches,
+    };
   }
 
   async listPos(actor: AuthUser, query: PrListQuery) {

@@ -72,6 +72,10 @@ export const receiveGrnSchema = z.object({
         /// STOCK intake must say where and as which item.
         stockLocationId: z.string().optional().nullable(),
         inventoryItemId: z.string().optional().nullable(),
+        /// v2.9 C4 - STOCK intake into a lot. Required when the item is
+        /// batch-tracked; ignored otherwise.
+        batchNumber: z.string().trim().min(1).max(60).optional().nullable(),
+        expiryDate: z.coerce.date().optional().nullable(),
         /// ASSET intake must say what kind of thing arrived, because every asset
         /// needs a category. v2.9 C1.
         categoryId: z.string().optional().nullable(),
