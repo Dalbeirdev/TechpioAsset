@@ -18,6 +18,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.integration.test.ts'],
+    // The throttling proof needs a deliberately small RATE_LIMIT_MAX to reach
+    // the ceiling; at this lane's normal limit it could never trip it. It has
+    // its own lane (vitest.throttle.config.ts) rather than making every other
+    // suite run near a limit and turn flaky.
+    exclude: ['test/tenant-throttle.integration.test.ts'],
     env: {
       // The suite performs dozens of legitimate logins within a few seconds and
       // would otherwise trip its own brute-force protection. The throttle is
