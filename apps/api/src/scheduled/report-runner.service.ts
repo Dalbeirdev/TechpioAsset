@@ -1,7 +1,9 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { AuditAction } from '@prisma/client';
 import type { ReportType } from '@techpioasset/contracts';
 import { AppConfig } from '../config/config.module.js';
 import { AuthService } from '../auth/auth.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { MailProvider } from '../providers/mail/mail.provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -36,6 +38,7 @@ export class ReportRunnerService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
+    private readonly audit: AuditService,
     private readonly reports: ReportsService,
     private readonly mail: MailProvider,
     private readonly notifications: NotificationsService,
@@ -117,6 +120,23 @@ export class ReportRunnerService implements OnModuleInit {
       content,
       contentType: excel ? 'application/vnd.ms-excel' : 'text/csv; charset=utf-8',
     };
+
+    // v2.7 R2 (AUD-009): a scheduled send is data leaving the system too -
+    // recorded against the owner, who is who it was generated as.
+    await this.audit.record({
+      companyId: owner.companyId,
+      actorId: owner.id,
+      action: AuditAction.REPORT_EXPORTED,
+      entityType: 'Report',
+      entityId: schedule.resource,
+      newValues: {
+        format: schedule.format,
+        rows: table.rows.length,
+        delivery: 'SCHEDULED',
+        scheduleId: schedule.id,
+        recipients: schedule.recipients.length,
+      },
+    });
 
     for (const recipient of schedule.recipients) {
       await this.mail.send({

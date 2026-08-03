@@ -120,6 +120,26 @@ export class DashboardService {
         icon: 'KeyRound',
         tone: expiring > 0 ? 'warning' : 'neutral',
       });
+
+      // v2.7 R4 — pools at or near capacity. A licence that is full today is
+      // tomorrow's blocked hire, so it earns its own tile rather than being
+      // discovered at the moment of refusal.
+      const pools = await db.seatPool.findMany({
+        where: { companyId: actor.companyId, license: { status: { not: 'RETIRED' } } },
+        select: { seatsAllocated: true, seatsReserved: true },
+      });
+      const strained = pools.filter(
+        (p) => p.seatsAllocated > 0 && p.seatsReserved / p.seatsAllocated >= 0.9,
+      );
+      const full = strained.filter((p) => p.seatsReserved >= p.seatsAllocated).length;
+      tiles.push({
+        key: 'licenses-at-capacity',
+        label: full > 0 ? `Licenses full (${full}) or near` : 'Licenses near capacity',
+        value: strained.length,
+        href: '/licenses',
+        icon: 'KeyRound',
+        tone: full > 0 ? 'danger' : strained.length > 0 ? 'warning' : 'neutral',
+      });
     }
 
     // Maintenance owners.

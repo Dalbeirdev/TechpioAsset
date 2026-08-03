@@ -4,6 +4,10 @@ import type {
   AddLicenseKeyInput,
   AssignSeatInput,
   AuthUser,
+  BulkAssignInput,
+  BulkRevokeInput,
+  ReclaimSeatsInput,
+  TransferSeatInput,
   CreateLicenseInput,
   CreateRenewalInput,
   LicenseListQuery,
@@ -35,6 +39,9 @@ const SORTABLE = ['name', 'expiryDate', 'purchaseDate', 'createdAt', 'seatsPurch
  * §A.7). v2.3 operates on the auto-created default pool; the schema already
  * supports splitting a licence into delegated pools later.
  */
+/** A principal as it arrives in a bulk request (echoed back in refusals). */
+type BulkPrincipal = { userId?: string | null; assetId?: string | null };
+
 @Injectable()
 export class LicensesService {
   constructor(
@@ -430,6 +437,348 @@ export class LicensesService {
       reason: input.reason ?? undefined,
     });
     return this.findOne(actor, licenseId);
+  }
+
+  // ── v2.7 R3: bulk operations & transfers ───────────────────────────────────
+
+  /**
+   * Assign many seats at once.
+   *
+   * PARTIAL takes exactly the seats that fit and reports every refusal with
+   * its real reason. ATOMIC reserves all N in ONE conditional update — if the
+   * pool cannot hold them, nothing at all happens. What must never exist is a
+   * silent partial success: either mode tells the caller precisely what it did.
+   */
+  async bulkAssign(actor: AuthUser, licenseId: string, input: BulkAssignInput) {
+    const license = await this.loadAssignableLicense(actor, licenseId);
+    const pool = license.pools[0];
+    if (!pool) throw AppError.notFound('Seat pool');
+
+    // Resolve principals against the licence's unit before touching the pool -
+    // a malformed batch should not consume seats on its way to failing.
+    const resolved = input.principals.map((p) => ({
+      input: p,
+      principal: resolveAssignmentPrincipal(license.unitOfAssignment, p),
+    }));
+    const malformed = resolved.filter((r) => !r.principal.ok);
+    if (malformed.length > 0 && input.mode === 'ATOMIC') {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `${malformed.length} principal(s) do not match this licence's unit of assignment`,
+      );
+    }
+
+    const assigned: { principal: BulkPrincipal; assignmentId: string }[] = [];
+    const refused: { principal: BulkPrincipal; reason: string }[] = [];
+
+    if (input.mode === 'ATOMIC') {
+      const wanted = resolved.length;
+      await this.prisma.client.$transaction(async (tx) => {
+        // One conditional update for the whole batch: the WHERE clause is the
+        // hard limit, so N seats appear together or not at all.
+        const affected = await tx.$executeRaw`
+          UPDATE "seat_pools"
+             SET "seatsReserved" = "seatsReserved" + ${wanted}
+           WHERE "id" = ${pool.id}
+             AND "companyId" = ${actor.companyId}
+             AND "seatsReserved" + ${wanted} <= "seatsAllocated"`;
+        if (affected === 0) {
+          throw new AppError(
+            'SEAT_LIMIT_EXCEEDED',
+            `Cannot assign ${wanted} seat(s): ${seatLimitMessage({
+              purchased: license.seatsPurchased,
+              reserved: pool.seatsReserved,
+            })}`,
+          );
+        }
+        for (const row of resolved) {
+          const principal = row.principal as { ok: true; field: 'userId' | 'assetId'; id: string };
+          const created = await tx.licenseAssignment.create({
+            data: {
+              companyId: actor.companyId,
+              licenseId: license.id,
+              seatPoolId: pool.id,
+              [principal.field]: principal.id,
+              assignedById: actor.id,
+              reason: input.reason ?? null,
+            },
+            select: { id: true },
+          });
+          assigned.push({ principal: row.input, assignmentId: created.id });
+        }
+      });
+    } else {
+      for (const row of resolved) {
+        if (!row.principal.ok) {
+          refused.push({ principal: row.input, reason: row.principal.message });
+          continue;
+        }
+        try {
+          // Reuse the proven single-seat path: same guard, same audit trail,
+          // same honest refusal - one seat at a time, so a full pool stops
+          // exactly where it runs out instead of failing the whole batch.
+          await this.assign(actor, licenseId, {
+            ...(row.principal.field === 'userId'
+              ? { userId: row.principal.id }
+              : { assetId: row.principal.id }),
+            reason: input.reason ?? null,
+          } as AssignSeatInput);
+          assigned.push({ principal: row.input, assignmentId: 'assigned' });
+        } catch (error) {
+          refused.push({
+            principal: row.input,
+            reason: error instanceof AppError ? error.message : 'Could not assign this seat',
+          });
+        }
+      }
+    }
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.LICENSE_ASSIGNED,
+      entityType: 'SoftwareLicense',
+      entityId: license.id,
+      newValues: { bulk: true, mode: input.mode, assigned: assigned.length, refused: refused.length },
+      reason: input.reason ?? undefined,
+    });
+
+    return {
+      mode: input.mode,
+      requested: input.principals.length,
+      assignedCount: assigned.length,
+      refusedCount: refused.length,
+      refused,
+      license: await this.findOne(actor, license.id),
+    };
+  }
+
+  /** Revoke many seats; unknown or already-revoked ids are reported, not fatal. */
+  async bulkRevoke(actor: AuthUser, licenseId: string, input: BulkRevokeInput) {
+    const revoked: string[] = [];
+    const skipped: { assignmentId: string; reason: string }[] = [];
+    for (const assignmentId of input.assignmentIds) {
+      try {
+        await this.revoke(actor, licenseId, { assignmentId, reason: input.reason ?? null });
+        revoked.push(assignmentId);
+      } catch (error) {
+        skipped.push({
+          assignmentId,
+          reason: error instanceof AppError ? error.message : 'Could not revoke',
+        });
+      }
+    }
+    return {
+      requested: input.assignmentIds.length,
+      revokedCount: revoked.length,
+      skippedCount: skipped.length,
+      skipped,
+      license: await this.findOne(actor, licenseId),
+    };
+  }
+
+  /**
+   * Move a seat from one principal to another.
+   *
+   * A transfer is a swap, not a purchase: the old assignment closes and the
+   * new one opens on the SAME pool inside one transaction, and the pool
+   * counter is never touched. That is the invariant - a transfer can never
+   * create a seat, and a FULL licence can still transfer (there is no moment
+   * where a free seat is needed).
+   */
+  async transfer(actor: AuthUser, licenseId: string, input: TransferSeatInput) {
+    const license = await this.loadAssignableLicense(actor, licenseId);
+    const assignment = await this.prisma.client.licenseAssignment.findFirst({
+      where: { id: input.assignmentId, licenseId, companyId: actor.companyId, status: 'ACTIVE' },
+      select: { id: true, seatPoolId: true, userId: true, assetId: true },
+    });
+    if (!assignment) throw AppError.notFound('Active assignment', input.assignmentId);
+
+    const principal = resolveAssignmentPrincipal(license.unitOfAssignment, {
+      userId: input.toUserId ?? null,
+      assetId: input.toAssetId ?? null,
+    });
+    if (!principal.ok) throw new AppError('VALIDATION_FAILED', principal.message);
+    if (
+      (principal.field === 'userId' && principal.id === assignment.userId) ||
+      (principal.field === 'assetId' && principal.id === assignment.assetId)
+    ) {
+      throw new AppError('VALIDATION_FAILED', 'The seat already belongs to that principal');
+    }
+    await this.assertPrincipalExists(actor, principal.field, principal.id);
+
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        await tx.licenseAssignment.update({
+          where: { id: assignment.id },
+          data: {
+            status: 'REVOKED',
+            revokedAt: new Date(),
+            revokedById: actor.id,
+            reason: input.reason ?? 'Transferred',
+          },
+        });
+        await tx.licenseAssignment.create({
+          data: {
+            companyId: actor.companyId,
+            licenseId,
+            seatPoolId: assignment.seatPoolId,
+            [principal.field]: principal.id,
+            assignedById: actor.id,
+            reason: input.reason ?? 'Transferred',
+          },
+        });
+        // Note the absence: seatsReserved is deliberately NOT touched.
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw AppError.conflict(
+          'CONFLICT',
+          'That principal already holds an active seat on this licence',
+        );
+      }
+      throw error;
+    }
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.LICENSE_TRANSFERRED,
+      entityType: 'SoftwareLicense',
+      entityId: licenseId,
+      previousValues: { userId: assignment.userId, assetId: assignment.assetId },
+      newValues: { [principal.field]: principal.id },
+      reason: input.reason ?? undefined,
+    });
+    return this.findOne(actor, licenseId);
+  }
+
+  /**
+   * v2.7 R4 — seats held by people who are no longer here.
+   *
+   * A deactivated or suspended employee keeps consuming a paid seat until
+   * somebody notices; this surfaces exactly those, tenant-wide, so the waste
+   * is visible rather than discovered at renewal. It only ever REPORTS -
+   * reclaiming is a deliberate act with a stated reason (see reclaim).
+   */
+  async reclaimable(actor: AuthUser, licenseId?: string) {
+    const rows = await this.prisma.client.licenseAssignment.findMany({
+      where: {
+        companyId: actor.companyId,
+        status: 'ACTIVE',
+        ...(licenseId ? { licenseId } : {}),
+        user: { OR: [{ status: { in: ['DEACTIVATED', 'SUSPENDED'] } }, { deletedAt: { not: null } }] },
+      },
+      orderBy: { assignedAt: 'asc' },
+      select: {
+        id: true,
+        assignedAt: true,
+        license: { select: { id: true, name: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            deletedAt: true,
+            profile: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+    return {
+      count: rows.length,
+      assignments: rows.map((r) => ({
+        assignmentId: r.id,
+        assignedAt: r.assignedAt,
+        license: r.license,
+        holder: {
+          id: r.user!.id,
+          email: r.user!.email,
+          name: r.user!.profile
+            ? `${r.user!.profile.firstName} ${r.user!.profile.lastName}`
+            : r.user!.email,
+          // Why it is reclaimable, in the response - no guessing at the UI.
+          reason: r.user!.deletedAt ? 'DELETED' : r.user!.status,
+        },
+      })),
+    };
+  }
+
+  /**
+   * Reclaim seats from departed holders. Each is the ordinary guarded revoke
+   * (so the counter can never drift) with a mandatory reason on the record.
+   */
+  async reclaim(actor: AuthUser, input: ReclaimSeatsInput) {
+    const targets = await this.prisma.client.licenseAssignment.findMany({
+      where: {
+        id: { in: input.assignmentIds },
+        companyId: actor.companyId,
+        status: 'ACTIVE',
+      },
+      select: { id: true, licenseId: true },
+    });
+    const found = new Set(targets.map((t) => t.id));
+    const skipped = input.assignmentIds
+      .filter((id) => !found.has(id))
+      .map((assignmentId) => ({ assignmentId, reason: 'No active assignment with that id' }));
+
+    let reclaimed = 0;
+    for (const target of targets) {
+      await this.revoke(actor, target.licenseId, {
+        assignmentId: target.id,
+        reason: input.reason,
+      });
+      reclaimed += 1;
+    }
+    return {
+      requested: input.assignmentIds.length,
+      reclaimedCount: reclaimed,
+      skippedCount: skipped.length,
+      skipped,
+    };
+  }
+
+  /** Shared loader: the licence must exist and be in an assignable state. */
+  private async loadAssignableLicense(actor: AuthUser, licenseId: string) {
+    const license = await this.prisma.client.softwareLicense.findFirst({
+      where: { id: licenseId, companyId: actor.companyId },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        unitOfAssignment: true,
+        seatsPurchased: true,
+        pools: { select: { id: true, seatsReserved: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+      },
+    });
+    if (!license) throw AppError.notFound('License', licenseId);
+    if (license.status === 'RETIRED' || license.status === 'EXPIRED') {
+      throw new AppError(
+        'ILLEGAL_STATE_TRANSITION',
+        `A ${license.status.toLowerCase()} licence cannot be assigned`,
+      );
+    }
+    return license;
+  }
+
+  private async assertPrincipalExists(
+    actor: AuthUser,
+    field: 'userId' | 'assetId',
+    id: string,
+  ): Promise<void> {
+    if (field === 'userId') {
+      const user = await this.prisma.client.user.findFirst({
+        where: { id, companyId: actor.companyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!user) throw AppError.notFound('User', id);
+    } else {
+      const asset = await this.prisma.client.asset.findFirst({
+        where: { id, companyId: actor.companyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!asset) throw AppError.notFound('Asset', id);
+    }
   }
 
   // ── renewals & keys ────────────────────────────────────────────────────────
