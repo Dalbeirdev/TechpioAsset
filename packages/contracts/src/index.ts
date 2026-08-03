@@ -17,6 +17,7 @@ export * from './roles';
 export * from './licenses';
 export * from './procurement';
 export * from './budgets';
+export * from './rfq';
 export * from './stock';
 export * from './discovery';
 export * from './integrations';

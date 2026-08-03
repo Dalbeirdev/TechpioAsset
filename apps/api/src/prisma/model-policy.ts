@@ -41,6 +41,8 @@ export const SOFT_DELETABLE_MODELS = new Set<string>([
   // both soft-delete rather than vanish from the history that references them.
   'CostCentre',
   'Budget',
+  // v2.9 C3: an abandoned RFQ still explains why an order went where it did.
+  'QuoteRequest',
 ]);
 
 /**

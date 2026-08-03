@@ -1,6 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  awardQuoteSchema,
+  createRfqSchema,
+  declineQuoteSchema,
+  recordQuoteSchema,
   convertPurchaseRequestSchema,
   createPurchaseRequestSchema,
   decidePurchaseRequestSchema,
@@ -10,8 +14,12 @@ import {
   type ConvertPurchaseRequestInput,
   type CreatePurchaseRequestInput,
   type DecidePurchaseRequestInput,
+  type AwardQuoteInput,
+  type CreateRfqInput,
+  type DeclineQuoteInput,
   type PrListQuery,
   type ReceiveGrnInput,
+  type RecordQuoteInput,
 } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
@@ -19,6 +27,7 @@ import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { ProcurementService } from './procurement.service.js';
 import { MatchService } from './match.service.js';
+import { RfqService } from './rfq.service.js';
 
 /**
  * v2.4 Procurement. SoD is enforced in the service (a requester never decides
@@ -31,6 +40,7 @@ export class ProcurementController {
   constructor(
     private readonly procurement: ProcurementService,
     private readonly match: MatchService,
+    private readonly rfq: RfqService,
   ) {}
 
   // ── purchase requests ──────────────────────────────────────────────────────
@@ -107,6 +117,88 @@ export class ProcurementController {
     @Body(zodBody(convertPurchaseRequestSchema)) body: ConvertPurchaseRequestInput,
   ) {
     return this.procurement.convertPr(actor, id, body);
+  }
+
+  // ── requests for quotation (v2.9 C3) ───────────────────────────────────────
+
+  @Post('requests/:id/rfq')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_RFQ_MANAGE)
+  @ApiOperation({
+    summary: 'Ask vendors to quote for an approved request',
+    description: 'At least two vendors - one quote is not a comparison. Each is invited as a quote to fill in.',
+  })
+  createRfq(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(createRfqSchema)) body: CreateRfqInput,
+  ) {
+    return this.rfq.create(actor, id, body);
+  }
+
+  @Get('rfqs')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_PR_READ)
+  @ApiOperation({ summary: 'Quote requests, newest first (filter by purchaseRequestId)' })
+  listRfqs(@CurrentUser() actor: AuthUser, @Query('purchaseRequestId') purchaseRequestId?: string) {
+    return this.rfq.list(actor, purchaseRequestId);
+  }
+
+  @Get('rfqs/:id')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_PR_READ)
+  @ApiOperation({
+    summary: 'One quote request with every quote and the comparison',
+    description: 'The comparison names the cheapest and the fastest, and says when they are different vendors.',
+  })
+  findRfq(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.rfq.find(actor, id);
+  }
+
+  @Post('quotes/:quoteId/response')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_RFQ_MANAGE)
+  @ApiOperation({ summary: "Record what a vendor quoted (replaces any earlier response)" })
+  recordQuote(
+    @CurrentUser() actor: AuthUser,
+    @Param('quoteId') quoteId: string,
+    @Body(zodBody(recordQuoteSchema)) body: RecordQuoteInput,
+  ) {
+    return this.rfq.recordResponse(actor, quoteId, body);
+  }
+
+  @Post('quotes/:quoteId/decline')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_RFQ_MANAGE)
+  @ApiOperation({ summary: 'Record that a vendor will not quote' })
+  declineQuote(
+    @CurrentUser() actor: AuthUser,
+    @Param('quoteId') quoteId: string,
+    @Body(zodBody(declineQuoteSchema)) body: DeclineQuoteInput,
+  ) {
+    return this.rfq.decline(actor, quoteId, body);
+  }
+
+  @Post('rfqs/:id/award')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_RFQ_MANAGE)
+  @ApiOperation({
+    summary: 'Award one quote, with a reason',
+    description:
+      'Exactly one quote can ever win; the rest are marked LOST. Only the awarded quote can ' +
+      'become a purchase order, which the database enforces as well as the service.',
+  })
+  awardQuote(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(awardQuoteSchema)) body: AwardQuoteInput,
+  ) {
+    return this.rfq.award(actor, id, body);
+  }
+
+  @Post('rfqs/:id/cancel')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_RFQ_MANAGE)
+  @ApiOperation({ summary: 'Abandon a quote request that has not been awarded' })
+  cancelRfq(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.rfq.cancel(actor, id, body?.reason ?? null);
   }
 
   // ── three-way match ────────────────────────────────────────────────────────

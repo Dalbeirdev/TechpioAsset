@@ -412,6 +412,13 @@ enum AuditAction {
   BUDGET_COMMITTED
   BUDGET_RELEASED
   PR_CANCELLED
+
+  // v2.9 C3 - competitive quoting. The award carries a reason, so the audit
+  // row is the answer to "why this vendor at this price?".
+  RFQ_CREATED
+  RFQ_QUOTE_RECORDED
+  RFQ_AWARDED
+  RFQ_CANCELLED
   MATCH_OVERRIDDEN
   // v2.5 discovery
   DISCOVERY_INGESTED
@@ -490,6 +497,8 @@ model Company {
   stockLocations            StockLocation[]
   costCentres               CostCentre[]
   budgets                   Budget[]
+  quoteRequests             QuoteRequest[]
+  quotes                    Quote[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -1416,6 +1425,7 @@ model Vendor {
   assets         Asset[]
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[]
+  quotes         Quote[]
   maintenance    MaintenanceRecord[]
   softwareLicenses SoftwareLicense[]
 
@@ -1455,6 +1465,8 @@ model PurchaseOrder {
   receipts GoodsReceipt[]
   matchResults InvoiceMatchResult[]
   convertedFromRequests PurchaseRequest[] @relation("RequestConvertedPo")
+  /// v2.9 C3 - the winning quote this order was created from, if any.
+  fromQuote             Quote[]           @relation("PoFromQuote")
 
   @@unique([companyId, poNumber])
   @@index([companyId, status])
@@ -2576,6 +2588,114 @@ model Budget {
   @@map("budgets")
 }
 
+/// v2.9 C3 - the competitive-quoting record.
+///
+/// Before this, "why this vendor at this price?" was answered in somebody's
+/// email. An RFQ puts the question and its answer next to the purchase they
+/// justify, and the award is the ONLY route from a quote to an order.
+model QuoteRequest {
+  id        String @id @default(cuid())
+  companyId String
+
+  rfqNumber         String
+  purchaseRequestId String
+  status            QuoteRequestStatus @default(SENT)
+  dueDate           DateTime?
+  notes             String?
+
+  /// Set once, by the award, and never moved. The conditional UPDATE that sets
+  /// it is what makes a second award impossible rather than merely unlikely.
+  awardedQuoteId String?   @unique
+  awardReason    String?
+  awardedById    String?
+  awardedAt      DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  awardedQuote    Quote?          @relation("AwardedQuote", fields: [awardedQuoteId], references: [id], onDelete: SetNull)
+  quotes          Quote[]         @relation("QuotesForRequest")
+
+  @@unique([companyId, rfqNumber])
+  @@index([companyId, status])
+  @@map("quote_requests")
+}
+
+/// One vendor's answer. Created as INVITED when the RFQ goes out; a response
+/// fills in the numbers; exactly one becomes AWARDED and the rest LOST.
+model Quote {
+  id        String @id @default(cuid())
+  companyId String
+
+  quoteRequestId String
+  vendorId       String
+  status         QuoteStatus @default(INVITED)
+
+  /// The vendor's own reference, so a paper quote can be matched to this row.
+  reference    String?
+  currency     String?  @db.Char(3)
+  subtotal     Decimal? @db.Decimal(14, 2)
+  total        Decimal? @db.Decimal(14, 2)
+  leadTimeDays Int?
+  validUntil   DateTime?
+  notes        String?
+  receivedAt   DateTime?
+
+  /// Set when the awarded quote becomes an order. Losing quotes never carry it.
+  convertedPoId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quoteRequest QuoteRequest  @relation("QuotesForRequest", fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  vendor       Vendor        @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  convertedPo  PurchaseOrder? @relation("PoFromQuote", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  awardedFor   QuoteRequest? @relation("AwardedQuote")
+  lines        QuoteLine[]
+
+  @@unique([quoteRequestId, vendorId])
+  @@index([companyId, status])
+  @@map("quotes")
+}
+
+model QuoteLine {
+  id      String @id @default(cuid())
+  quoteId String
+
+  lineNumber            Int
+  purchaseRequestLineId String?
+  description           String
+  quantity              Decimal @db.Decimal(14, 3)
+  unitPrice             Decimal @db.Decimal(14, 2)
+  lineTotal             Decimal @db.Decimal(14, 2)
+
+  quote               Quote                @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  purchaseRequestLine PurchaseRequestLine? @relation(fields: [purchaseRequestLineId], references: [id], onDelete: SetNull)
+
+  @@unique([quoteId, lineNumber])
+  @@map("quote_lines")
+}
+
+enum QuoteRequestStatus {
+  SENT
+  AWARDED
+  CANCELLED
+}
+
+enum QuoteStatus {
+  INVITED
+  RECEIVED
+  DECLINED
+  AWARDED
+  LOST
+}
+
 enum PurchaseRequestStatus {
   DRAFT
   SUBMITTED
@@ -2648,6 +2768,7 @@ model PurchaseRequest {
   requester   User                  @relation("PurchaseRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   convertedPo PurchaseOrder?        @relation("RequestConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
   costCentre  CostCentre?           @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  quoteRequests QuoteRequest[]
   budget      Budget?               @relation(fields: [budgetId], references: [id], onDelete: Restrict)
   lines       PurchaseRequestLine[]
 
@@ -2670,6 +2791,7 @@ model PurchaseRequestLine {
 
   purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem?  @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  quoteLines      QuoteLine[]
 
   @@unique([purchaseRequestId, lineNumber])
   @@map("purchase_request_lines")

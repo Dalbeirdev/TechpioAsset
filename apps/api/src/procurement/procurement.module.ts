@@ -3,12 +3,13 @@ import { BudgetsModule } from '../budgets/budgets.module.js';
 import { ProcurementController } from './procurement.controller.js';
 import { ProcurementService } from './procurement.service.js';
 import { MatchService } from './match.service.js';
+import { RfqService } from './rfq.service.js';
 
 @Module({
   // v2.9 C2: approving a charged request commits against its budget.
   imports: [BudgetsModule],
   controllers: [ProcurementController],
-  providers: [ProcurementService, MatchService],
+  providers: [ProcurementService, MatchService, RfqService],
   exports: [MatchService],
 })
 export class ProcurementModule {}

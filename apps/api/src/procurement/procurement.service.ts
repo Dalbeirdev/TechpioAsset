@@ -14,6 +14,7 @@ import {
   canApprovePurchaseRequest,
   canTransitionPurchaseRequest,
   needsFinanceApproval,
+  losingQuoteMessage,
   overReceiptMessage,
   rollupPurchaseOrderStatus,
 } from '@techpioasset/domain';
@@ -21,6 +22,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
 import { BudgetsService } from '../budgets/budgets.service.js';
+import { RfqService } from './rfq.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService, type TenantTxClient } from '../prisma/prisma.service.js';
@@ -41,6 +43,7 @@ export class ProcurementService {
     private readonly notifications: NotificationsService,
     private readonly config: AppConfig,
     private readonly budgets: BudgetsService,
+    private readonly rfq: RfqService,
   ) {}
 
   // ── purchase requests ──────────────────────────────────────────────────────
@@ -276,17 +279,61 @@ export class ProcurementService {
     });
     if (!pr) throw AppError.notFound('Purchase request', id);
     this.assertTransition(pr.status, 'CONVERTED');
+
+    // v2.9 C3 — if this request went out to quote, the quoting decides what is
+    // ordered. This is where "a losing quote can never become a PO" is enforced
+    // for the ordinary path; the CHECK constraint is what enforces it for every
+    // other path.
+    const quoting = await this.rfq.awardStateFor(actor, id);
+    if (quoting && !quoting.awardedQuote) {
+      throw AppError.conflict(
+        'CONFLICT',
+        `${quoting.rfq.rfqNumber} is out for quotes on this request. Award one (with a reason) before ordering.`,
+      );
+    }
+    const awarded = quoting?.awardedQuote ?? null;
+    if (awarded && input.quoteId && input.quoteId !== awarded.id) {
+      const attempted = quoting!.rfq.quotes.find((q) => q.id === input.quoteId);
+      throw AppError.conflict(
+        'CONFLICT',
+        losingQuoteMessage({ vendorName: attempted?.vendor.name ?? 'That vendor' }, { vendorName: awarded.vendor.name }),
+      );
+    }
+    if (awarded && input.vendorId && input.vendorId !== awarded.vendorId) {
+      throw AppError.conflict(
+        'CONFLICT',
+        `This request was awarded to ${awarded.vendor.name}; the order cannot go to a different vendor.`,
+      );
+    }
+
+    const vendorId = awarded?.vendorId ?? input.vendorId;
+    if (!vendorId) {
+      throw new AppError('VALIDATION_FAILED', 'Pick the vendor the order goes to');
+    }
     const vendor = await this.prisma.client.vendor.findFirst({
-      where: { id: input.vendorId, companyId: actor.companyId, deletedAt: null },
+      where: { id: vendorId, companyId: actor.companyId, deletedAt: null },
       select: { id: true },
     });
-    if (!vendor) throw AppError.notFound('Vendor', input.vendorId);
+    if (!vendor) throw AppError.notFound('Vendor', vendorId);
 
-    const currency = input.currency ?? pr.currency ?? 'USD';
-    const subtotal = pr.lines.reduce(
-      (sum, l) => sum + Number(l.estimatedUnitPrice ?? 0) * Number(l.quantity),
-      0,
-    );
+    // Awarded prices beat estimates: the order must match what the vendor quoted.
+    const orderLines = awarded?.lines.length
+      ? awarded.lines.map((l) => ({
+          lineNumber: l.lineNumber,
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          lineTotal: l.lineTotal,
+        }))
+      : pr.lines.map((l) => ({
+          lineNumber: l.lineNumber,
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.estimatedUnitPrice ?? new Prisma.Decimal(0),
+          lineTotal: new Prisma.Decimal((Number(l.estimatedUnitPrice ?? 0) * Number(l.quantity)).toFixed(2)),
+        }));
+    const currency = awarded?.currency ?? input.currency ?? pr.currency ?? 'USD';
+    const subtotal = orderLines.reduce((sum, l) => sum + Number(l.lineTotal), 0);
 
     const po = await this.withNumberedTransaction(actor.companyId, 'purchaseOrder', 'PO', async (tx, poNumber) => {
       const created = await tx.purchaseOrder.create({
@@ -299,17 +346,7 @@ export class ProcurementService {
           total: new Prisma.Decimal(subtotal.toFixed(2)),
           createdById: actor.id,
           updatedById: actor.id,
-          lines: {
-            create: pr.lines.map((l) => ({
-              lineNumber: l.lineNumber,
-              description: l.description,
-              quantity: l.quantity,
-              unitPrice: l.estimatedUnitPrice ?? new Prisma.Decimal(0),
-              lineTotal: new Prisma.Decimal(
-                (Number(l.estimatedUnitPrice ?? 0) * Number(l.quantity)).toFixed(2),
-              ),
-            })),
-          },
+          lines: { create: orderLines },
         },
         select: { id: true, poNumber: true },
       });
@@ -317,6 +354,12 @@ export class ProcurementService {
         where: { id },
         data: { status: 'CONVERTED', convertedPoId: created.id, updatedById: actor.id },
       });
+      if (awarded) {
+        // The link that answers "why this vendor at this price?" from the order
+        // itself. The CHECK constraint refuses this write for any quote the
+        // database does not agree is AWARDED.
+        await tx.quote.update({ where: { id: awarded.id }, data: { convertedPoId: created.id } });
+      }
       return created;
     });
 

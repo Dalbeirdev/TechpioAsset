@@ -98,6 +98,8 @@ export const PERMISSIONS = {
   // rides on ASSETS_COST_READ, because a budget is a money figure and the
   // standing rule is that money is Finance + Super Admin only.
   FINANCE_BUDGETS_MANAGE: 'finance:budgets:manage',
+  /** Raise an RFQ, record what vendors quote, and award one (v2.9). */
+  PROCUREMENT_RFQ_MANAGE: 'procurement:rfq:manage',
 
   // Discovery (v2.5). Ingest is for agents/admins; reconcile resolves the
   // review queue. Discovery proposes - humans (or exact serials) decide.
@@ -359,6 +361,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   // Sourcing and purchasing. Owns vendors + POs; approves requests.
   PROCUREMENT_MANAGER: [
     P.ASSETS_READ,
+    P.PROCUREMENT_RFQ_MANAGE,
     P.PROCUREMENT_PR_CREATE,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_PR_APPROVE,

@@ -53,7 +53,10 @@ export const decidePurchaseRequestSchema = z.object({
 export type DecidePurchaseRequestInput = z.infer<typeof decidePurchaseRequestSchema>;
 
 export const convertPurchaseRequestSchema = z.object({
-  vendorId: z.string().min(1, 'Pick the vendor the order goes to'),
+  /// Optional from v2.9: when an RFQ has been awarded, the winning quote names
+  /// the vendor and the prices, and passing a different one is refused.
+  vendorId: z.string().min(1).optional().nullable(),
+  quoteId: z.string().min(1).optional().nullable(),
   currency: z.string().trim().length(3).optional().nullable(),
 });
 export type ConvertPurchaseRequestInput = z.infer<typeof convertPurchaseRequestSchema>;
