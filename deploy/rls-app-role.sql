@@ -8,7 +8,14 @@
 -- Provision a dedicated non-superuser role, point the application's DATABASE_URL
 -- at it, and set RLS_ENFORCE=true. Run this AS the database owner/superuser:
 --
---     psql "$ADMIN_DATABASE_URL" -v app_password="'<strong-password>'" -f deploy/rls-app-role.sql
+--     psql "$ADMIN_DATABASE_URL" -v app_password="<strong-password>" -f deploy/rls-app-role.sql
+--
+-- Pass the password RAW - do NOT wrap it in single quotes. The script uses
+-- psql's :'app_password' form, which adds the quoting itself; passing it
+-- pre-quoted stores a password that literally contains the quote characters
+-- (found in production during the v2.7 rollout: auth then fails for the app
+-- while a 127.0.0.1 `trust` rule in pg_hba makes local psql tests pass anyway,
+-- which is a very convincing way to be wrong).
 --
 -- Migrations and the seed keep running as the owner/superuser; only the running
 -- API connects as this role.
