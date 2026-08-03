@@ -23,6 +23,18 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/techpioasset}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/techpioasset}"
 COMPOSE="docker compose -f $APP_DIR/docker-compose.vps.yml --env-file $APP_DIR/.env.prod"
+DRILL_LOG="${DRILL_LOG:-/var/log/techpioasset-drill.log}"
+
+# v2.8 S2: record every outcome, and make a FAILURE shout. A drill whose result
+# nobody reads has not run. Notification goes through the app's MailProvider in
+# the api container, so real SMTP deployments get real mail.
+record() {  # record <passed|failed> <detail>
+  printf '%s drill %s: %s
+' "$(date -Is)" "$1" "$2" >> "$DRILL_LOG" 2>/dev/null || true
+  if [[ "$1" == "failed" || "${DRILL_NOTIFY_ON_SUCCESS:-0}" == "1" ]]; then
+    $COMPOSE exec -T api node dist/backup/drill-notify-cli.js "$1" "$2" </dev/null 2>&1 | tail -1 || true
+  fi
+}
 
 set -a
 # shellcheck disable=SC1091
@@ -32,6 +44,7 @@ set +a
 DUMP="${1:-$(ls -1t "$BACKUP_DIR"/techpioasset_*.sql.gz 2>/dev/null | head -1)}"
 if [[ -z "${DUMP:-}" || ! -f "$DUMP" ]]; then
   echo "No backup found. Looked in $BACKUP_DIR (or the path you passed)." >&2
+  record failed "No backup file found in $BACKUP_DIR - there may be nothing to restore FROM."
   exit 1
 fi
 
@@ -90,6 +103,8 @@ done
 echo
 if [[ "$FAILED" == "1" ]]; then
   echo "DRILL FAILED: at least one table did not restore." >&2
+  record failed "$(basename "$DUMP") restored but a expected table was missing - see $DRILL_LOG."
   exit 1
 fi
 echo "Drill passed: the dump restores into a working database."
+record passed "$(basename "$DUMP") restored with matching row counts."
