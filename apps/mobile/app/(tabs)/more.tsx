@@ -34,6 +34,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { icon: 'build-outline', label: 'My work orders', href: '/work-orders', perm: PERMISSIONS.MAINTENANCE_MANAGE },
       { icon: 'construct-outline', label: 'Maintenance', href: '/maintenance', perm: PERMISSIONS.MAINTENANCE_READ },
       { icon: 'people-outline', label: 'People', href: '/people', perm: PERMISSIONS.USERS_READ },
+      { icon: 'stats-chart-outline', label: 'Analytics', href: '/analytics', perm: PERMISSIONS.ANALYTICS_READ },
       { icon: 'bar-chart-outline', label: 'Reports', href: '/reports', perm: PERMISSIONS.REPORTS_READ },
       { icon: 'time-outline', label: 'Audit log', href: '/audit', perm: PERMISSIONS.AUDIT_READ },
     ],

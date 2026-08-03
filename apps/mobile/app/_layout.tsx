@@ -41,6 +41,7 @@ export default function RootLayout() {
           <Stack.Screen name="work-orders" options={{ headerShown: true, title: 'Work orders' }} />
           <Stack.Screen name="work-order/[id]" options={{ headerShown: true, title: 'Work order' }} />
           <Stack.Screen name="people" options={{ headerShown: true, title: 'People' }} />
+          <Stack.Screen name="analytics" options={{ headerShown: true, title: 'Analytics' }} />
           <Stack.Screen name="reports" options={{ headerShown: true, title: 'Reports' }} />
           <Stack.Screen name="audit" options={{ headerShown: true, title: 'Audit log' }} />
           <Stack.Screen name="settings" options={{ headerShown: true, title: 'AI settings' }} />
