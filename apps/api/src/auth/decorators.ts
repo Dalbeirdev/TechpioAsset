@@ -14,6 +14,15 @@ export const REQUIRED_PERMISSIONS_KEY = 'techpioasset:requiredPermissions';
  */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
+export const SKIP_RLS_KEY = 'techpioasset:skipRls';
+/**
+ * v2.7 R1 - opts a handler/controller out of the per-request tenant GUC.
+ * ONLY for the platform plane: its guard is the gate, its reads are
+ * deliberately cross-tenant, and the permissive-until-GUC policies allow a
+ * GUC-less session by design. Never use this on tenant-facing routes.
+ */
+export const SkipRls = () => SetMetadata(SKIP_RLS_KEY, true);
+
 /**
  * Requires every listed permission. Multiple decorators are ANDed, matching the
  * principle that a handler touching two resources needs rights to both.

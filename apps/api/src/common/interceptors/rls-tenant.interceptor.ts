@@ -4,6 +4,8 @@ import {
   type ExecutionContext,
   type NestInterceptor,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { SKIP_RLS_KEY } from '../../auth/decorators.js';
 import { from, lastValueFrom, type Observable } from 'rxjs';
 import { AppConfig } from '../../config/config.module.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -26,12 +28,23 @@ export class RlsTenantInterceptor implements NestInterceptor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfig,
+    private readonly reflector: Reflector,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (!this.config.get('RLS_ENFORCE') || context.getType() !== 'http') {
       return next.handle();
     }
+    // v2.7 R1: the platform plane reads across tenants by design; scoping it
+    // to the operator's own company would silently hide every other tenant.
+    // GUC-less is safe here because the policies are permissive-until-GUC and
+    // PlatformGuard is the gate.
+    const skip = this.reflector.getAllAndOverride<boolean>(SKIP_RLS_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (skip) return next.handle();
+
     // No tenant on public/unauthenticated routes — nothing to scope.
     const companyId = getRequestContext()?.companyId;
     if (!companyId) return next.handle();
