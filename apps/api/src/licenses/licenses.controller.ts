@@ -3,6 +3,9 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   addLicenseKeySchema,
   assignSeatSchema,
+  bulkAssignSchema,
+  bulkRevokeSchema,
+  transferSeatSchema,
   createLicenseSchema,
   createRenewalSchema,
   licenseListQuerySchema,
@@ -10,6 +13,9 @@ import {
   updateLicenseSchema,
   type AddLicenseKeyInput,
   type AssignSeatInput,
+  type BulkAssignInput,
+  type BulkRevokeInput,
+  type TransferSeatInput,
   type AuthUser,
   type CreateLicenseInput,
   type CreateRenewalInput,
@@ -110,6 +116,48 @@ export class LicensesController {
     @Body(zodBody(revokeSeatSchema)) body: RevokeSeatInput,
   ) {
     return this.licenses.revoke(actor, id, body);
+  }
+
+  @Post(':id/seats/bulk')
+  @RequirePermissions(PERMISSIONS.LICENSES_ASSIGN)
+  @ApiOperation({
+    summary: 'Assign many seats at once',
+    description:
+      'PARTIAL takes exactly the seats that fit and reports every refusal; ATOMIC takes ' +
+      'none unless all fit. Never a silent partial success.',
+  })
+  bulkAssign(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(bulkAssignSchema)) body: BulkAssignInput,
+  ) {
+    return this.licenses.bulkAssign(actor, id, body);
+  }
+
+  @Post(':id/seats/bulk-revoke')
+  @RequirePermissions(PERMISSIONS.LICENSES_REVOKE)
+  @ApiOperation({ summary: 'Revoke many seats; unknown ids are reported, not fatal' })
+  bulkRevoke(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(bulkRevokeSchema)) body: BulkRevokeInput,
+  ) {
+    return this.licenses.bulkRevoke(actor, id, body);
+  }
+
+  @Post(':id/seats/transfer')
+  @RequirePermissions(PERMISSIONS.LICENSES_ASSIGN, PERMISSIONS.LICENSES_REVOKE)
+  @ApiOperation({
+    summary: 'Move a seat between principals',
+    description:
+      'A swap in one transaction - the pool counter never changes, so a full licence can still transfer.',
+  })
+  transfer(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(transferSeatSchema)) body: TransferSeatInput,
+  ) {
+    return this.licenses.transfer(actor, id, body);
   }
 
   @Post(':id/renewals')
