@@ -15,6 +15,7 @@ import { AssetHealthService } from '../asset-health/asset-health.service.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { withSpan } from '../observability/tracing.js';
 
 /**
  * Warranty and maintenance alert sweep (spec section 14).
@@ -47,6 +48,9 @@ export class AlertSweepService implements OnModuleInit {
     // would replace this in a clustered deployment; a single timer is correct for
     // one instance and keeps the dev path dependency-free.
     const daily = () => {
+      // One span per nightly pass, so a slow or failing sweep is visible
+      // rather than inferred from log timestamps.
+      void withSpan('sweep.daily', async () => {
       void this.runWarrantySweep();
       void this.runApprovalEscalationSweep();
       void this.runLicenseSweep();
@@ -54,6 +58,7 @@ export class AlertSweepService implements OnModuleInit {
       void this.runWorkOrderSweep();
       void this.runHealthSweep();
       void this.runDiscoveryStalenessSweep();
+      });
     };
     this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
     this.timer.unref?.();

@@ -38,3 +38,7 @@ allowBuilds:
   # Optional native accelerator for BullMQ's msgpack serialisation. Denied: it is
   # a pure-JS-fallback optimisation, and the queue is not on a hot path here.
   msgpackr-extract: false
+  # v2.8 S4: pulled in by the OTLP trace exporter. Its install script only
+  # generates protobufjs's own bundled type helpers; the exporter works without
+  # them, so it stays denied rather than running install-time code we do not need.
+  protobufjs: false

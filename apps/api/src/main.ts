@@ -5,9 +5,19 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { AppConfig } from './config/config.module.js';
 import { applySecurityMiddleware, applyCors } from './bootstrap/security.js';
+import { startTracing } from './observability/tracing.js';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
+
+  // Before the application: instrumentation works by patching modules as they
+  // load. Returns null when OTEL_EXPORTER_OTLP_ENDPOINT is unset, and nothing
+  // at all is constructed in that case.
+  const tracing = await startTracing();
+  if (tracing) {
+    process.once('SIGTERM', () => void tracing.shutdown());
+  }
+
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
   const config = app.get(AppConfig);
 

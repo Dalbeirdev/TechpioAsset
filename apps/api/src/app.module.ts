@@ -1,6 +1,6 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ConfigService } from '@nestjs/config';
 import { AppConfigModule } from './config/config.module.js';
@@ -46,6 +46,7 @@ import { RlsTenantInterceptor } from './common/interceptors/rls-tenant.intercept
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter.js';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from './auth/guards/permissions.guard.js';
+import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard.js';
 
 @Module({
   imports: [
@@ -106,7 +107,9 @@ import { PermissionsGuard } from './auth/guards/permissions.guard.js';
   providers: [
     // Order matters: throttle before authenticating (so an unauthenticated flood
     // is cheap to reject), authenticate before checking permissions.
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // v2.8 S5: buckets per tenant (verified token) and per IP for anonymous
+    // callers, so one tenant's traffic cannot exhaust everyone else's limit.
+    { provide: APP_GUARD, useClass: TenantThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
