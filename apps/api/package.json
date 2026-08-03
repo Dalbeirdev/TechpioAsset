@@ -25,7 +25,8 @@
     "seed:admin": "tsx prisma/seed/create-admin.ts",
     "backfill:status-dimensions": "tsx prisma/backfill/status-dimensions.ts",
     "audit:summary": "node scripts/audit-summary.mjs",
-    "test:integration:rls": "vitest run --config vitest.rls.config.ts"
+    "test:integration:rls": "vitest run --config vitest.rls.config.ts",
+    "test:integration:throttle": "vitest run --config vitest.throttle.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
