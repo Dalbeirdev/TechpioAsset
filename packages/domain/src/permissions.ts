@@ -100,6 +100,13 @@ export const PERMISSIONS = {
   DISCOVERY_INGEST: 'discovery:ingest',
   DISCOVERY_RECONCILE: 'discovery:reconcile',
 
+  // Analytics (v2.6). Read-only aggregates; spend figures additionally need
+  // ASSETS_COST_READ - the API gates per aggregate, never the UI alone.
+  ANALYTICS_READ: 'analytics:read',
+
+  // Integrations (v2.6). Webhooks, SCIM token, hub - Super Admin only via ALL.
+  INTEGRATIONS_MANAGE: 'integrations:manage',
+
   // AI
   AI_CONFIGURE: 'ai:configure',
   AI_REVIEW_RESULTS: 'ai:review-results',
@@ -247,6 +254,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   ],
 
   FINANCE: [
+    P.ANALYTICS_READ,
     P.ASSETS_READ,
     P.ASSETS_COST_READ,
     P.PROCUREMENT_PR_READ,
@@ -296,6 +304,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   ],
 
   AUDITOR: [
+    P.ANALYTICS_READ,
     P.ASSETS_READ,
     // Asset price is Finance + Super Admin only (per product decision), so the
     // read-only auditor no longer sees costs or the financial spend reports.

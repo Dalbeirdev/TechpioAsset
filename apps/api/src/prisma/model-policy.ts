@@ -30,6 +30,8 @@ export const SOFT_DELETABLE_MODELS = new Set<string>([
   'SoftwareLicense',
   'PurchaseRequest',
   'StockLocation',
+  // v2.6 A3: webhook subscriptions soft-delete so delivery history survives.
+  'WebhookSubscription',
   'Attachment',
   'WorkflowDefinition',
   'OnboardingTemplate',

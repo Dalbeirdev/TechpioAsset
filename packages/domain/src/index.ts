@@ -19,3 +19,5 @@ export * from './procurement';
 export * from './stock';
 export * from './health';
 export * from './work-order';
+export * from './analytics';
+export * from './role-labels';

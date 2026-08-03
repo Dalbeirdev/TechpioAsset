@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { z } from 'zod';
 import { createScheduledReportSchema, type AuthUser } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
@@ -8,7 +9,10 @@ import { AppError } from '../common/errors/app-error.js';
 import { tenantFilter } from '../common/scope.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AlertSweepService } from './alert-sweep.service.js';
+import { ReportRunnerService } from './report-runner.service.js';
 import { nextCronRun } from './cron.js';
+
+const toggleScheduleSchema = z.object({ isActive: z.boolean() });
 
 @ApiTags('Scheduled')
 @Controller('scheduled')
@@ -16,6 +20,7 @@ export class ScheduledController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sweep: AlertSweepService,
+    private readonly runner: ReportRunnerService,
   ) {}
 
   @Get('reports')
@@ -34,9 +39,45 @@ export class ScheduledController {
         recipients: true,
         isActive: true,
         lastRunAt: true,
+        lastRunStatus: true,
         nextRunAt: true,
       },
     });
+  }
+
+  @Patch('reports/:id')
+  @RequirePermissions(PERMISSIONS.REPORTS_EXPORT)
+  @ApiOperation({ summary: 'Pause or resume a schedule' })
+  async toggleReport(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(toggleScheduleSchema)) body: { isActive: boolean },
+  ) {
+    const schedule = await this.prisma.client.scheduledReport.findFirst({
+      where: { id, ...tenantFilter(actor), deletedAt: null },
+      select: { id: true, cron: true },
+    });
+    if (!schedule) throw AppError.notFound('Scheduled report', id);
+    return this.prisma.client.scheduledReport.update({
+      where: { id },
+      data: {
+        isActive: body.isActive,
+        // Re-arming computes a fresh due date; a paused backlog must not fire.
+        ...(body.isActive ? { nextRunAt: nextCronRun(schedule.cron, new Date()) } : {}),
+      },
+      select: { id: true, isActive: true, nextRunAt: true },
+    });
+  }
+
+  @Post('reports/run')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Run due scheduled reports now',
+    description: 'Super Admin trigger for the runner that also ticks every 5 minutes.',
+  })
+  runReports() {
+    return this.runner.runDueReports();
   }
 
   @Post('reports')

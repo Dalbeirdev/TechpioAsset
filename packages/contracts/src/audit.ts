@@ -52,6 +52,9 @@ export const AUDIT_ACTIONS = [
   'DISCOVERY_INGESTED',
   'DISCOVERY_REVIEWED',
   'WORK_ORDER_ESCALATED',
+  'TENANT_CREATED',
+  'TENANT_SUSPENDED',
+  'TENANT_ACTIVATED',
 ] as const;
 export type AuditActionName = (typeof AUDIT_ACTIONS)[number];
 

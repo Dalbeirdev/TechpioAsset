@@ -322,6 +322,9 @@ enum NotificationType {
   // v2.5 work orders
   WORK_ORDER_ASSIGNED
   WORK_ORDER_ESCALATED
+  // v2.6 scheduled reports
+  REPORT_DELIVERED
+  REPORT_FAILED
 }
 
 /// Spec section 10 - individually switchable AI features.
@@ -404,6 +407,10 @@ enum AuditAction {
   DISCOVERY_REVIEWED
   // v2.5 work orders
   WORK_ORDER_ESCALATED
+  // v2.6 platform plane
+  TENANT_CREATED
+  TENANT_SUSPENDED
+  TENANT_ACTIVATED
 }
 
 enum PhysicalInventoryStatus {
@@ -2876,6 +2883,75 @@ model AssetHealth {
 
   @@index([companyId, grade])
   @@map("asset_health")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  DEAD
+}
+
+/// v2.6 A3 - an outbound webhook endpoint a tenant registered. The secret
+/// signs every delivery (HMAC-SHA256 over the raw body); reads mask it.
+model WebhookSubscription {
+  id        String @id @default(cuid())
+  companyId String
+
+  url      String
+  secret   String
+  /// Event keys from the contracts catalogue, e.g. asset.created.
+  events   String[]
+  isActive Boolean  @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  deliveries WebhookDelivery[]
+
+  @@index([companyId])
+  @@map("webhook_subscriptions")
+}
+
+/// One delivery attempt lifecycle per event x subscription. Bounded retries
+/// with backoff; DEAD after the cap - visible, never silently dropped.
+model WebhookDelivery {
+  id             String @id @default(cuid())
+  companyId      String
+  subscriptionId String
+
+  event   String
+  payload Json
+  status  WebhookDeliveryStatus @default(PENDING)
+
+  attempts       Int       @default(0)
+  lastAttemptAt  DateTime?
+  nextAttemptAt  DateTime?
+  responseStatus Int?
+  lastError      String?
+
+  createdAt DateTime @default(now())
+
+  subscription WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([companyId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+/// v2.6 A3 - the per-tenant SCIM bearer token (hash only; shown once).
+model ScimToken {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  tokenHash  String
+  createdAt  DateTime  @default(now())
+  createdById String?
+  lastUsedAt DateTime?
+
+  @@map("scim_tokens")
 }
 
 /// Preventive maintenance recurrence; the sweep spawns REQUESTED work orders.

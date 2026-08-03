@@ -45,7 +45,30 @@ export class LocalMailProvider extends MailProvider {
     ];
 
     let body: string;
-    if (message.html) {
+    if (message.attachments?.length) {
+      // multipart/mixed so the .eml opens with real, saveable attachments —
+      // a scheduled report you cannot open cannot be verified (v2.6 A2).
+      const boundary = `----techpioasset-${ulid()}`;
+      headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+      const parts = [
+        `--${boundary}`,
+        'Content-Type: text/plain; charset=UTF-8',
+        '',
+        message.text,
+      ];
+      for (const attachment of message.attachments) {
+        parts.push(
+          `--${boundary}`,
+          `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
+          'Content-Transfer-Encoding: base64',
+          `Content-Disposition: attachment; filename="${attachment.filename}"`,
+          '',
+          Buffer.from(attachment.content, 'utf8').toString('base64'),
+        );
+      }
+      parts.push(`--${boundary}--`, '');
+      body = parts.join('\r\n');
+    } else if (message.html) {
       const boundary = `----techpioasset-${ulid()}`;
       headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
       body = [
