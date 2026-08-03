@@ -2,8 +2,9 @@
 #
 # Daily PostgreSQL backup for the TechpioAsset production stack.
 #
-# Dumps the postgres container's database to a timestamped, gzipped file and
-# prunes dumps older than KEEP_DAYS. Backups live OUTSIDE the git working tree
+# Dumps the postgres container's database to a timestamped, gzipped file,
+# prunes dumps older than KEEP_DAYS, and (v2.8) ships a verified copy off the
+# box to S3-compatible storage when BACKUP_S3_* is configured. Backups live OUTSIDE the git working tree
 # (/var/backups/techpioasset) so a `git pull`/redeploy never touches them.
 #
 # Install (on the VPS):
@@ -46,3 +47,21 @@ fi
 find "$BACKUP_DIR" -name 'techpioasset_*.sql.gz' -type f -mtime "+${KEEP_DAYS}" -delete
 
 echo "$(date -Is) backup ok: $OUT ($(du -h "$OUT" | cut -f1)); retained: $(ls -1 "$BACKUP_DIR"/techpioasset_*.sql.gz 2>/dev/null | wc -l)"
+
+# ── v2.8 S1: ship a copy off the box ─────────────────────────────────────────
+# Until this existed, every backup lived on the same machine as the database it
+# protects, so losing the host lost both. The upload runs INSIDE the api
+# container (which already has node, the SDK and the production env), so the
+# host needs no cloud tooling. It is deliberately non-fatal: a failed upload
+# must never turn a good local backup into no backup - it exits 0 after
+# shouting, and the local dump stays exactly where it is.
+UPLOAD_JSON="$(gzip -dc "$OUT" | gzip -9   | docker compose -f "$APP_DIR/docker-compose.vps.yml" --env-file "$APP_DIR/.env.prod"       exec -T api node dist/backup/upload-cli.js "$(basename "$OUT")" "$KEEP_DAYS" 2>&1 | tail -1)" || true
+
+case "$UPLOAD_JSON" in
+  *'"status":"uploaded"'*)
+    echo "$(date -Is) off-site ok: $UPLOAD_JSON" ;;
+  *'"status":"skipped"'*)
+    echo "$(date -Is) off-site SKIPPED (no destination configured - the local copy is the only copy)" ;;
+  *)
+    echo "$(date -Is) OFF-SITE UPLOAD FAILED: $UPLOAD_JSON" >&2 ;;
+esac
