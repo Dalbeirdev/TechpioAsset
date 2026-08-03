@@ -59,7 +59,11 @@ export class AuthService {
     const ctx = getRequestContext();
     const user = await this.prisma.client.user.findFirst({
       where: { email: input.email },
-      include: { profile: true, roles: { include: { role: true } } },
+      include: {
+        profile: true,
+        roles: { include: { role: true } },
+        company: { select: { isActive: true } },
+      },
     });
 
     // Every failure below returns the same message. Distinguishing "no such
@@ -94,6 +98,14 @@ export class AuthService {
       await this.recordFailedLogin(user.id, user.companyId, `STATUS_${user.status}`);
       throw new AppError('FORBIDDEN', 'Account is not active', {
         detail: 'This account has been suspended. Contact an administrator.',
+      });
+    }
+
+    // v2.6 A4: a suspended TENANT blocks every login, whatever the user status.
+    if (!user.company.isActive) {
+      await this.recordFailedLogin(user.id, user.companyId, 'TENANT_SUSPENDED');
+      throw new AppError('FORBIDDEN', 'This workspace is suspended', {
+        detail: 'The company workspace has been suspended. Contact your provider.',
       });
     }
 

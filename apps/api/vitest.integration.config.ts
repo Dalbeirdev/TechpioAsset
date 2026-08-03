@@ -23,6 +23,10 @@ export default defineConfig({
       // would otherwise trip its own brute-force protection. The throttle is
       // exercised deliberately in its own test rather than incidentally here.
       LOGIN_RATE_LIMIT: '10000',
+      // v2.6 A4: the demo Super Admin doubles as the designated platform
+      // operator. Must be set before any import - ConfigModule validates the
+      // environment eagerly, so a beforeAll assignment is too late.
+      PLATFORM_ADMIN_EMAILS: 'admin@techpioasset.dev',
     },
     // The suite boots a Nest application and talks to a real database; the
     // default 5s is not enough for the first compile plus argon2 hashing.
