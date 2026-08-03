@@ -108,3 +108,44 @@ export const addLicenseKeySchema = z.object({
   note: z.string().trim().max(500).optional().nullable(),
 });
 export type AddLicenseKeyInput = z.infer<typeof addLicenseKeySchema>;
+
+// ── v2.7 R3: bulk operations + transfers ─────────────────────────────────────
+
+/** One principal in a bulk request: a user OR an asset, per the licence unit. */
+export const bulkPrincipalSchema = z
+  .object({
+    userId: z.string().optional().nullable(),
+    assetId: z.string().optional().nullable(),
+  })
+  .refine((p) => Boolean(p.userId) !== Boolean(p.assetId), {
+    message: 'Give exactly one of userId or assetId',
+  });
+
+export const bulkAssignSchema = z.object({
+  principals: z.array(bulkPrincipalSchema).min(1).max(500),
+  /**
+   * PARTIAL takes exactly the seats that fit and reports the rest honestly;
+   * ATOMIC takes none unless every seat fits. Never a silent partial success.
+   */
+  mode: z.enum(['PARTIAL', 'ATOMIC']).default('PARTIAL'),
+  reason: z.string().trim().max(500).optional().nullable(),
+});
+export type BulkAssignInput = z.infer<typeof bulkAssignSchema>;
+
+export const bulkRevokeSchema = z.object({
+  assignmentIds: z.array(z.string().min(1)).min(1).max(500),
+  reason: z.string().trim().max(500).optional().nullable(),
+});
+export type BulkRevokeInput = z.infer<typeof bulkRevokeSchema>;
+
+export const transferSeatSchema = z
+  .object({
+    assignmentId: z.string().min(1),
+    toUserId: z.string().optional().nullable(),
+    toAssetId: z.string().optional().nullable(),
+    reason: z.string().trim().max(500).optional().nullable(),
+  })
+  .refine((t) => Boolean(t.toUserId) !== Boolean(t.toAssetId), {
+    message: 'Give exactly one of toUserId or toAssetId',
+  });
+export type TransferSeatInput = z.infer<typeof transferSeatSchema>;

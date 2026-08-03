@@ -29,11 +29,19 @@ afterAll(async () => {
   await app?.close();
 });
 
-const exportsSince = (since: Date, entityId?: string) =>
+/**
+ * Export rows in a window. Scoped by actor as well as time: the suite shares a
+ * database with the scheduled-report runner exercised elsewhere, whose
+ * deliveries are legitimate REPORT_EXPORTED rows by other actors - a
+ * time-only filter would make the "no row" assertions flaky for the wrong
+ * reason.
+ */
+const exportsSince = (since: Date, actorId: string, entityId?: string) =>
   prisma.client.auditLog.findMany({
     where: {
       action: 'REPORT_EXPORTED',
       createdAt: { gte: since },
+      actorId,
       ...(entityId ? { entityId } : {}),
     },
     orderBy: { createdAt: 'desc' },
@@ -48,10 +56,9 @@ describe('manual downloads', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-disposition']).toContain('attachment');
 
-    const rows = await exportsSince(since, 'ASSET_INVENTORY');
+    const rows = await exportsSince(since, s.superAdmin.user.id, 'ASSET_INVENTORY');
     expect(rows).toHaveLength(1);
     const values = rows[0]!.newValues as Record<string, unknown>;
-    expect(rows[0]!.actorId).toBe(s.superAdmin.user.id);
     expect(values.format).toBe('CSV');
     expect(values.delivery).toBe('DOWNLOAD');
     expect(Number(values.rows)).toBeGreaterThan(0);
@@ -64,9 +71,8 @@ describe('manual downloads', () => {
       .set(auth(s.finance));
     expect(res.status).toBe(200);
 
-    const rows = await exportsSince(since, 'SPENDING_BY_CATEGORY');
+    const rows = await exportsSince(since, s.finance.user.id, 'SPENDING_BY_CATEGORY');
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.actorId).toBe(s.finance.user.id);
     expect((rows[0]!.newValues as Record<string, unknown>).format).toBe('XLSX');
   });
 
@@ -76,7 +82,7 @@ describe('manual downloads', () => {
       .get('/api/v1/reports?type=ASSET_INVENTORY')
       .set(auth(s.superAdmin));
     expect(res.status).toBe(200);
-    expect(await exportsSince(since)).toHaveLength(0);
+    expect(await exportsSince(since, s.superAdmin.user.id)).toHaveLength(0);
   });
 
   it('a REFUSED export writes no row - only data that actually left is recorded', async () => {
@@ -88,16 +94,15 @@ describe('manual downloads', () => {
       .get('/api/v1/reports?type=ASSET_INVENTORY&format=CSV')
       .set(auth(s.manager));
     expect(res.status).toBe(403);
-    expect(await exportsSince(since)).toHaveLength(0);
+    expect(await exportsSince(since, s.manager.user.id)).toHaveLength(0);
   });
 
   it('the asset CSV export is audited', async () => {
     const since = new Date();
     const res = await api(app).get('/api/v1/assets/export?pageSize=5').set(auth(s.itAdmin));
     expect(res.status).toBe(200);
-    const rows = await exportsSince(since, 'ASSET_CSV');
+    const rows = await exportsSince(since, s.itAdmin.user.id, 'ASSET_CSV');
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.actorId).toBe(s.itAdmin.user.id);
   });
 });
 
@@ -124,13 +129,13 @@ describe('scheduled sends', () => {
     const summary = await runner.runDueReports();
     expect(summary.succeeded).toBeGreaterThanOrEqual(1);
 
-    const rows = await exportsSince(since, 'ASSET_INVENTORY');
+    const rows = await exportsSince(since, s.finance.user.id, 'ASSET_INVENTORY');
     const mine = rows.find(
       (r) => (r.newValues as Record<string, unknown>).scheduleId === id,
     );
     expect(mine).toBeTruthy();
     const values = mine!.newValues as Record<string, unknown>;
-    expect(mine!.actorId).toBe(s.finance.user.id); // generated AS the owner
+    // (actor is the owner by construction of the query scope above)
     expect(values.delivery).toBe('SCHEDULED');
     expect(values.recipients).toBe(1);
   });
