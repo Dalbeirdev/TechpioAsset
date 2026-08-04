@@ -257,6 +257,14 @@ async function main() {
   // the table that makes the nightly sweep's per-row query unfinishable, so it
   // is the one that has to be big.
   //
+  // The location is chosen from i DIVIDED by the item count, not i modulo the
+  // location count. Both moduli of i correlate, so the original pairing produced
+  // only 2,000 distinct item/location pairs out of a possible 100,000 - one
+  // million movements piled onto 2,000 levels, at 500 movements each. Real
+  // estates are the other way round: many pairs, few movements each, and the
+  // sweep's cost scales with the number of PAIRS. A rig that understates the
+  // dimension under test is not measuring the thing.
+  //
   // Five positive types to two negative, so every running balance stays above
   // zero and the stock_levels CHECK holds. The mix is deliberately narrow: only
   // types the drift check has a sign for, because a movement it scores as zero
@@ -274,7 +282,7 @@ async function main() {
         '${COMPANY_ID}-m' || i,
         '${COMPANY_ID}',
         '${COMPANY_ID}-item' || (1 + (i % ${v.inventoryItems})),
-        '${COMPANY_ID}-loc' || (1 + (i % ${v.locations})),
+        '${COMPANY_ID}-loc' || (1 + ((i / ${v.inventoryItems}) % ${v.locations})),
         (ARRAY['RECEIPT','RECEIPT','RECEIPT','RECEIPT','ADJUST_UP','ISSUE','ADJUST_DOWN']::"StockMovementType"[])[1 + (i % 7)],
         1 + (i % 5),
         NOW() - ((i % 500) || ' days')::interval

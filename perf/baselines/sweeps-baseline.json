@@ -1,0 +1,13 @@
+{
+  "label": "baseline",
+  "takenAt": "2026-08-04T19:39:08.296Z",
+  "levels": 100001,
+  "movements": 1000002,
+  "runsMs": {
+    "stock": 45295,
+    "expiry": 8,
+    "warranty": 13,
+    "licenses": 3
+  },
+  "totalMs": 45319
+}
