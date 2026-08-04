@@ -94,4 +94,36 @@ endpoint, concurrency 6, local dev machine. Targets: **300 ms** p95 for lists,
 - **The control is flat.** `/auth/me` at 13 ms confirms the numbers above are
   the endpoints and not the machine.
 
-Nothing in this table has been optimised. That is the point of it.
+Nothing in that table has been optimised. That is the point of it.
+
+## After S2 — bounded reads
+
+Same tenant, same machine, `--compare baseline`. Committed at
+`perf/baselines/after-s2.json`.
+
+| Endpoint | p95 before | p95 after | Response before | after | |
+|---|---|---|---|---|---|
+| `GET /stock/levels` | 348 ms | **84 ms** | 589 KB | **8 KB** | paginated |
+| `GET /stock/items` | 128 ms | **39 ms** | 280 KB | **71 KB** | capped + searchable |
+| `GET /stock/batches` | 19 ms | 15 ms | 0 KB | 0 KB | capped |
+| `GET /stock/locations` | 19 ms | 17 ms | 6 KB | 6 KB | capped |
+
+Breaches: **3 of 14 → 2 of 14.**
+
+### Reading the other deltas honestly
+
+The probe also reported `/stock/movements` +64% and `/dashboard` +48%. **Neither
+was touched by S2.** With 60 requests at concurrency 6 on a dev laptop, that is
+run-to-run variance, and quoting it as a regression would be as wrong as quoting
+it as an improvement. The control (`/auth/me`, -2%) is the check that the
+machine itself did not move.
+
+The two numbers that *are* signal are -76% and -69%, on the two endpoints whose
+code changed, with response sizes falling by 98% and 75% alongside them. A
+latency change that large with a matching payload change is not noise.
+
+The remaining two breaches — `/audit` at 1992 ms and `/analytics/spend` at
+2952 ms — are unchanged by design. They are not response-size problems: they are
+a 2-million-row query plan (S4) and an aggregate computed in JavaScript over
+every matching row (S4). Capping either would have made the answer wrong rather
+than the response smaller.
