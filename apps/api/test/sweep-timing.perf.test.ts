@@ -72,8 +72,9 @@ describe('nightly sweeps at volume', () => {
       `  budget ${BUDGET_MS / 1000}s — ${totalMs < BUDGET_MS ? 'within' : 'OVER'}`,
       '',
     ];
-    // eslint-disable-next-line no-console -- the printed table IS this lane's
-    // output; console.warn would dress a measurement up as a problem.
+    // The printed table IS this lane's output; console.warn would dress a
+    // measurement up as a problem.
+    // eslint-disable-next-line no-console
     console.log(lines.join('\n'));
 
     const dir = path.resolve(import.meta.dirname, '../../../perf/baselines');
