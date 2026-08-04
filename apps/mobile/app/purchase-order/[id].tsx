@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { TONE_PALETTE_DARK, TONE_PALETTE_LIGHT } from '@techpioasset/ui-tokens';
 import { ApiError } from '../../src/lib/api-client';
+import { buildReceiveLines, canSubmitReceipt } from '../../src/lib/receive';
 import { useSession } from '../../src/providers/session';
 import { useTheme } from '../../src/theme';
 import { Button, Card, IconBadge, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
@@ -15,6 +16,10 @@ interface PoLine {
   description: string;
   quantity: string;
   receivedQuantity: string;
+}
+interface Category {
+  id: string;
+  name: string;
 }
 interface PoDetail {
   id: string;
@@ -29,9 +34,13 @@ interface PoDetail {
 
 /**
  * Receive goods against a PO from the loading dock. Mobile keeps intake simple:
- * lines are recorded for asset registration (STOCK put-away with location and
- * item pickers stays a web flow). Over-receipt is refused with the API's honest
+ * lines are received as assets (STOCK put-away with location, item and lot
+ * pickers stays a web flow). Over-receipt is refused with the API's honest
  * numbers - no override on mobile either.
+ *
+ * v2.9 C5: receiving now creates the assets, so the dock has to say what
+ * category they are, and can read serials off the boxes while standing there -
+ * which is the one place the serial is guaranteed to be in front of somebody.
  */
 export default function PurchaseOrderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -42,6 +51,10 @@ export default function PurchaseOrderScreen() {
   const [po, setPo] = useState<PoDetail | null>(null);
   const [qty, setQty] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryId, setCategoryId] = useState('');
+  /** Serials keyed by line, indexed by unit. Blanks are units nobody read. */
+  const [serials, setSerials] = useState<Record<string, string[]>>({});
 
   const canReceive = !!user?.permissions.includes(PERMISSIONS.PROCUREMENT_RECEIVE);
 
@@ -49,14 +62,18 @@ export default function PurchaseOrderScreen() {
     setPo(await api.request<PoDetail>(`/procurement/orders/${id}`));
   }, [api, id]);
   useEffect(() => void load(), [load]);
+  useEffect(() => {
+    if (!canReceive) return;
+    void api
+      .request<Category[]>('/categories')
+      .then(setCategories)
+      .catch(() => setCategories([]));
+  }, [api, canReceive]);
 
   async function receive() {
     if (!po) return;
-    const lines = Object.entries(qty)
-      .map(([purchaseOrderLineId, value]) => ({ purchaseOrderLineId, quantity: Number(value) }))
-      .filter((l) => Number.isFinite(l.quantity) && l.quantity > 0)
-      .map((l) => ({ ...l, intake: 'ASSET' as const }));
-    if (lines.length === 0) return;
+    const lines = buildReceiveLines({ quantities: qty, categoryId, serials });
+    if (!canSubmitReceipt(lines, categoryId)) return;
 
     setBusy(true);
     try {
@@ -64,9 +81,14 @@ export default function PurchaseOrderScreen() {
         method: 'POST',
         body: { lines },
       });
+      const created = lines.reduce((sum, l) => sum + l.quantity, 0);
       setQty({});
+      setSerials({});
       await load();
-      Alert.alert('Goods received', 'The delivery is on record and the order status updated.');
+      Alert.alert(
+        'Goods received',
+        `${created} asset(s) created from this delivery. Complete their details when you are back at a desk.`,
+      );
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         // The over-receipt guard speaking - honest outstanding numbers.
@@ -90,6 +112,12 @@ export default function PurchaseOrderScreen() {
   const tone = palette[PO_TONE[po.status] ?? 'neutral'];
   const receivable = canReceive && (po.status === 'ISSUED' || po.status === 'PARTIALLY_RECEIVED');
   const anyQty = Object.values(qty).some((v) => Number(v) > 0);
+  // The API refuses ASSET intake without a category, so the button does too -
+  // better to be unable to press it than to be told off after carrying the box.
+  const canSubmit = canSubmitReceipt(
+    buildReceiveLines({ quantities: qty, categoryId, serials }),
+    categoryId,
+  );
 
   return (
     <Screen scroll>
@@ -188,13 +216,97 @@ export default function PurchaseOrderScreen() {
       </Card>
 
       {receivable ? (
-        <Button
-          label="Receive goods"
-          icon="checkmark-done-outline"
-          onPress={() => void receive()}
-          loading={busy}
-          disabled={!anyQty}
-        />
+        <>
+          <SectionTitle>Asset category</SectionTitle>
+          <Card style={{ marginBottom: spacing.xl }}>
+            <Text style={{ color: c.muted, fontSize: 12, marginBottom: spacing.md }}>
+              Everything received here becomes an asset, and every asset is filed under a category.
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {categories.map((cat) => {
+                const chosen = cat.id === categoryId;
+                return (
+                  <Pressable
+                    key={cat.id}
+                    onPress={() => setCategoryId(cat.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: chosen }}
+                    accessibilityLabel={`Category ${cat.name}`}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: chosen ? c.brand : c.border,
+                      backgroundColor: chosen ? c.brand : 'transparent',
+                    }}
+                  >
+                    <Text style={{ color: chosen ? '#fff' : c.text, fontSize: 13, fontWeight: '600' }}>
+                      {cat.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Card>
+
+          {anyQty ? (
+            <>
+              <SectionTitle>Serial numbers</SectionTitle>
+              <Card style={{ marginBottom: spacing.xl }}>
+                <Text style={{ color: c.muted, fontSize: 12, marginBottom: spacing.md }}>
+                  Optional, but you are standing next to the boxes. A unit left blank still becomes an
+                  asset, just without a serial.
+                </Text>
+                {po.lines
+                  .filter((line) => Number(qty[line.id] ?? 0) > 0)
+                  .map((line) => (
+                    <View key={line.id} style={{ marginBottom: spacing.md }}>
+                      <Text style={{ color: c.text, fontSize: 13, fontWeight: '600', marginBottom: 6 }}>
+                        {line.description}
+                      </Text>
+                      {Array.from({ length: Math.min(Number(qty[line.id] ?? 0), 10) }, (_, unit) => (
+                        <TextInput
+                          key={unit}
+                          value={serials[line.id]?.[unit] ?? ''}
+                          onChangeText={(value) =>
+                            setSerials((prev) => {
+                              const next = [...(prev[line.id] ?? [])];
+                              next[unit] = value;
+                              return { ...prev, [line.id]: next };
+                            })
+                          }
+                          placeholder={`Unit ${unit + 1} serial`}
+                          placeholderTextColor={c.muted}
+                          autoCapitalize="characters"
+                          autoCorrect={false}
+                          accessibilityLabel={`Serial number for unit ${unit + 1} of ${line.description}`}
+                          style={{
+                            color: c.text,
+                            borderWidth: 1,
+                            borderColor: c.border,
+                            borderRadius: 10,
+                            paddingHorizontal: 12,
+                            paddingVertical: 10,
+                            marginBottom: 6,
+                            fontSize: 15,
+                          }}
+                        />
+                      ))}
+                    </View>
+                  ))}
+              </Card>
+            </>
+          ) : null}
+
+          <Button
+            label="Receive goods"
+            icon="checkmark-done-outline"
+            onPress={() => void receive()}
+            loading={busy}
+            disabled={!canSubmit}
+          />
+        </>
       ) : null}
 
       {po.receipts.length > 0 ? (

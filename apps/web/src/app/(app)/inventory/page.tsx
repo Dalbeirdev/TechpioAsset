@@ -8,7 +8,7 @@ import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
-import { TonePill, inputCls } from '@/components/procurement/shared';
+import { TonePill, fmtDate, inputCls } from '@/components/procurement/shared';
 
 interface Level {
   id: string;
@@ -34,6 +34,17 @@ interface Location {
   isActive: boolean;
   _count: { levels: number };
 }
+/** v2.9 C4 - a lot of one item at one location. */
+interface Batch {
+  id: string;
+  batchNumber: string;
+  quantity: string;
+  expiryDate: string | null;
+  receivedAt: string;
+  expiryState: 'OK' | 'EXPIRING_SOON' | 'EXPIRED' | 'NO_EXPIRY';
+  inventoryItem: { id: string; sku: string; name: string };
+  stockLocation: { id: string; name: string };
+}
 interface Item {
   id: string;
   name: string;
@@ -53,7 +64,7 @@ export default function InventoryPage() {
   const { can } = useAuth();
   const toast = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'levels' | 'ledger' | 'locations'>('levels');
+  const [tab, setTab] = useState<'levels' | 'batches' | 'ledger' | 'locations'>('levels');
 
   // Adjust / transfer form state (inline panel, one at a time).
   const [action, setAction] = useState<'adjust' | 'transfer' | null>(null);
@@ -63,6 +74,11 @@ export default function InventoryPage() {
   const [amount, setAmount] = useState(1);
   const [reason, setReason] = useState('');
 
+  // v2.9 C4 - lots on the shelf, soonest expiry first.
+  const batches = useQuery({
+    queryKey: ['stock-batches'],
+    queryFn: () => apiFetch<Batch[]>('/stock/batches'),
+  });
   const levels = useQuery({
     queryKey: ['stock-levels'],
     queryFn: () => apiFetch<Level[]>('/stock/levels'),
@@ -221,6 +237,7 @@ export default function InventoryPage() {
         {(
           [
             ['levels', 'Stock levels'],
+            ['batches', 'Lots & expiry'],
             ['ledger', 'Ledger'],
             ['locations', 'Locations'],
           ] as const
@@ -284,6 +301,59 @@ export default function InventoryPage() {
                 })}
               </tbody>
             </table>
+          </Card>
+        )
+      ) : null}
+
+      {tab === 'batches' ? (
+        batches.isPending ? (
+          <Skeleton className="h-64" />
+        ) : batches.isError ? (
+          <ErrorState title="Could not load lots" detail={(batches.error as Error).message} />
+        ) : batches.data.length === 0 ? (
+          <Card className="p-8">
+            <EmptyState
+              title="No lots on the shelf"
+              description="Lots appear when a batch-tracked item is received with the batch number from the box."
+            />
+          </Card>
+        ) : (
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-content-subtle)]">
+                  <th className="px-4 py-3 font-semibold">Lot</th>
+                  <th className="px-4 py-3 font-semibold">Item</th>
+                  <th className="px-4 py-3 font-semibold">Location</th>
+                  <th className="px-4 py-3 font-semibold">On hand</th>
+                  <th className="px-4 py-3 font-semibold">Expires</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)]">
+                {batches.data.map((b) => (
+                  <tr key={b.id} className="hover:bg-[var(--color-surface-sunken)]">
+                    <td className="px-4 py-3 font-medium">{b.batchNumber}</td>
+                    <td className="px-4 py-3">
+                      {b.inventoryItem.name}
+                      <p className="text-xs text-[var(--color-content-subtle)]">{b.inventoryItem.sku}</p>
+                    </td>
+                    <td className="px-4 py-3 text-[var(--color-content-muted)]">{b.stockLocation.name}</td>
+                    <td className="px-4 py-3 tabular-nums">{Number(b.quantity)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[var(--color-content-muted)]">{fmtDate(b.expiryDate)}</span>
+                        {b.expiryState === 'EXPIRED' ? <TonePill label="expired" tone="critical" /> : null}
+                        {b.expiryState === 'EXPIRING_SOON' ? <TonePill label="expiring" tone="warning" /> : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-content-subtle)]">
+              Issuing draws on these lots oldest-expiry-first. Expired stock is refused unless somebody
+              records a reason for using it anyway.
+            </p>
           </Card>
         )
       ) : null}

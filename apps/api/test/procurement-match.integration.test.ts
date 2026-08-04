@@ -13,6 +13,7 @@ let app: INestApplication;
 let s: Record<AccountKey, Session>;
 let prisma: PrismaService;
 let vendorId: string;
+let categoryId: string;
 
 const base = '/api/v1/procurement';
 let seq = 0;
@@ -26,9 +27,19 @@ beforeAll(async () => {
     select: { id: true },
   });
   vendorId = vendor!.id;
+  // v2.9 C1: ASSET intake now creates the assets, so it must say what they are.
+  const category = await prisma.client.category.findFirst({
+    where: { companyId: s.superAdmin.user.companyId, deletedAt: null },
+    select: { id: true },
+  });
+  categoryId = category!.id;
 });
 
 afterAll(async () => {
+  // The receipts in this suite now bring assets into existence; leave none behind.
+  await prisma.client.asset.deleteMany({
+    where: { companyId: s.superAdmin.user.companyId, name: 'Match probe unit' },
+  });
   await app?.close();
 });
 
@@ -62,7 +73,7 @@ const receive = (poId: string, lineId: string, quantity: number) =>
   api(app)
     .post(`${base}/orders/${poId}/receive`)
     .set(auth(s.superAdmin))
-    .send({ lines: [{ purchaseOrderLineId: lineId, quantity, intake: 'ASSET' }] });
+    .send({ lines: [{ purchaseOrderLineId: lineId, quantity, intake: 'ASSET', categoryId }] });
 
 /** An invoice tied to the PO, straight to PENDING_REVIEW. */
 async function invoiceFor(poId: string, total: string) {

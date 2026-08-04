@@ -4,6 +4,7 @@ import { ulid } from 'ulid';
 import type {
   AdjustStockInput,
   AuthUser,
+  BatchListQuery,
   ConvertToAssetInput,
   CountCorrectionInput,
   CreateStockLocationInput,
@@ -13,12 +14,21 @@ import type {
   TransferStockInput,
   UpdateStockLocationInput,
 } from '@techpioasset/contracts';
-import { insufficientStockMessage, isLowStock } from '@techpioasset/domain';
+import {
+  batchShortfallMessage,
+  expiryState,
+  insufficientStockMessage,
+  isLowStock,
+  planBatchIssue,
+} from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+
+/** How far ahead a lot counts as "about to go off". */
+const EXPIRY_WARN_DAYS = 30;
 
 /** The client shape Prisma passes to interactive-transaction callbacks. */
 type Tx = Omit<
@@ -109,7 +119,16 @@ export class StockService {
     return this.prisma.client.inventoryItem.findMany({
       where: { companyId: actor.companyId, deletedAt: null, isActive: true },
       orderBy: { name: 'asc' },
-      select: { id: true, sku: true, name: true, unit: true, minStock: true, quantityOnHand: true },
+      // batchTracked so the receiving screen knows to ask for a lot number.
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        unit: true,
+        minStock: true,
+        quantityOnHand: true,
+        batchTracked: true,
+      },
     });
   }
 
@@ -166,7 +185,9 @@ export class StockService {
 
   /** Hand stock out (consumables leaving the shelf). */
   async issue(actor: AuthUser, input: IssueStockInput) {
-    await this.assertRefs(actor, input.inventoryItemId, input.stockLocationId);
+    const { item } = await this.assertRefs(actor, input.inventoryItemId, input.stockLocationId);
+    // v2.9 C4: a batch-tracked item leaves the shelf lot by lot, oldest first.
+    if (item.batchTracked) return this.issueFromBatches(actor, input, item);
     await this.takeStock(actor, {
       ...input,
       movementType: 'ISSUE',
@@ -458,19 +479,216 @@ export class StockService {
 
   // ── internals ──────────────────────────────────────────────────────────────
 
+  // -- batches and expiry (v2.9 C4) -------------------------------------------
+
+  async listBatches(actor: AuthUser, query: BatchListQuery) {
+    const now = new Date();
+    const horizon = query.expiringWithinDays !== undefined ? new Date(now) : null;
+    if (horizon) horizon.setDate(horizon.getDate() + (query.expiringWithinDays ?? 0));
+
+    const batches = await this.prisma.client.stockBatch.findMany({
+      where: {
+        companyId: actor.companyId,
+        ...(query.inventoryItemId ? { inventoryItemId: query.inventoryItemId } : {}),
+        ...(query.stockLocationId ? { stockLocationId: query.stockLocationId } : {}),
+        ...(query.includeEmpty ? {} : { quantity: { gt: 0 } }),
+        ...(horizon ? { expiryDate: { not: null, lte: horizon } } : {}),
+      },
+      orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'asc' }],
+      select: {
+        id: true,
+        batchNumber: true,
+        quantity: true,
+        expiryDate: true,
+        receivedAt: true,
+        notes: true,
+        inventoryItem: { select: { id: true, sku: true, name: true } },
+        stockLocation: { select: { id: true, name: true } },
+      },
+    });
+    // The state is computed, never stored: a batch expires because the calendar
+    // moved, not because anything happened to the row.
+    return batches.map((b) => ({ ...b, expiryState: expiryState(b, now, EXPIRY_WARN_DAYS) }));
+  }
+
+  /**
+   * Issue from a batch-tracked item: FIFO by expiry, one ledger row per lot.
+   *
+   * The draw is planned first and then applied under guarded conditional
+   * updates, so a concurrent issue that empties a lot in between makes this one
+   * fail rather than quietly over-draw it.
+   */
+  private async issueFromBatches(
+    actor: AuthUser,
+    input: IssueStockInput,
+    item: { id: string; name: string },
+  ) {
+    if (input.allowExpired && !input.expiredReason) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'Issuing expired stock needs a reason - it is recorded against the movement',
+      );
+    }
+    const now = new Date();
+    const batches = await this.prisma.client.stockBatch.findMany({
+      where: {
+        companyId: actor.companyId,
+        inventoryItemId: input.inventoryItemId,
+        stockLocationId: input.stockLocationId,
+        quantity: { gt: 0 },
+      },
+      select: { id: true, batchNumber: true, quantity: true, expiryDate: true, receivedAt: true },
+    });
+    const plan = planBatchIssue(batches, input.quantity, {
+      on: now,
+      allowExpired: input.allowExpired ?? false,
+    });
+    if (Number(plan.shortfall) > 0) {
+      throw AppError.conflict('CONFLICT', batchShortfallMessage(item.name, input.quantity, plan));
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      // The location total is guarded exactly as it always was; the lots are a
+      // dimension of that same movement, not a separate accounting of it.
+      await this.guardedTake(tx, actor, input.inventoryItemId, input.stockLocationId, input.quantity);
+      for (const pick of plan.picks) {
+        const taken = await tx.$executeRaw`
+          UPDATE "stock_batches"
+             SET "quantity" = "quantity" - ${new Prisma.Decimal(pick.quantity)}
+           WHERE "id" = ${pick.batchId}
+             AND "companyId" = ${actor.companyId}
+             AND "quantity" - ${new Prisma.Decimal(pick.quantity)} >= 0`;
+        if (taken === 0) {
+          // Somebody else drew this lot down between the plan and the apply.
+          throw AppError.conflict(
+            'CONFLICT',
+            `Lot ${pick.batchNumber} was drawn down by someone else while this issue was being prepared - try again`,
+          );
+        }
+        await tx.stockMovement.create({
+          data: {
+            companyId: actor.companyId,
+            inventoryItemId: input.inventoryItemId,
+            stockLocationId: input.stockLocationId,
+            stockBatchId: pick.batchId,
+            type: 'ISSUE',
+            quantity: new Prisma.Decimal(pick.quantity),
+            reason: pick.expired
+              ? `EXPIRED STOCK ISSUED: ${input.expiredReason}`
+              : (input.reason ?? null),
+            actorId: actor.id,
+          },
+        });
+      }
+      await tx.inventoryItem.update({
+        where: { id: input.inventoryItemId },
+        data: { quantityOnHand: { decrement: input.quantity } },
+      });
+    });
+
+    await this.auditMovement(actor, input.inventoryItemId, 'ISSUE', input.quantity, input.reason);
+    if (plan.usedExpired) {
+      // Separately audited: "we handed out expired stock, and here is who said
+      // it was fine" is a different question from "stock went out".
+      await this.audit.record({
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.STOCK_EXPIRED_ISSUED,
+        entityType: 'InventoryItem',
+        entityId: input.inventoryItemId,
+        newValues: {
+          item: item.name,
+          lots: plan.picks.filter((p) => p.expired).map((p) => `${p.batchNumber} x ${p.quantity}`),
+        },
+        reason: input.expiredReason ?? undefined,
+      });
+    }
+    await this.maybeLowStockAlert(actor, input.inventoryItemId, input.stockLocationId);
+    const level = await this.levelOf(input.inventoryItemId, input.stockLocationId);
+    return { ...level, batchesDrawn: plan.picks, usedExpired: plan.usedExpired };
+  }
+
+  /**
+   * Receive into a lot. Called from inside the goods-receipt transaction, so
+   * the batch and the receipt that created it cannot exist without each other.
+   */
+  async receiveIntoBatch(
+    tx: Tx,
+    actor: AuthUser,
+    params: {
+      inventoryItemId: string;
+      stockLocationId: string;
+      quantity: Prisma.Decimal;
+      batchNumber: string;
+      expiryDate: Date | null;
+      sourceGrnLineId: string | null;
+    },
+  ) {
+    const existing = await tx.stockBatch.findUnique({
+      where: {
+        inventoryItemId_stockLocationId_batchNumber: {
+          inventoryItemId: params.inventoryItemId,
+          stockLocationId: params.stockLocationId,
+          batchNumber: params.batchNumber,
+        },
+      },
+      select: { id: true, expiryDate: true },
+    });
+    if (existing) {
+      // A lot number is the vendor's identity for a physical batch. The same
+      // number arriving with a different expiry date means one of the two is
+      // wrong, and guessing which would corrupt the issue order silently.
+      const had = existing.expiryDate ? existing.expiryDate.toISOString().slice(0, 10) : null;
+      const now = params.expiryDate ? params.expiryDate.toISOString().slice(0, 10) : null;
+      if (had !== now) {
+        throw AppError.conflict(
+          'CONFLICT',
+          `Lot ${params.batchNumber} already exists here with a different expiry date (${had ?? 'none'})`,
+        );
+      }
+      await tx.stockBatch.update({
+        where: { id: existing.id },
+        data: { quantity: { increment: params.quantity } },
+      });
+      return existing.id;
+    }
+    const created = await tx.stockBatch.create({
+      data: {
+        companyId: actor.companyId,
+        inventoryItemId: params.inventoryItemId,
+        stockLocationId: params.stockLocationId,
+        batchNumber: params.batchNumber,
+        expiryDate: params.expiryDate,
+        quantity: params.quantity,
+        sourceGrnLineId: params.sourceGrnLineId,
+      },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
+  /** Whether this item demands a lot number on receipt. */
+  async batchTrackingFor(companyId: string, inventoryItemId: string) {
+    return this.prisma.client.inventoryItem.findFirst({
+      where: { id: inventoryItemId, companyId },
+      select: { batchTracked: true, name: true },
+    });
+  }
+
   private async assertRefs(actor: AuthUser, inventoryItemId: string, stockLocationId: string) {
     const [item, location] = await Promise.all([
       this.prisma.client.inventoryItem.findFirst({
         where: { id: inventoryItemId, companyId: actor.companyId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, name: true, batchTracked: true },
       }),
       this.prisma.client.stockLocation.findFirst({
         where: { id: stockLocationId, companyId: actor.companyId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, name: true },
       }),
     ]);
     if (!item) throw AppError.notFound('Inventory item', inventoryItemId);
     if (!location) throw AppError.notFound('Stock location', stockLocationId);
+    return { item, location };
   }
 
   private levelOf(inventoryItemId: string, stockLocationId: string) {

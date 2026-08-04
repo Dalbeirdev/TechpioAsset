@@ -123,19 +123,22 @@ export class ScheduledController {
   @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Run the warranty and maintenance alert sweep now',
-    description: 'Super Admin trigger for the sweep that also runs on a daily timer.',
+    summary: 'Run the warranty, maintenance and expiry alert sweeps now',
+    description: 'Super Admin trigger for the sweeps that also run on a daily timer.',
   })
   async runAlerts() {
-    const [warranty, maintenance, escalations] = await Promise.all([
+    const [warranty, maintenance, escalations, expiry] = await Promise.all([
       this.sweep.runWarrantySweep(),
       this.sweep.runMaintenanceSweep(),
       this.sweep.runApprovalEscalationSweep(),
+      this.sweep.runExpirySweep(),
     ]);
     return {
       warrantyAlerts: warranty,
       maintenanceAlerts: maintenance,
       approvalEscalations: escalations,
+      // v2.9 C4: lots going off, split from lots already gone.
+      expiryAlerts: expiry,
     };
   }
 }

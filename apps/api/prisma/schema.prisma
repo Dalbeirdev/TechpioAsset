@@ -314,6 +314,8 @@ enum NotificationType {
   WARRANTY_EXPIRATION
   MAINTENANCE_DUE
   LOW_STOCK
+  /// v2.9 C4 - a lot is about to go off, or already has.
+  STOCK_EXPIRING
   REPLACEMENT_DUE
   SECURITY_ALERT
   // v2.3 licenses
@@ -402,6 +404,28 @@ enum AuditAction {
   PO_ISSUED
   PO_CANCELLED
   GRN_RECEIVED
+
+  // v2.9 C2 - budgets. Committing and releasing move real money commitments,
+  // so both are audited with the figures involved.
+  COST_CENTRE_CREATED
+  COST_CENTRE_UPDATED
+  BUDGET_CREATED
+  BUDGET_UPDATED
+  BUDGET_COMMITTED
+  BUDGET_RELEASED
+  PR_CANCELLED
+
+  // v2.9 C3 - competitive quoting. The award carries a reason, so the audit
+  // row is the answer to "why this vendor at this price?".
+  RFQ_CREATED
+  RFQ_QUOTE_RECORDED
+  RFQ_AWARDED
+  RFQ_CANCELLED
+
+  // v2.9 C4 - lots and expiry. Issuing expired stock is always audited, with
+  // the reason somebody gave for doing it.
+  STOCK_BATCH_RECEIVED
+  STOCK_EXPIRED_ISSUED
   MATCH_OVERRIDDEN
   // v2.5 discovery
   DISCOVERY_INGESTED
@@ -478,6 +502,11 @@ model Company {
   purchaseRequests          PurchaseRequest[]
   goodsReceipts             GoodsReceipt[]
   stockLocations            StockLocation[]
+  costCentres               CostCentre[]
+  budgets                   Budget[]
+  stockBatches              StockBatch[]
+  quoteRequests             QuoteRequest[]
+  quotes                    Quote[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -519,6 +548,7 @@ model User {
   verificationTokens       VerificationToken[]
   deviceTokens             DeviceToken[]
   assignedAssets           Asset[]                    @relation("AssetCurrentAssignee")
+  ownedCostCentres         CostCentre[]               @relation("CostCentreOwner")
   assignmentsHeld          AssetAssignment[]          @relation("AssignmentHolder")
   assignmentsGranted       AssetAssignment[]          @relation("AssignmentGrantedBy")
   returnsReceived          AssetReturn[]              @relation("ReturnReceivedBy")
@@ -883,6 +913,7 @@ model Department {
   transfersFrom AssetTransfer[] @relation("TransferFromDepartment")
   transfersTo   AssetTransfer[] @relation("TransferToDepartment")
   seatPools     SeatPool[]
+  costCentres   CostCentre[]
 
   @@unique([companyId, code])
   @@index([parentId])
@@ -1007,6 +1038,13 @@ model Asset {
   duplicateExceptionReason String?
   duplicateExceptionById   String?
 
+  /// v2.9 C1 — set when a goods receipt created this asset. The receipt line
+  /// plus the unit's position within it IS the identity: the unique index below
+  /// means a replayed or retried receipt cannot create the same asset twice,
+  /// so idempotency is a database guarantee rather than a code convention.
+  sourceGrnLineId String?
+  sourceUnitIndex Int?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -1019,6 +1057,7 @@ model Asset {
   subcategory  Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   vendor       Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   invoiceLine  InvoiceLine? @relation(fields: [invoiceLineId], references: [id], onDelete: SetNull)
+  sourceGrnLine GoodsReceiptLine? @relation("AssetFromReceipt", fields: [sourceGrnLineId], references: [id], onDelete: SetNull)
   office       Office?      @relation(fields: [officeId], references: [id], onDelete: SetNull)
   building     Building?    @relation(fields: [buildingId], references: [id], onDelete: SetNull)
   floor        Floor?       @relation(fields: [floorId], references: [id], onDelete: SetNull)
@@ -1049,6 +1088,10 @@ model Asset {
   /// rows (which carry no serial) coexist freely while real serials stay unique.
   @@unique([companyId, assetTag])
   @@unique([companyId, serialNumber])
+  /// v2.9 C1 — the idempotency backstop. Both columns are null for every asset
+  /// not born of a receipt, and Postgres treats NULLs as distinct, so those rows
+  /// coexist freely while receipt-born units stay one-per-unit.
+  @@unique([sourceGrnLineId, sourceUnitIndex])
   @@index([companyId, status])
   // v2.1 Workstream A — powers the flagship multi-dimension filter (AST-051).
   @@index([companyId, lifecycleState, availabilityState])
@@ -1072,6 +1115,9 @@ model InventoryItem {
   categoryId    String
   subcategoryId String?
 
+  /// v2.9 C4 - when true, every receipt names a lot and every issue consumes
+  /// batches FIFO by expiry. Off by default: most kit has no shelf life.
+  batchTracked   Boolean  @default(false)
   unit           String   @default("unit")
   quantityOnHand Decimal  @default(0) @db.Decimal(14, 3)
   quantityIssued Decimal  @default(0) @db.Decimal(14, 3)
@@ -1108,6 +1154,7 @@ model InventoryItem {
   stockLevels   StockLevel[]
   stockMovements StockMovement[]
   stockTransfers StockTransfer[]
+  stockBatches   StockBatch[]
 
   @@unique([companyId, sku])
   @@index([companyId, categoryId])
@@ -1390,6 +1437,7 @@ model Vendor {
   assets         Asset[]
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[]
+  quotes         Quote[]
   maintenance    MaintenanceRecord[]
   softwareLicenses SoftwareLicense[]
 
@@ -1429,6 +1477,8 @@ model PurchaseOrder {
   receipts GoodsReceipt[]
   matchResults InvoiceMatchResult[]
   convertedFromRequests PurchaseRequest[] @relation("RequestConvertedPo")
+  /// v2.9 C3 - the winning quote this order was created from, if any.
+  fromQuote             Quote[]           @relation("PoFromQuote")
 
   @@unique([companyId, poNumber])
   @@index([companyId, status])
@@ -2479,6 +2529,185 @@ model LicenseRenewal {
 // PurchaseOrderLine.receivedQuantity (CHECK-backed, like seat pools).
 // -----------------------------------------------------------------------------
 
+/// v2.9 C2 — who the money belongs to. A cost centre is the unit a budget is
+/// set for and a purchase request is charged to; departments are an org chart,
+/// which is a different question and often a different shape.
+model CostCentre {
+  id        String @id @default(cuid())
+  companyId String
+
+  code         String
+  name         String
+  departmentId String?
+  /// Accountable for the spend; notified when their budget runs low.
+  ownerId  String?
+  isActive Boolean @default(true)
+  notes    String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department       Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  owner            User?             @relation("CostCentreOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  budgets          Budget[]
+  purchaseRequests PurchaseRequest[]
+
+  @@unique([companyId, code])
+  @@index([companyId, isActive])
+  @@map("cost_centres")
+}
+
+/// v2.9 C2 — a hard limit, not a warning.
+///
+/// `committed` is money promised but not yet invoiced: an approved purchase
+/// request holds its estimate here until it is cancelled. Every write to it is
+/// an atomic conditional UPDATE whose WHERE clause is the limit, with the CHECK
+/// constraint in the migration as the backstop - the same shape that guards
+/// licence seats and purchase-order receipts.
+model Budget {
+  id        String @id @default(cuid())
+  companyId String
+
+  costCentreId String
+  /// What a human calls it: "FY26 Q1 - IT".
+  name        String
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+  currency    String   @db.Char(3)
+  amount      Decimal  @db.Decimal(14, 2)
+  committed   Decimal  @default(0) @db.Decimal(14, 2)
+  notes       String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+  version     Int       @default(0)
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  costCentre       CostCentre        @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  purchaseRequests PurchaseRequest[]
+
+  /// One budget per cost centre per period; overlapping periods are refused in
+  /// the service, because "which budget does this charge?" must have one answer.
+  @@unique([costCentreId, periodStart, periodEnd])
+  @@index([companyId, costCentreId])
+  @@map("budgets")
+}
+
+/// v2.9 C3 - the competitive-quoting record.
+///
+/// Before this, "why this vendor at this price?" was answered in somebody's
+/// email. An RFQ puts the question and its answer next to the purchase they
+/// justify, and the award is the ONLY route from a quote to an order.
+model QuoteRequest {
+  id        String @id @default(cuid())
+  companyId String
+
+  rfqNumber         String
+  purchaseRequestId String
+  status            QuoteRequestStatus @default(SENT)
+  dueDate           DateTime?
+  notes             String?
+
+  /// Set once, by the award, and never moved. The conditional UPDATE that sets
+  /// it is what makes a second award impossible rather than merely unlikely.
+  awardedQuoteId String?   @unique
+  awardReason    String?
+  awardedById    String?
+  awardedAt      DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  awardedQuote    Quote?          @relation("AwardedQuote", fields: [awardedQuoteId], references: [id], onDelete: SetNull)
+  quotes          Quote[]         @relation("QuotesForRequest")
+
+  @@unique([companyId, rfqNumber])
+  @@index([companyId, status])
+  @@map("quote_requests")
+}
+
+/// One vendor's answer. Created as INVITED when the RFQ goes out; a response
+/// fills in the numbers; exactly one becomes AWARDED and the rest LOST.
+model Quote {
+  id        String @id @default(cuid())
+  companyId String
+
+  quoteRequestId String
+  vendorId       String
+  status         QuoteStatus @default(INVITED)
+
+  /// The vendor's own reference, so a paper quote can be matched to this row.
+  reference    String?
+  currency     String?  @db.Char(3)
+  subtotal     Decimal? @db.Decimal(14, 2)
+  total        Decimal? @db.Decimal(14, 2)
+  leadTimeDays Int?
+  validUntil   DateTime?
+  notes        String?
+  receivedAt   DateTime?
+
+  /// Set when the awarded quote becomes an order. Losing quotes never carry it.
+  convertedPoId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quoteRequest QuoteRequest  @relation("QuotesForRequest", fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  vendor       Vendor        @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  convertedPo  PurchaseOrder? @relation("PoFromQuote", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  awardedFor   QuoteRequest? @relation("AwardedQuote")
+  lines        QuoteLine[]
+
+  @@unique([quoteRequestId, vendorId])
+  @@index([companyId, status])
+  @@map("quotes")
+}
+
+model QuoteLine {
+  id      String @id @default(cuid())
+  quoteId String
+
+  lineNumber            Int
+  purchaseRequestLineId String?
+  description           String
+  quantity              Decimal @db.Decimal(14, 3)
+  unitPrice             Decimal @db.Decimal(14, 2)
+  lineTotal             Decimal @db.Decimal(14, 2)
+
+  quote               Quote                @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  purchaseRequestLine PurchaseRequestLine? @relation(fields: [purchaseRequestLineId], references: [id], onDelete: SetNull)
+
+  @@unique([quoteId, lineNumber])
+  @@map("quote_lines")
+}
+
+enum QuoteRequestStatus {
+  SENT
+  AWARDED
+  CANCELLED
+}
+
+enum QuoteStatus {
+  INVITED
+  RECEIVED
+  DECLINED
+  AWARDED
+  LOST
+}
+
 enum PurchaseRequestStatus {
   DRAFT
   SUBMITTED
@@ -2532,6 +2761,15 @@ model PurchaseRequest {
   /// Set when converted; the PO carries the lines from there on.
   convertedPoId String?
 
+  /// v2.9 C2 — what this spend is charged to, and what it is holding.
+  /// `committedAmount` is non-null only while the commitment is live; releasing
+  /// clears it in the same guarded step that gives the money back, so a double
+  /// release is impossible rather than merely unlikely.
+  costCentreId    String?
+  budgetId        String?
+  committedAmount Decimal?  @db.Decimal(14, 2)
+  committedAt     DateTime?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -2541,6 +2779,9 @@ model PurchaseRequest {
   company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   requester   User                  @relation("PurchaseRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   convertedPo PurchaseOrder?        @relation("RequestConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  costCentre  CostCentre?           @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  quoteRequests QuoteRequest[]
+  budget      Budget?               @relation(fields: [budgetId], references: [id], onDelete: Restrict)
   lines       PurchaseRequestLine[]
 
   @@unique([companyId, prNumber])
@@ -2562,6 +2803,7 @@ model PurchaseRequestLine {
 
   purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem?  @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  quoteLines      QuoteLine[]
 
   @@unique([purchaseRequestId, lineNumber])
   @@map("purchase_request_lines")
@@ -2606,6 +2848,8 @@ model GoodsReceiptLine {
   purchaseOrderLine PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Cascade)
   stockLocation     StockLocation?    @relation(fields: [stockLocationId], references: [id], onDelete: SetNull)
   inventoryItem     InventoryItem?    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  /// v2.9 C1 — the assets this line brought into existence.
+  assets            Asset[]           @relation("AssetFromReceipt")
 
   @@index([purchaseOrderLineId])
   @@map("goods_receipt_lines")
@@ -2654,6 +2898,7 @@ model StockLocation {
   office   Office?            @relation(fields: [officeId], references: [id], onDelete: SetNull)
   levels   StockLevel[]
   grnLines GoodsReceiptLine[]
+  batches  StockBatch[]
 
   @@unique([companyId, code])
   @@index([deletedAt])
@@ -2682,6 +2927,39 @@ model StockLevel {
 }
 
 /// The append-only truth. quantity is always positive; the type carries the sign.
+/// v2.9 C4 - a lot of one item at one location.
+///
+/// `quantity` is a guarded cache in exactly the way stock_levels is: every
+/// change is an atomic conditional UPDATE, with a CHECK constraint stopping it
+/// going negative, and the movement ledger remains the truth it summarises.
+model StockBatch {
+  id        String @id @default(cuid())
+  companyId String
+
+  inventoryItemId String
+  stockLocationId String
+  /// The vendor's lot code, or whatever the receiving clerk wrote on the box.
+  batchNumber String
+  expiryDate  DateTime? @db.Date
+  quantity    Decimal   @default(0) @db.Decimal(14, 3)
+  receivedAt  DateTime  @default(now())
+  /// Which receipt line brought it in, when it came through procurement.
+  sourceGrnLineId String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Cascade)
+  movements     StockMovement[]
+
+  @@unique([inventoryItemId, stockLocationId, batchNumber])
+  @@index([companyId, expiryDate])
+  @@map("stock_batches")
+}
+
 model StockMovement {
   id        String @id @default(cuid())
   companyId String
@@ -2695,10 +2973,14 @@ model StockMovement {
   refId   String?
   reason  String?
   actorId String?
+  /// v2.9 C4 - which lot this movement drew on. Batches are a dimension of the
+  /// existing ledger, not a parallel truth, so the movement rows stay the fact.
+  stockBatchId String?
 
   createdAt DateTime @default(now())
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  stockBatch    StockBatch?   @relation(fields: [stockBatchId], references: [id], onDelete: SetNull)
 
   @@index([inventoryItemId, stockLocationId, createdAt])
   @@index([companyId, createdAt])

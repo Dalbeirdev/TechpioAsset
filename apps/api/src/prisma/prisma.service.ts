@@ -97,7 +97,7 @@ export function createPrismaClient(datasourceUrl?: string, statusModelV2 = false
 export type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
 
 /** The client bound to an interactive transaction (no lifecycle/tx-control methods). */
-type TenantTxClient = Omit<
+export type TenantTxClient = Omit<
   ExtendedPrismaClient,
   '$connect' | '$disconnect' | '$on' | '$use' | '$transaction' | '$extends'
 >;

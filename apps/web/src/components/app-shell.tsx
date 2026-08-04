@@ -27,6 +27,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
+import { Wallet } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/cn';
@@ -50,6 +51,8 @@ const NAV: NavItem[] = [
   { href: '/requests', label: 'Requests', Icon: ClipboardList },
   { href: '/procurement', label: 'Procurement', Icon: ShoppingCart, permission: PERMISSIONS.PROCUREMENT_PR_READ },
   { href: '/inventory', label: 'Inventory', Icon: Boxes, permission: PERMISSIONS.INVENTORY_READ },
+  // v2.9 C2: a budget is a money figure, so it follows the cost-read rule.
+  { href: '/budgets', label: 'Budgets', Icon: Wallet, permission: PERMISSIONS.ASSETS_COST_READ },
   { href: '/invoices', label: 'Invoices', Icon: Receipt, permission: PERMISSIONS.INVOICES_READ },
   { href: '/people', label: 'People', Icon: Users, permission: PERMISSIONS.EMPLOYEES_READ },
   {
