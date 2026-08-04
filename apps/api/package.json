@@ -22,6 +22,7 @@
     "db:validate": "prisma validate",
     "db:format": "prisma format",
     "seed": "tsx prisma/seed/index.ts",
+    "perf:generate": "tsx prisma/perf/generate-load-tenant.ts",
     "seed:admin": "tsx prisma/seed/create-admin.ts",
     "backfill:status-dimensions": "tsx prisma/backfill/status-dimensions.ts",
     "audit:summary": "node scripts/audit-summary.mjs",
