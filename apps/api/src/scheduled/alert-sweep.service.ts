@@ -9,7 +9,7 @@ import {
   seatsAvailable,
   warrantyBucket,
 } from '@techpioasset/domain';
-import { AuditAction } from '@prisma/client';
+import { AuditAction, Prisma } from '@prisma/client';
 import { AppConfig } from '../config/config.module.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AssetHealthService } from '../asset-health/asset-health.service.js';
@@ -324,70 +324,149 @@ export class AlertSweepService implements OnModuleInit {
    * 2. raise LOW_STOCK for locations at or below the item minimum, once a day
    *    (catches levels that drifted low without a triggering mutation).
    */
+  /**
+   * The nightly stock pass: ledger-vs-cache drift, and low-stock alerts.
+   *
+   * v2.10 S3 — this used to load every stock level, then for EACH ONE load
+   * every movement ever recorded for that item and location and sum them in
+   * JavaScript. At 100,000 levels that is 100,000 round trips: 45 seconds
+   * against a local database, and far worse across a network.
+   *
+   * Now the ledger is summed by the database, one grouped query per batch of
+   * levels. The batch is what keeps memory bounded — a tenant with millions of
+   * pairs must not need all of them resident at once — and BATCH_SIZE is the
+   * stated bound.
+   *
+   * The arithmetic is unchanged: the SQL CASE is generated from the same sign
+   * map the JavaScript used, so the two cannot drift apart. A movement type
+   * with no sign still counts as zero, exactly as `sign[m.type] ?? 0` did.
+   */
   async runStockSweep(now: Date = new Date()): Promise<{ drift: number; lowStock: number }> {
-    const levels = await this.prisma.client.stockLevel.findMany({
-      select: {
-        id: true,
-        companyId: true,
-        quantity: true,
-        inventoryItemId: true,
-        stockLocationId: true,
-        inventoryItem: { select: { name: true, minStock: true, createdById: true } },
-        stockLocation: { select: { name: true } },
-      },
-    });
-
-    const sign: Record<string, number> = {
-      RECEIPT: 1,
-      ISSUE: -1,
-      ADJUST_UP: 1,
-      ADJUST_DOWN: -1,
-      TRANSFER_IN: 1,
-      TRANSFER_OUT: -1,
-      CONVERT_TO_ASSET: -1,
-    };
+    /** How many stock levels are held in memory, and summed, at a time. */
+    const BATCH_SIZE = 5_000;
 
     let drift = 0;
     let lowStock = 0;
-    for (const level of levels) {
-      const movements = await this.prisma.client.stockMovement.findMany({
-        where: { inventoryItemId: level.inventoryItemId, stockLocationId: level.stockLocationId },
-        select: { type: true, quantity: true },
+    let cursor: string | undefined;
+
+    // One query for the whole day's LOW_STOCK notifications instead of one per
+    // low level: the old code asked the database "did I already warn about this
+    // one?" separately for every level that was low.
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const alertedToday = new Set(
+      (
+        await this.prisma.client.notification.findMany({
+          where: { type: 'LOW_STOCK', createdAt: { gte: startOfDay } },
+          select: { entityId: true },
+        })
+      ).map((n) => n.entityId),
+    );
+
+    for (;;) {
+      const levels = await this.prisma.client.stockLevel.findMany({
+        take: BATCH_SIZE,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          companyId: true,
+          quantity: true,
+          inventoryItemId: true,
+          stockLocationId: true,
+          inventoryItem: { select: { name: true, minStock: true, createdById: true } },
+          stockLocation: { select: { name: true } },
+        },
       });
-      const balance = movements.reduce((sum, m) => sum + (sign[m.type] ?? 0) * Number(m.quantity), 0);
-      if (balance !== Number(level.quantity)) {
-        drift += 1;
-        this.logger.warn(
-          `Stock ledger drift on level ${level.id}: cache=${Number(level.quantity)}, ledger=${balance}`,
-        );
+      if (levels.length === 0) break;
+      cursor = levels.at(-1)!.id;
+
+      const balances = await this.ledgerBalances(levels);
+
+      for (const level of levels) {
+        const balance = balances.get(`${level.inventoryItemId}:${level.stockLocationId}`) ?? 0;
+        if (balance !== Number(level.quantity)) {
+          drift += 1;
+          this.logger.warn(
+            `Stock ledger drift on level ${level.id}: cache=${Number(level.quantity)}, ledger=${balance}`,
+          );
+        }
+
+        const min = level.inventoryItem.minStock;
+        const recipientId = level.inventoryItem.createdById;
+        if (
+          min !== null &&
+          Number(level.quantity) <= Number(min) &&
+          recipientId &&
+          !alertedToday.has(level.id)
+        ) {
+          await this.notifications.notify({
+            companyId: level.companyId,
+            userId: recipientId,
+            type: 'LOW_STOCK',
+            title: `Low stock: ${level.inventoryItem.name}`,
+            body: `${level.stockLocation.name} is down to ${Number(level.quantity)} (minimum ${Number(min)}).`,
+            linkPath: '/inventory',
+            entityType: 'StockLevel',
+            entityId: level.id,
+          });
+          // Within one run the same level must not be alerted twice either.
+          alertedToday.add(level.id);
+          lowStock += 1;
+        }
       }
 
-      const min = level.inventoryItem.minStock;
-      const recipientId = level.inventoryItem.createdById;
-      if (
-        min !== null &&
-        Number(level.quantity) <= Number(min) &&
-        recipientId &&
-        !(await this.alreadyAlertedToday(level.id, 'LOW_STOCK', now))
-      ) {
-        await this.notifications.notify({
-          companyId: level.companyId,
-          userId: recipientId,
-          type: 'LOW_STOCK',
-          title: `Low stock: ${level.inventoryItem.name}`,
-          body: `${level.stockLocation.name} is down to ${Number(level.quantity)} (minimum ${Number(min)}).`,
-          linkPath: '/inventory',
-          entityType: 'StockLevel',
-          entityId: level.id,
-        });
-        lowStock += 1;
-      }
+      if (levels.length < BATCH_SIZE) break;
     }
 
     if (drift + lowStock > 0) {
       this.logger.log(`Stock sweep: ${drift} drift warning(s), ${lowStock} low-stock alert(s)`);
     }
     return { drift, lowStock };
+  }
+
+  /**
+   * The signed value of each movement type, and the single source of truth for
+   * it. A type absent from this map contributes nothing — which is deliberate
+   * for COUNT_CORRECTION, and was the behaviour of `sign[m.type] ?? 0` before.
+   */
+  private static readonly MOVEMENT_SIGN: Readonly<Record<string, 1 | -1>> = {
+    RECEIPT: 1,
+    ISSUE: -1,
+    ADJUST_UP: 1,
+    ADJUST_DOWN: -1,
+    TRANSFER_IN: 1,
+    TRANSFER_OUT: -1,
+    CONVERT_TO_ASSET: -1,
+  };
+
+  /** Ledger balance per item/location pair, summed by the database. */
+  private async ledgerBalances(
+    levels: readonly { inventoryItemId: string; stockLocationId: string }[],
+  ): Promise<Map<string, number>> {
+    const signs = AlertSweepService.MOVEMENT_SIGN;
+    // Generated from the map above so the SQL and the JS can never disagree.
+    const positive = Object.keys(signs).filter((t) => signs[t] === 1);
+    const negative = Object.keys(signs).filter((t) => signs[t] === -1);
+    const caseSql = Prisma.sql`
+      CASE
+        WHEN "type"::text IN (${Prisma.join(positive)}) THEN "quantity"
+        WHEN "type"::text IN (${Prisma.join(negative)}) THEN -"quantity"
+        ELSE 0
+      END`;
+
+    const pairs = Prisma.join(
+      levels.map((l) => Prisma.sql`(${l.inventoryItemId}, ${l.stockLocationId})`),
+    );
+    const rows = await this.prisma.client.$queryRaw<
+      { inventoryItemId: string; stockLocationId: string; balance: string | number }[]
+    >(Prisma.sql`
+      SELECT "inventoryItemId", "stockLocationId", SUM(${caseSql}) AS balance
+        FROM "stock_movements"
+       WHERE ("inventoryItemId", "stockLocationId") IN (${pairs})
+       GROUP BY "inventoryItemId", "stockLocationId"`);
+
+    return new Map(rows.map((r) => [`${r.inventoryItemId}:${r.stockLocationId}`, Number(r.balance)]));
   }
 
   /**

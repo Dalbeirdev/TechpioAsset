@@ -1,0 +1,13 @@
+{
+  "label": "after-s3",
+  "takenAt": "2026-08-04T19:48:40.848Z",
+  "levels": 100001,
+  "movements": 1000002,
+  "runsMs": {
+    "stock": 11075,
+    "expiry": 4,
+    "warranty": 9,
+    "licenses": 3
+  },
+  "totalMs": 11091
+}

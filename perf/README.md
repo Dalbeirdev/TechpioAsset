@@ -122,6 +122,33 @@ The two numbers that *are* signal are -76% and -69%, on the two endpoints whose
 code changed, with response sizes falling by 98% and 75% alongside them. A
 latency change that large with a matching payload change is not noise.
 
+## After S3 — the nightly sweeps
+
+Read paths had a probe; the background jobs had nothing, which is how the stock
+sweep came to reload every movement ever recorded once per stock level without
+anyone noticing. `pnpm --filter @techpioasset/api perf:sweep` now times them.
+
+**A rig correction came first.** The generator was pairing items and locations
+from two moduli of the same counter, which correlate — so one million movements
+landed on just **2,000** distinct item/location pairs, at 500 movements each.
+Real estates are the other way round: many pairs, few movements each, and the
+sweep's cost scales with the number of *pairs*. Fixed, and the level count went
+from 2,000 to **100,000** — which is what made the real cost visible.
+
+| | 100,001 levels, 1M movements |
+|---|---|
+| Stock sweep **before** | **45.30 s** — one query per level, so ~100,000 round trips |
+| Stock sweep **after** | **11.07 s** — one grouped query per 5,000-level batch |
+| Nightly total | 45.32 s → **11.09 s**, against a 300 s budget |
+
+The 4x is the local-database figure. The change that matters more is the shape:
+100,000 round trips became about 40, and every one of those 100,000 carried
+network latency in production that a laptop never charged for.
+
+The arithmetic is unchanged — the SQL `CASE` is generated from the same sign map
+the JavaScript used, so the two cannot drift apart, and the sweep's own tests
+pass untouched.
+
 The remaining two breaches — `/audit` at 1992 ms and `/analytics/spend` at
 2952 ms — are unchanged by design. They are not response-size problems: they are
 a 2-million-row query plan (S4) and an aggregate computed in JavaScript over
