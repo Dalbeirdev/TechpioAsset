@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   adjustStockSchema,
+  pageQuerySchema,
   batchListQuerySchema,
   convertToAssetSchema,
   countCorrectionSchema,
@@ -14,6 +15,7 @@ import {
   type AdjustStockInput,
   type AuthUser,
   type BatchListQuery,
+  type PageQuery,
   type ConvertToAssetInput,
   type CountCorrectionInput,
   type CreateStockLocationInput,
@@ -82,20 +84,30 @@ export class StockController {
 
   @Get('items')
   @RequirePermissions(PERMISSIONS.INVENTORY_READ)
-  @ApiOperation({ summary: 'The stock-item catalogue' })
-  listItems(@CurrentUser() actor: AuthUser) {
-    return this.stock.listItems(actor);
+  @ApiOperation({
+    summary: 'The stock-item catalogue (picker; capped at 500 — pass q to search)',
+    description:
+      'Capped rather than paginated because this fills a dropdown. Past a few hundred options ' +
+      'the picker is the limitation, not the query, so pass q to narrow it.',
+  })
+  listItems(@CurrentUser() actor: AuthUser, @Query('q') q?: string) {
+    return this.stock.listItems(actor, q);
   }
 
   @Get('levels')
   @RequirePermissions(PERMISSIONS.INVENTORY_READ)
-  @ApiOperation({ summary: 'Per-location stock levels (filter by item or location)' })
+  @ApiOperation({
+    summary: 'Per-location stock levels, paginated (filter by item or location)',
+    description:
+      'v2.10: paginated. One row per item/location pair, so it grows as the product of both.',
+  })
   listLevels(
     @CurrentUser() actor: AuthUser,
+    @Query(zodBody(pageQuerySchema)) query: PageQuery,
     @Query('inventoryItemId') inventoryItemId?: string,
     @Query('stockLocationId') stockLocationId?: string,
   ) {
-    return this.stock.listLevels(actor, inventoryItemId, stockLocationId);
+    return this.stock.listLevels(actor, query, inventoryItemId, stockLocationId);
   }
 
   @Get('movements')

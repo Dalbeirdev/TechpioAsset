@@ -23,7 +23,9 @@ export default function StockScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows((await api.request<Level[]>('/stock/levels')) ?? []);
+      // v2.10 S2: /stock/levels is paginated now, so the payload is enveloped.
+      const page = await api.request<{ data: Level[] }>('/stock/levels?pageSize=50');
+      setRows(page?.data ?? []);
     } finally {
       setLoading(false);
     }

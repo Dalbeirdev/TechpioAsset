@@ -81,7 +81,8 @@ export default function InventoryPage() {
   });
   const levels = useQuery({
     queryKey: ['stock-levels'],
-    queryFn: () => apiFetch<Level[]>('/stock/levels'),
+    // v2.10 S2: paginated — one row per item/location pair grows as the product.
+    queryFn: () => apiFetchPage<Level>('/stock/levels?pageSize=50'),
   });
   const locations = useQuery({
     queryKey: ['stock-locations'],
@@ -263,7 +264,7 @@ export default function InventoryPage() {
           <Skeleton className="h-64" />
         ) : levels.isError ? (
           <ErrorState title="Could not load stock" detail={(levels.error as Error).message} />
-        ) : levels.data.length === 0 ? (
+        ) : levels.data.data.length === 0 ? (
           <Card className="p-8">
             <EmptyState title="No stock yet" description="Receive a purchase order into a location, or post an adjustment." />
           </Card>
@@ -280,7 +281,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
-                {levels.data.map((l) => {
+                {levels.data.data.map((l) => {
                   const qty = Number(l.quantity);
                   const reserved = Number(l.reserved);
                   const low = l.inventoryItem.minStock !== null && qty <= Number(l.inventoryItem.minStock);

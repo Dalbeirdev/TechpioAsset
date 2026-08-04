@@ -21,6 +21,7 @@ import {
   isLowStock,
   planBatchIssue,
 } from '@techpioasset/domain';
+import type { PageQuery } from '@techpioasset/contracts';
 import { AppError } from '../common/errors/app-error.js';
 import { paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -29,6 +30,20 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 /** How far ahead a lot counts as "about to go off". */
 const EXPIRY_WARN_DAYS = 30;
+
+/**
+ * v2.10 S2 — the two shapes of bound.
+ *
+ * `PICKER_CAP` is for endpoints that fill a dropdown: paginating them would be
+ * the wrong shape, and past a few hundred options the UI is the limitation
+ * rather than the query. `LIST_CAP` is for lists that are read, not chosen
+ * from, and which have no pagination yet.
+ *
+ * Neither is a substitute for pagination. They exist so that no response can
+ * grow without limit while the endpoints that need paging get it.
+ */
+const PICKER_CAP = 500;
+const LIST_CAP = 500;
 
 /** The client shape Prisma passes to interactive-transaction callbacks. */
 type Tx = Omit<
@@ -53,9 +68,11 @@ export class StockService {
 
   // ── locations ──────────────────────────────────────────────────────────────
 
+  /** Locations feed pickers too; capped for the same reason as listItems. */
   async listLocations(actor: AuthUser) {
     return this.prisma.client.stockLocation.findMany({
       where: { companyId: actor.companyId, deletedAt: null },
+      take: PICKER_CAP,
       orderBy: { code: 'asc' },
       select: {
         id: true,
@@ -114,10 +131,31 @@ export class StockService {
 
   // ── reads ──────────────────────────────────────────────────────────────────
 
-  /** The tenant's stock-item catalogue (for intake and adjustment pickers). */
-  async listItems(actor: AuthUser) {
+  /**
+   * The tenant's stock-item catalogue (for intake and adjustment pickers).
+   *
+   * v2.10 S2: capped, and searchable so the cap is survivable. A picker is not
+   * a data list - nobody scrolls 5,000 options - so paginating it would be the
+   * wrong shape. The honest limitation is that a tenant past the cap needs the
+   * UI to send `q`; the cap is stated in the response header rather than the
+   * list quietly stopping.
+   */
+  async listItems(actor: AuthUser, q?: string) {
     return this.prisma.client.inventoryItem.findMany({
-      where: { companyId: actor.companyId, deletedAt: null, isActive: true },
+      where: {
+        companyId: actor.companyId,
+        deletedAt: null,
+        isActive: true,
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' as const } },
+                { sku: { contains: q, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      },
+      take: PICKER_CAP,
       orderBy: { name: 'asc' },
       // batchTracked so the receiving screen knows to ask for a lot number.
       select: {
@@ -132,22 +170,35 @@ export class StockService {
     });
   }
 
-  async listLevels(actor: AuthUser, inventoryItemId?: string, stockLocationId?: string) {
-    return this.prisma.client.stockLevel.findMany({
-      where: {
-        companyId: actor.companyId,
-        ...(inventoryItemId ? { inventoryItemId } : {}),
-        ...(stockLocationId ? { stockLocationId } : {}),
-      },
-      orderBy: { updatedAt: 'desc' },
+  /**
+   * Stock levels — one row per item/location pair, so it grows as the product
+   * of both. v2.10 S2: paginated. At the rig's volume this endpoint returned
+   * 589 KB in a single response for only 2,000 levels, and a real estate is
+   * far past that.
+   */
+  async listLevels(actor: AuthUser, query: PageQuery, inventoryItemId?: string, stockLocationId?: string) {
+    const where = {
+      companyId: actor.companyId,
+      ...(inventoryItemId ? { inventoryItemId } : {}),
+      ...(stockLocationId ? { stockLocationId } : {}),
+    };
+    return paginate(query, {
+      count: () => this.prisma.client.stockLevel.count({ where }),
+      findMany: ({ skip, take }) =>
+        this.prisma.client.stockLevel.findMany({
+          where,
+          skip,
+          take,
+          orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
         quantity: true,
         reserved: true,
         updatedAt: true,
-        inventoryItem: { select: { id: true, sku: true, name: true, unit: true, minStock: true } },
-        stockLocation: { select: { id: true, code: true, name: true } },
-      },
+          inventoryItem: { select: { id: true, sku: true, name: true, unit: true, minStock: true } },
+          stockLocation: { select: { id: true, code: true, name: true } },
+        },
+        }),
     });
   }
 
@@ -486,6 +537,8 @@ export class StockService {
     const horizon = query.expiringWithinDays !== undefined ? new Date(now) : null;
     if (horizon) horizon.setDate(horizon.getDate() + (query.expiringWithinDays ?? 0));
 
+    // v2.10 S2: capped. Lots grow with every delivery and never shrink until
+    // consumed, so an uncapped list is unbounded by construction.
     const batches = await this.prisma.client.stockBatch.findMany({
       where: {
         companyId: actor.companyId,
@@ -494,6 +547,7 @@ export class StockService {
         ...(query.includeEmpty ? {} : { quantity: { gt: 0 } }),
         ...(horizon ? { expiryDate: { not: null, lte: horizon } } : {}),
       },
+      take: LIST_CAP,
       orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'asc' }],
       select: {
         id: true,
