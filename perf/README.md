@@ -197,3 +197,42 @@ partitioning would change this same number. They are not response-size problems:
 a 2-million-row query plan (S4) and an aggregate computed in JavaScript over
 every matching row (S4). Capping either would have made the answer wrong rather
 than the response smaller.
+
+## After S5 — exports that stream
+
+A 100,000-row CSV export used to hold four copies of every row at once: the
+Prisma objects, the mapped rows, the formatted lines, and the single joined
+string. The reports are now defined **once** (`streamSpec`) and written a page
+at a time, so both the JSON path and the export share one query, one column list
+and one row mapper.
+
+| Rows | Streamed CSV, peak **retained** | Buffered JSON, peak **retained** |
+|---|---|---|
+| 25,000 | 1.3 MB | 4.5 MB |
+| 100,000 | **1.4 MB** | **16.4 MB** |
+
+Four times the rows costs the streamed path **0.1 MB**. The buffered path grows
+with the data, which is the definition this workstream was aimed at. 1.4 MB is
+one page of 5,000 rows — exactly the bound in the code.
+
+### Getting the measurement wrong twice first
+
+Both mistakes are in the code as comments, because both are easy to repeat.
+
+**Streaming that used more memory than buffering.** The first version called
+`res.write()` once per row and ignored the return value. `false` means Node has
+buffered the chunk because the socket is not draining — so 100,000 tiny writes
+queued in memory faster than the socket emptied them. Measured *worse* than the
+buffered version it replaced. Now: one write per page, and each awaits `drain`.
+
+**A metric that measured the garbage collector.** Peak `heapUsed` without a
+forced collection reports what was *allocated* before the collector happened to
+run. Two identical runs of the same export reported **86 MB** and **108 MB** —
+a number that moves 25% between identical runs cannot support a conclusion. The
+lane now runs with `--expose-gc` and collects before each sample, so the figure
+is what is still **held**. That is the difference between 108 MB and 1.4 MB for
+the same export: the first was mostly garbage.
+
+The comparison is an A/B in one run on identical data — CSV against
+`format=JSON`, which still assembles every row — so the two numbers are produced
+by the same process, the same rows and the same metric.

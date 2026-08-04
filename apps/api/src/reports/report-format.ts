@@ -13,10 +13,12 @@ export interface ReportColumn {
   numeric?: boolean;
 }
 
+export type ReportRow = Record<string, string | number | null>;
+
 export interface ReportTable {
   title: string;
   columns: ReportColumn[];
-  rows: Record<string, string | number | null>[];
+  rows: ReportRow[];
 }
 
 /** Escapes a value for CSV per RFC 4180. */
@@ -27,12 +29,26 @@ function csvCell(value: string | number | null): string {
   return text;
 }
 
+/**
+ * v2.10 S5 — the incremental pieces.
+ *
+ * `toCsv` and `toSpreadsheetMl` still exist and still return one string; they
+ * are now written IN TERMS OF these, so the streamed bytes and the buffered
+ * bytes cannot drift apart. Two encoders for one format is how an export starts
+ * quoting commas differently depending on how big it was.
+ */
+export function csvHeaderLine(columns: readonly ReportColumn[]): string {
+  return columns.map((c) => csvCell(c.label)).join(',');
+}
+
+export function csvRowLine(columns: readonly ReportColumn[], row: ReportRow): string {
+  return columns.map((c) => csvCell(row[c.key] ?? '')).join(',');
+}
+
 export function toCsv(table: ReportTable): string {
-  const header = table.columns.map((c) => csvCell(c.label)).join(',');
-  const lines = table.rows.map((row) =>
-    table.columns.map((c) => csvCell(row[c.key] ?? '')).join(','),
+  return [csvHeaderLine(table.columns), ...table.rows.map((r) => csvRowLine(table.columns, r))].join(
+    '\r\n',
   );
-  return [header, ...lines].join('\r\n');
 }
 
 function xmlEscape(value: string): string {
@@ -43,42 +59,49 @@ function xmlEscape(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** SpreadsheetML 2003 — opens in Excel, LibreOffice and Numbers. */
-export function toSpreadsheetMl(table: ReportTable): string {
-  const cell = (value: string | number | null, numeric: boolean): string => {
-    if (value === null || value === undefined || value === '') {
-      return '<Cell><Data ss:Type="String"></Data></Cell>';
-    }
-    if (numeric && typeof value !== 'string') {
-      return `<Cell><Data ss:Type="Number">${value}</Data></Cell>`;
-    }
-    if (numeric && /^-?\d+(\.\d+)?$/.test(String(value))) {
-      return `<Cell><Data ss:Type="Number">${value}</Data></Cell>`;
-    }
-    return `<Cell><Data ss:Type="String">${xmlEscape(String(value))}</Data></Cell>`;
-  };
+function spreadsheetCell(value: string | number | null, numeric: boolean): string {
+  if (value === null || value === undefined || value === '') {
+    return '<Cell><Data ss:Type="String"></Data></Cell>';
+  }
+  if (numeric && typeof value !== 'string') {
+    return `<Cell><Data ss:Type="Number">${value}</Data></Cell>`;
+  }
+  if (numeric && /^-?\d+(\.\d+)?$/.test(String(value))) {
+    return `<Cell><Data ss:Type="Number">${value}</Data></Cell>`;
+  }
+  return `<Cell><Data ss:Type="String">${xmlEscape(String(value))}</Data></Cell>`;
+}
 
-  const headerRow = `<Row>${table.columns
+/** Everything up to and including the header row. */
+export function spreadsheetPrologue(title: string, columns: readonly ReportColumn[]): string {
+  const headerRow = `<Row>${columns
     .map((c) => `<Cell><Data ss:Type="String">${xmlEscape(c.label)}</Data></Cell>`)
     .join('')}</Row>`;
-
-  const dataRows = table.rows
-    .map(
-      (row) =>
-        `<Row>${table.columns.map((c) => cell(row[c.key] ?? '', c.numeric ?? false)).join('')}</Row>`,
-    )
-    .join('');
-
   return [
     '<?xml version="1.0"?>',
     '<?mso-application progid="Excel.Sheet"?>',
     '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
       'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
-    `<Worksheet ss:Name="${xmlEscape(table.title).slice(0, 31)}">`,
+    `<Worksheet ss:Name="${xmlEscape(title).slice(0, 31)}">`,
     '<Table>',
     headerRow,
-    dataRows,
-    '</Table></Worksheet></Workbook>',
+  ].join('');
+}
+
+export function spreadsheetRow(columns: readonly ReportColumn[], row: ReportRow): string {
+  return `<Row>${columns.map((c) => spreadsheetCell(row[c.key] ?? '', c.numeric ?? false)).join('')}</Row>`;
+}
+
+export function spreadsheetEpilogue(): string {
+  return '</Table></Worksheet></Workbook>';
+}
+
+/** SpreadsheetML 2003 — opens in Excel, LibreOffice and Numbers. */
+export function toSpreadsheetMl(table: ReportTable): string {
+  return [
+    spreadsheetPrologue(table.title, table.columns),
+    ...table.rows.map((r) => spreadsheetRow(table.columns, r)),
+    spreadsheetEpilogue(),
   ].join('');
 }
 

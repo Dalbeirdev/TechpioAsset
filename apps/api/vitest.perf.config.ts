@@ -29,13 +29,18 @@ export default defineConfig({
   ],
   test: {
     environment: 'node',
-    include: ['test/sweep-timing.perf.test.ts'],
+    include: ['test/sweep-timing.perf.test.ts', 'test/export-memory.perf.test.ts'],
     env: {
       LOGIN_RATE_LIMIT: '10000',
       PLATFORM_ADMIN_EMAILS: 'admin@techpioasset.dev',
     },
     // A sweep over a million-row ledger is allowed to take a while; that is the
     // number being measured.
+    // --expose-gc so the memory probe can force a collection before sampling.
+    // Without it, peak heapUsed measures how much was ALLOCATED before the
+    // collector happened to run - which for a two-second export is mostly
+    // garbage, and moved by 25% between identical runs.
+    poolOptions: { forks: { execArgv: ['--expose-gc'] } },
     testTimeout: 900_000,
     hookTimeout: 180_000,
     fileParallelism: false,

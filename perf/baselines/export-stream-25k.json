@@ -1,0 +1,11 @@
+{
+  "label": "stream-25k",
+  "takenAt": "2026-08-04T22:58:04.982Z",
+  "assetsInTenant": 25000,
+  "rowsExported": 25000,
+  "bytes": 1500727,
+  "peakHeapMb": 1.3,
+  "ms": 610,
+  "bufferedPeakHeapMb": 4.5,
+  "bufferedMs": 731
+}

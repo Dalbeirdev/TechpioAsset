@@ -5,7 +5,7 @@ import { computeDepreciation, warrantyBucket, type DepreciationMethod } from '@t
 import { AppError } from '../common/errors/app-error.js';
 import { canSeeCost, tenantFilter } from '../common/scope.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { ReportTable } from './report-format.js';
+import type { ReportColumn, ReportRow, ReportTable } from './report-format.js';
 
 /**
  * Report aggregations (spec section 18).
@@ -15,6 +15,28 @@ import type { ReportTable } from './report-format.js';
  * report with no spending is misleading. Non-financial reports (inventory,
  * warranty expiry) are available to anyone with reports:read.
  */
+
+/** Rows fetched, mapped and released one page at a time. */
+const EXPORT_BATCH = 5_000;
+
+/**
+ * v2.10 S5 — a report defined once.
+ *
+ * `page(skip, take)` returns already-mapped rows, so the buffered path (JSON)
+ * and the streamed path (CSV/XLSX) share one query, one column list and one row
+ * mapper. The alternative — a second copy of each for streaming — is how an
+ * export quietly stops matching the screen it was exported from.
+ *
+ * Every ordering carries `id` as a final tiebreaker. Without it, two rows with
+ * the same warranty date could swap places between pages and the export would
+ * silently duplicate one and drop the other.
+ */
+interface StreamSpec {
+  title: string;
+  columns: ReportColumn[];
+  page: (skip: number, take: number) => Promise<ReportRow[]>;
+}
+
 @Injectable()
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -36,19 +58,27 @@ export class ReportsService {
       throw AppError.forbidden('This report includes financial data you are not permitted to see');
     }
 
+    // A streamable report is defined ONCE (see `streamSpec`) and assembled here
+    // by walking the same pages the export streams. Two definitions of one
+    // report is how a CSV and a JSON of the same thing start disagreeing.
+    const spec = this.streamSpec(actor, type, filters);
+    if (spec) {
+      const rows: ReportRow[] = [];
+      for (let skip = 0; ; skip += EXPORT_BATCH) {
+        const page = await spec.page(skip, EXPORT_BATCH);
+        rows.push(...page);
+        if (page.length < EXPORT_BATCH) break;
+      }
+      return { title: spec.title, columns: spec.columns, rows };
+    }
+
     switch (type) {
-      case 'ASSET_INVENTORY':
-        return this.assetInventory(actor, filters);
       case 'SPENDING_BY_VENDOR':
         return this.spendingBy(actor, 'vendor');
       case 'SPENDING_BY_CATEGORY':
         return this.spendingBy(actor, 'category');
       case 'SPENDING_BY_DEPARTMENT':
         return this.spendingBy(actor, 'department');
-      case 'DEPRECIATION':
-        return this.depreciation(actor);
-      case 'WARRANTY_EXPIRY':
-        return this.warrantyExpiry(actor);
       case 'MAINTENANCE_COST':
         return this.maintenanceCost(actor);
       default:
@@ -56,58 +86,125 @@ export class ReportsService {
     }
   }
 
-  private async assetInventory(
+
+  /**
+   * The streamable reports: one row per record, so they grow with the tenant.
+   *
+   * The aggregate reports (spending by vendor/category/department, maintenance
+   * cost) are NOT here on purpose: they are grouped in the database and return
+   * one row per vendor or category. Streaming a twelve-row result would add
+   * machinery to no end.
+   */
+  streamSpec(
     actor: AuthUser,
+    type: ReportType,
     filters: { officeId?: string; departmentId?: string },
-  ): Promise<ReportTable> {
+  ): StreamSpec | null {
     const showCost = canSeeCost(actor);
-    const assets = await this.prisma.client.asset.findMany({
-      where: {
+
+    if (type === 'ASSET_INVENTORY') {
+      const where = {
         ...tenantFilter(actor),
         ...(filters.officeId ? { officeId: filters.officeId } : {}),
         ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
-      },
-      orderBy: { assetTag: 'asc' },
-      select: {
-        assetTag: true,
-        name: true,
-        status: true,
-        condition: true,
-        serialNumber: true,
-        purchaseCost: showCost,
-        currency: showCost,
-        category: { select: { name: true } },
-        office: { select: { name: true } },
-        assignedUser: { select: { email: true } },
-      },
-    });
+      };
+      return {
+        title: 'Asset inventory',
+        columns: [
+          { key: 'assetTag', label: 'Asset tag' },
+          { key: 'name', label: 'Name' },
+          { key: 'category', label: 'Category' },
+          { key: 'status', label: 'Status' },
+          { key: 'condition', label: 'Condition' },
+          { key: 'office', label: 'Office' },
+          { key: 'assignee', label: 'Assigned to' },
+          ...(showCost ? [{ key: 'cost', label: 'Purchase cost', numeric: true }] : []),
+        ],
+        page: async (skip, take) => {
+          const assets = await this.prisma.client.asset.findMany({
+            where,
+            orderBy: [{ assetTag: 'asc' }, { id: 'asc' }],
+            skip,
+            take,
+            select: {
+              assetTag: true,
+              name: true,
+              status: true,
+              condition: true,
+              serialNumber: true,
+              purchaseCost: showCost,
+              currency: showCost,
+              category: { select: { name: true } },
+              office: { select: { name: true } },
+              assignedUser: { select: { email: true } },
+            },
+          });
+          return assets.map((a) => ({
+            assetTag: a.assetTag,
+            name: a.name,
+            category: a.category?.name ?? '',
+            status: a.status,
+            condition: a.condition,
+            office: a.office?.name ?? '',
+            assignee: a.assignedUser?.email ?? '',
+            // null (not 0) so an unpriced asset reads as "not recorded", never "free".
+            ...(showCost ? { cost: a.purchaseCost ? Number(a.purchaseCost) : null } : {}),
+          }));
+        },
+      };
+    }
 
-    const columns = [
-      { key: 'assetTag', label: 'Asset tag' },
-      { key: 'name', label: 'Name' },
-      { key: 'category', label: 'Category' },
-      { key: 'status', label: 'Status' },
-      { key: 'condition', label: 'Condition' },
-      { key: 'office', label: 'Office' },
-      { key: 'assignee', label: 'Assigned to' },
-      ...(showCost ? [{ key: 'cost', label: 'Purchase cost', numeric: true }] : []),
-    ];
+    if (type === 'DEPRECIATION') {
+      return {
+        title: 'Depreciation',
+        columns: [
+          { key: 'assetTag', label: 'Asset tag' },
+          { key: 'name', label: 'Name' },
+          { key: 'method', label: 'Method' },
+          { key: 'cost', label: 'Purchase cost', numeric: true },
+          { key: 'depreciation', label: 'Accumulated', numeric: true },
+          { key: 'current', label: 'Current value', numeric: true },
+        ],
+        page: async (skip, take) => {
+          const now = new Date();
+          const assets = await this.prisma.client.asset.findMany({
+            where: { ...tenantFilter(actor), purchaseCost: { not: null } },
+            orderBy: [{ assetTag: 'asc' }, { id: 'asc' }],
+            skip,
+            take,
+            select: {
+              assetTag: true,
+              name: true,
+              purchaseCost: true,
+              salvageValue: true,
+              usefulLifeMonths: true,
+              depreciationMethod: true,
+              purchaseDate: true,
+            },
+          });
+          return assets.map((a) => {
+            const result = computeDepreciation({
+              method: a.depreciationMethod as DepreciationMethod,
+              purchaseCost: a.purchaseCost?.toString() ?? '0',
+              salvageValue: a.salvageValue?.toString() ?? '0',
+              usefulLifeMonths: a.usefulLifeMonths,
+              purchaseDate: a.purchaseDate ?? now,
+              asOf: now,
+            });
+            return {
+              assetTag: a.assetTag,
+              name: a.name,
+              method: a.depreciationMethod,
+              cost: a.purchaseCost ? Number(a.purchaseCost) : null,
+              depreciation: Number(result.accumulatedDepreciation),
+              current: Number(result.currentValue),
+            };
+          });
+        },
+      };
+    }
 
-    return {
-      title: 'Asset inventory',
-      columns,
-      rows: assets.map((a) => ({
-        assetTag: a.assetTag,
-        name: a.name,
-        category: a.category?.name ?? '',
-        status: a.status,
-        condition: a.condition,
-        office: a.office?.name ?? '',
-        assignee: a.assignedUser?.email ?? '',
-        // null (not 0) so an unpriced asset reads as "not recorded", never "free".
-        ...(showCost ? { cost: a.purchaseCost ? Number(a.purchaseCost) : null } : {}),
-      })),
-    };
+    return null;
   }
 
   private async spendingBy(
@@ -156,53 +253,6 @@ export class ReportsService {
           count: entry.count,
           total: Number(entry.total.toFixed(2)),
         })),
-    };
-  }
-
-  private async depreciation(actor: AuthUser): Promise<ReportTable> {
-    const assets = await this.prisma.client.asset.findMany({
-      where: { ...tenantFilter(actor), purchaseCost: { not: null } },
-      orderBy: { assetTag: 'asc' },
-      select: {
-        assetTag: true,
-        name: true,
-        purchaseCost: true,
-        salvageValue: true,
-        usefulLifeMonths: true,
-        depreciationMethod: true,
-        purchaseDate: true,
-      },
-    });
-
-    const now = new Date();
-    return {
-      title: 'Depreciation',
-      columns: [
-        { key: 'assetTag', label: 'Asset tag' },
-        { key: 'name', label: 'Name' },
-        { key: 'method', label: 'Method' },
-        { key: 'cost', label: 'Purchase cost', numeric: true },
-        { key: 'depreciation', label: 'Accumulated', numeric: true },
-        { key: 'current', label: 'Current value', numeric: true },
-      ],
-      rows: assets.map((a) => {
-        const result = computeDepreciation({
-          method: a.depreciationMethod as DepreciationMethod,
-          purchaseCost: a.purchaseCost?.toString() ?? '0',
-          salvageValue: a.salvageValue?.toString() ?? '0',
-          usefulLifeMonths: a.usefulLifeMonths,
-          purchaseDate: a.purchaseDate ?? now,
-          asOf: now,
-        });
-        return {
-          assetTag: a.assetTag,
-          name: a.name,
-          method: a.depreciationMethod,
-          cost: a.purchaseCost ? Number(a.purchaseCost) : null,
-          depreciation: Number(result.accumulatedDepreciation),
-          current: Number(result.currentValue),
-        };
-      }),
     };
   }
 
