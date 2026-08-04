@@ -119,20 +119,34 @@ export class AnalyticsService {
       const keys = lastMonths(now, months);
       const from = new Date(`${keys[0]}-01T00:00:00Z`);
 
-      const [purchases, maintenance, byCategory] = await Promise.all([
-        this.prisma.client.asset.findMany({
-          where: {
-            companyId,
-            deletedAt: null,
-            purchaseCost: { not: null },
-            purchaseDate: { gte: from },
-          },
-          select: { purchaseCost: true, purchaseDate: true },
-        }),
-        this.prisma.client.maintenanceRecord.findMany({
-          where: { serviceCost: { not: null }, completedAt: { gte: from }, asset: { companyId } },
-          select: { serviceCost: true, completedAt: true },
-        }),
+      // v2.10 S4 — the months are summed by the database.
+      //
+      // This used to load every costed asset in the window and add them up in
+      // JavaScript. EXPLAIN put the query itself at 36 ms returning 100,000
+      // rows, while the endpoint took 2.8 s at p95: the cost was never the
+      // query, it was shipping 100,000 rows to Node to total them.
+      //
+      // `to_char(col, 'YYYY-MM')` matches `monthKey`, which is
+      // `toISOString().slice(0, 7)` — both UTC. The columns are `timestamp
+      // without time zone` holding UTC, so no conversion is involved and the
+      // bucket boundaries are identical. `analytics-spend-math` pins that.
+      const [assetMonths, maintenanceMonths, byCategory] = await Promise.all([
+        this.prisma.client.$queryRaw<{ month: string; total: string | null }[]>`
+          SELECT to_char("purchaseDate", 'YYYY-MM') AS month, SUM("purchaseCost") AS total
+            FROM "assets"
+           WHERE "companyId" = ${companyId}
+             AND "deletedAt" IS NULL
+             AND "purchaseCost" IS NOT NULL
+             AND "purchaseDate" >= ${from}
+           GROUP BY 1`,
+        this.prisma.client.$queryRaw<{ month: string; total: string | null }[]>`
+          SELECT to_char(m."completedAt", 'YYYY-MM') AS month, SUM(m."serviceCost") AS total
+            FROM "maintenance_records" m
+            JOIN "assets" a ON a."id" = m."assetId"
+           WHERE a."companyId" = ${companyId}
+             AND m."serviceCost" IS NOT NULL
+             AND m."completedAt" >= ${from}
+           GROUP BY 1`,
         this.prisma.client.asset.groupBy({
           by: ['categoryId'],
           where: { companyId, deletedAt: null, purchaseCost: { not: null } },
@@ -144,13 +158,14 @@ export class AnalyticsService {
       const monthly = Object.fromEntries(
         keys.map((k) => [k, { assetSpend: 0, maintenanceSpend: 0 }]),
       ) as Record<string, { assetSpend: number; maintenanceSpend: number }>;
-      for (const a of purchases) {
-        const k = a.purchaseDate ? monthKey(a.purchaseDate) : null;
-        if (k && monthly[k]) monthly[k].assetSpend += Number(a.purchaseCost);
+      // A month outside the requested window is dropped, exactly as the old
+      // `if (monthly[k])` did — the query's lower bound and the key list can
+      // disagree at the edges when a partial month is in play.
+      for (const row of assetMonths) {
+        if (monthly[row.month]) monthly[row.month]!.assetSpend = Number(row.total ?? 0);
       }
-      for (const m of maintenance) {
-        const k = m.completedAt ? monthKey(m.completedAt) : null;
-        if (k && monthly[k]) monthly[k].maintenanceSpend += Number(m.serviceCost);
+      for (const row of maintenanceMonths) {
+        if (monthly[row.month]) monthly[row.month]!.maintenanceSpend = Number(row.total ?? 0);
       }
 
       const categories = await this.prisma.client.category.findMany({

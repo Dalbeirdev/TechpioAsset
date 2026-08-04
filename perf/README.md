@@ -149,8 +149,51 @@ The arithmetic is unchanged — the SQL `CASE` is generated from the same sign m
 the JavaScript used, so the two cannot drift apart, and the sweep's own tests
 pass untouched.
 
-The remaining two breaches — `/audit` at 1992 ms and `/analytics/spend` at
-2952 ms — are unchanged by design. They are not response-size problems: they are
+## After S4 — plans and indexes from evidence
+
+`EXPLAIN (ANALYZE, BUFFERS)` first, then only the changes the plans justified.
+
+| Endpoint | baseline p95 | after S4 | |
+|---|---|---|---|
+| `GET /analytics/spend` | 2798 ms | **154 ms** | −94% |
+| `GET /audit` | 1999 ms | **440 ms** | −78%, still over 300 ms |
+
+Breaches: **3 of 14 → 1 of 14.**
+
+**`/audit` — one missing index.** Every existing index led with `companyId` and
+then a *second equality column*, so none could serve "this tenant, newest
+first". The plan was a parallel sequential scan of 2M rows feeding a top-N
+heapsort. With `(companyId, createdAt)`:
+
+```
+before:  Limit -> Sort (top-N heapsort) -> Parallel Seq Scan   263 ms
+after:   Limit -> Index Scan Backward using the new index      0.106 ms
+```
+
+**`/analytics/spend` — not an index problem at all.** The query took 36 ms and
+returned 100,000 rows; the endpoint took 2798 ms. The cost was never the query,
+it was shipping 100,000 rows into Node to add them up. The months are now summed
+by the database. `to_char(col, 'YYYY-MM')` matches `monthKey`'s
+`toISOString().slice(0, 7)` — both UTC, on `timestamp without time zone` columns
+holding UTC — and `analytics-spend-math.integration.test.ts` pins the arithmetic
+either side of the move, including both month boundaries, a soft-deleted row and
+a row outside the window.
+
+### Why `/audit` still misses its target, honestly
+
+The page query is now effectively free (0.1 ms). What is left is the **exact
+total count** for offset pagination: a parallel index-only scan over two million
+index entries, 78 ms alone and more under concurrency.
+
+That is not an index problem — it is what an exact `count(*)` costs. Fixing it
+means choosing: an approximate count (fast, and a number shown to users that is
+no longer true), cursor pagination (exact, but a contract change), or a
+short-lived cached count (exact-when-fresh, seconds stale). Each is a real
+trade-off and none belongs in a workstream whose remit is "add the indexes the
+plans justify".
+
+It is recorded as input to **S6**, where audit-log growth is the subject and
+partitioning would change this same number. They are not response-size problems: they are
 a 2-million-row query plan (S4) and an aggregate computed in JavaScript over
 every matching row (S4). Capping either would have made the answer wrong rather
 than the response smaller.
