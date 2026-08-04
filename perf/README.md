@@ -83,15 +83,15 @@ endpoint, concurrency 6, local dev machine. Targets: **300 ms** p95 for lists,
 - **`/audit` is the worst read path.** 2 million rows, paginated, and still two
   seconds at p95. Paginating the *output* did nothing for the cost of finding
   the page. S4's first EXPLAIN.
-- **`/analytics/spend` has a p50 of 7 ms and a p95 of 2474 ms.** That shape is a
+- **`/analytics/spend` has a p50 of 9 ms and a p95 of 2798 ms.** That shape is a
   cache: nearly every request is served warm, and the few cold ones pay for
   everything. A p50 quoted alone here would be flattering and useless.
-- **`/stock/levels` returns 588 KB for 2,000 rows** and is the only unbounded
+- **`/stock/levels` returns 589 KB for 2,000 rows** and is the only unbounded
   endpoint already over target. It grows linearly with the tenant, and 2,000
   levels is small — a real warehouse estate is far past that. S2.
 - **Pagination works where it is used.** Page 1,000 of assets costs about the
   same as page 1, which is the result worth having from this table.
-- **The control is flat.** `/auth/me` at 11 ms confirms the numbers above are
+- **The control is flat.** `/auth/me` at 13 ms confirms the numbers above are
   the endpoints and not the machine.
 
 Nothing in this table has been optimised. That is the point of it.
