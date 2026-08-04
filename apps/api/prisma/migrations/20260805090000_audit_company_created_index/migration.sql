@@ -1,0 +1,14 @@
+-- v2.10 S4 - the index the plan asked for. (ASCII only: the shadow DB runs WIN1252.)
+--
+-- The default audit view is "this tenant, newest first" with no other filter.
+-- Every existing index leads with companyId and then a SECOND equality column,
+-- so none could serve that sort. EXPLAIN (ANALYZE, BUFFERS) on 2M rows showed:
+--
+--   Limit -> Sort (top-N heapsort) -> Parallel Seq Scan on audit_logs
+--   rows=666,666 per worker, Execution Time: 263 ms
+--
+-- CONCURRENTLY is deliberately NOT used: Prisma runs migrations inside a
+-- transaction, and CREATE INDEX CONCURRENTLY cannot run in one. On a 2M-row
+-- table this takes a few seconds and holds a lock for that long, which is the
+-- accepted cost of it being a normal, reversible migration.
+CREATE INDEX "audit_logs_companyId_createdAt_idx" ON "audit_logs"("companyId", "createdAt");

@@ -2188,6 +2188,11 @@ model AuditLog {
   @@index([companyId, actorId, createdAt])
   @@index([companyId, action, createdAt])
   @@index([correlationId])
+  /// v2.10 S4 — the default view is "this tenant, newest first", with no
+  /// other filter. Every other index here leads with companyId and then a
+  /// SECOND equality column, so none of them can serve that sort: EXPLAIN
+  /// showed a parallel sequential scan of 2M rows feeding a top-N heapsort.
+  @@index([companyId, createdAt])
   @@map("audit_logs")
 }
 
