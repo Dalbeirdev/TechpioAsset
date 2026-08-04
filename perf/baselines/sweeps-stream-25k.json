@@ -1,0 +1,13 @@
+{
+  "label": "stream-25k",
+  "takenAt": "2026-08-04T22:58:08.439Z",
+  "levels": 6501,
+  "movements": 250002,
+  "runsMs": {
+    "stock": 955,
+    "expiry": 4,
+    "warranty": 11,
+    "licenses": 3
+  },
+  "totalMs": 973
+}

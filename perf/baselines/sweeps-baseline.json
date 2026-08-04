@@ -1,13 +1,13 @@
 {
   "label": "baseline",
-  "takenAt": "2026-08-04T19:39:08.296Z",
+  "takenAt": "2026-08-04T22:38:58.896Z",
   "levels": 100001,
   "movements": 1000002,
   "runsMs": {
-    "stock": 45295,
-    "expiry": 8,
+    "stock": 11460,
+    "expiry": 7,
     "warranty": 13,
-    "licenses": 3
+    "licenses": 4
   },
-  "totalMs": 45319
+  "totalMs": 11484
 }

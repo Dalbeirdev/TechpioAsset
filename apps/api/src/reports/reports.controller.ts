@@ -8,7 +8,39 @@ import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AuditService } from '../audit/audit.service.js';
 import { ReportsService } from './reports.service.js';
-import { toCsv, toSpreadsheetMl, REPORT_CONTENT_TYPE, REPORT_EXTENSION } from './report-format.js';
+import {
+  toCsv,
+  toSpreadsheetMl,
+  csvHeaderLine,
+  csvRowLine,
+  spreadsheetPrologue,
+  spreadsheetRow,
+  spreadsheetEpilogue,
+  REPORT_CONTENT_TYPE,
+  REPORT_EXTENSION,
+} from './report-format.js';
+
+/** Rows fetched, written and released per iteration. */
+const EXPORT_PAGE = 5_000;
+
+/**
+ * Write one chunk, honouring backpressure.
+ *
+ * `res.write` returning false means Node has buffered the chunk because the
+ * socket is not draining. Ignoring that turns "streaming" into "buffering in a
+ * different place, invisibly" — measured at 113 MB peak heap for a 5.8 MB
+ * download, worse than the buffered version it replaced.
+ */
+function write(res: Response, chunk: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (res.write(chunk)) {
+      resolve();
+      return;
+    }
+    res.once('drain', resolve);
+    res.once('error', reject);
+  });
+}
 
 @ApiTags('Reports')
 @Controller('reports')
@@ -31,23 +63,76 @@ export class ReportsController {
     @Query(zodBody(reportQuerySchema)) query: ReportQuery,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const table = await this.reports.build(actor, query.type, {
-      officeId: query.officeId,
-      departmentId: query.departmentId,
-    });
+    const filters = { officeId: query.officeId, departmentId: query.departmentId };
 
     if (query.format === 'JSON') {
-      return table;
+      return this.reports.build(actor, query.type, filters);
     }
 
-    // Export path requires the export permission on top of read.
+    // Export path requires the export permission on top of read. Checked before
+    // any row is fetched, so a refusal costs nothing.
     if (!actor.permissions.includes(PERMISSIONS.REPORTS_EXPORT)) {
       res.status(403);
       return { code: 'FORBIDDEN', title: 'You may not export reports' };
     }
 
-    const body = query.format === 'CSV' ? toCsv(table) : toSpreadsheetMl(table);
     const filename = `${query.type.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.${REPORT_EXTENSION[query.format]}`;
+
+    // v2.10 S5 — the row-per-record reports are written a page at a time.
+    //
+    // Buffering a 100,000-row export held four copies of every row at once:
+    // the Prisma objects, the mapped rows, the formatted lines and the joined
+    // string. A 5.8 MB download cost 98.6 MB of heap. Streaming holds one page.
+    const spec = this.reports.streamSpec(actor, query.type, filters);
+    if (spec) {
+      res.set({
+        'Content-Type': REPORT_CONTENT_TYPE[query.format],
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'private, no-store',
+      });
+
+      const csv = query.format === 'CSV';
+      await write(res, csv ? csvHeaderLine(spec.columns) : spreadsheetPrologue(spec.title, spec.columns));
+
+      let rows = 0;
+      for (let skip = 0; ; skip += EXPORT_PAGE) {
+        const page = await spec.page(skip, EXPORT_PAGE);
+        // One write per page, not per row. 100,000 individual writes queue in
+        // Node's internal buffer far faster than a socket drains them, which is
+        // how the first version of this used MORE memory than buffering did.
+        const chunk = csv
+          ? page.map((row) => `\r\n${csvRowLine(spec.columns, row)}`).join('')
+          : page.map((row) => spreadsheetRow(spec.columns, row)).join('');
+        await write(res, chunk);
+        rows += page.length;
+        if (page.length < EXPORT_PAGE) break;
+      }
+      if (!csv) await write(res, spreadsheetEpilogue());
+
+      // Audited AFTER the rows are written, with the count that actually left.
+      // Recording an intended row count before streaming would log an export
+      // that a mid-stream failure never completed.
+      await this.audit.record({
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.REPORT_EXPORTED,
+        entityType: 'Report',
+        entityId: query.type,
+        newValues: {
+          format: query.format,
+          rows,
+          delivery: 'DOWNLOAD',
+          filters: { officeId: query.officeId ?? null, departmentId: query.departmentId ?? null },
+        },
+      });
+      res.end();
+      return undefined;
+    }
+
+    // The aggregate reports return one row per vendor or category; buffering a
+    // dozen rows needs no machinery.
+    const table = await this.reports.build(actor, query.type, filters);
+    const body = query.format === 'CSV' ? toCsv(table) : toSpreadsheetMl(table);
 
     // v2.7 R2 (AUD-009): data leaving the system is an auditable event. Who
     // took what, in which shape, when - financial reports especially.

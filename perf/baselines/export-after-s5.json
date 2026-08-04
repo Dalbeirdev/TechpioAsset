@@ -1,0 +1,11 @@
+{
+  "label": "after-s5",
+  "takenAt": "2026-08-04T22:55:58.743Z",
+  "assetsInTenant": 100000,
+  "rowsExported": 100000,
+  "bytes": 6038700,
+  "peakHeapMb": 1.4,
+  "ms": 3023,
+  "bufferedPeakHeapMb": 16.4,
+  "bufferedMs": 2944
+}

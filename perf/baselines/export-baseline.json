@@ -1,0 +1,9 @@
+{
+  "label": "baseline",
+  "takenAt": "2026-08-04T22:39:04.091Z",
+  "assetsInTenant": 100000,
+  "rowsExported": 100000,
+  "bytes": 6038700,
+  "peakHeapMb": 98.6,
+  "ms": 2445
+}
