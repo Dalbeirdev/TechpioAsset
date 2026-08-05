@@ -1,0 +1,167 @@
+{
+  "label": "after-s6",
+  "takenAt": "2026-08-05T17:03:37.694Z",
+  "base": "http://localhost:3001/api/v1",
+  "requestsPerEndpoint": 60,
+  "concurrency": 6,
+  "targets": {
+    "list": 300,
+    "dashboard": 800
+  },
+  "results": {
+    "GET /stock/levels": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 63.172199999999975,
+      "p95": 167.37019999999995,
+      "p99": 217.68499999999997,
+      "max": 217.68499999999997,
+      "maxBytes": 7645,
+      "kind": "UNBOUNDED",
+      "budget": "list"
+    },
+    "GET /stock/items": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 24.966300000000047,
+      "p95": 33.44479999999999,
+      "p99": 35.53200000000015,
+      "max": 35.53200000000015,
+      "maxBytes": 72429,
+      "kind": "UNBOUNDED",
+      "budget": "list"
+    },
+    "GET /stock/batches": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 8.90260000000012,
+      "p95": 15.182099999999991,
+      "p99": 15.994400000000041,
+      "max": 15.994400000000041,
+      "maxBytes": 104,
+      "kind": "UNBOUNDED",
+      "budget": "list"
+    },
+    "GET /stock/locations": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 24.661599999999908,
+      "p95": 29.297199999999975,
+      "p99": 31.804100000000062,
+      "max": 31.804100000000062,
+      "maxBytes": 6226,
+      "kind": "UNBOUNDED",
+      "budget": "list"
+    },
+    "GET /assets p1": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 124.64429999999993,
+      "p95": 171.77610000000004,
+      "p99": 211.1359,
+      "max": 211.1359,
+      "maxBytes": 20342,
+      "kind": "paged",
+      "budget": "list"
+    },
+    "GET /assets p1000": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 153.27279999999973,
+      "p95": 205.40959999999995,
+      "p99": 208.18499999999995,
+      "max": 208.18499999999995,
+      "maxBytes": 20446,
+      "kind": "paged",
+      "budget": "list"
+    },
+    "GET /assets ?q=": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 147.84659999999985,
+      "p95": 165.07899999999972,
+      "p99": 183.4886000000006,
+      "max": 183.4886000000006,
+      "maxBytes": 20433,
+      "kind": "paged",
+      "budget": "list"
+    },
+    "GET /assets ?status=": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 22.89559999999983,
+      "p95": 29.360500000000684,
+      "p99": 30.431099999999788,
+      "max": 30.431099999999788,
+      "maxBytes": 20449,
+      "kind": "paged",
+      "budget": "list"
+    },
+    "GET /stock/movements": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 83.67169999999987,
+      "p95": 187.09090000000015,
+      "p99": 188.28159999999934,
+      "max": 188.28159999999934,
+      "maxBytes": 7451,
+      "kind": "paged",
+      "budget": "list"
+    },
+    "GET /audit": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 9.707000000000335,
+      "p95": 151.67540000000008,
+      "p99": 230.89459999999963,
+      "max": 230.89459999999963,
+      "maxBytes": 6459,
+      "kind": "paged",
+      "budget": "list"
+    },
+    "GET /dashboard": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 21.32639999999992,
+      "p95": 48.82659999999942,
+      "p99": 49.38680000000022,
+      "max": 49.38680000000022,
+      "maxBytes": 1079,
+      "kind": "aggregate",
+      "budget": "dashboard"
+    },
+    "GET /analytics/overview": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 6.727500000000873,
+      "p95": 76.52719999999863,
+      "p99": 244.46280000000115,
+      "max": 244.46280000000115,
+      "maxBytes": 543,
+      "kind": "aggregate",
+      "budget": "dashboard"
+    },
+    "GET /analytics/spend": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 11.644099999999526,
+      "p95": 128.36509999999907,
+      "p99": 144.57630000000063,
+      "max": 144.57630000000063,
+      "maxBytes": 950,
+      "kind": "aggregate",
+      "budget": "dashboard"
+    },
+    "GET /auth/me": {
+      "ok": 60,
+      "errors": 0,
+      "p50": 11.06499999999869,
+      "p95": 15.082000000000335,
+      "p99": 17.028000000000247,
+      "max": 17.028000000000247,
+      "maxBytes": 1882,
+      "kind": "control",
+      "budget": "list"
+    }
+  }
+}
