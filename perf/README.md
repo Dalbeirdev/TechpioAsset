@@ -236,3 +236,50 @@ the same export: the first was mostly garbage.
 The comparison is an A/B in one run on identical data — CSV against
 `format=JSON`, which still assembles every row — so the two numbers are produced
 by the same process, the same rows and the same metric.
+
+## After S6 — the audit total, and what the log costs
+
+`/audit`'s page query was already free after S4 (0.1 ms). What remained was the
+exact `count(*)` offset pagination needs: a parallel index-only scan over two
+million index entries, 78 ms alone and more under concurrency.
+
+The total is now cached for **15 seconds**; the page never is. The audit log is
+append-only, so a stale total can only ever *undercount* by the last few
+seconds' events, and the rows on the page are always exact. That trade is opt-in
+per call site — `paginate()` takes the cache, it does not assume it.
+
+| Endpoint | baseline p95 | after S6 |
+|---|---|---|
+| `GET /audit` | 1999 ms | **152 ms** (−92%) |
+
+**0 of 14 endpoints miss their target.**
+
+### What two million audit rows cost
+
+| | rows | heap | indexes | total | per row |
+|---|---|---|---|---|---|
+| As first measured | 2,043,684 | 552 MB | 743 MB | 1294 MB | 664 B |
+| **After `REINDEX`** | 2,043,684 | 552 MB | **237 MB** | **789 MB** | **405 B** |
+
+The first reading was **64% bloat from this rig**, which had deleted and
+reinserted two million rows six times over. Production only appends, so it does
+not bloat this way. Publishing 664 B/row would have been a fact about the test
+harness dressed up as a fact about the product.
+
+At 10,000 audit events a day, a tenant accrues about **1.4 GB a year**.
+
+## Final: the whole release, one table
+
+| Endpoint | Baseline | Final | |
+|---|---|---|---|
+| `GET /audit` | 1999 ms | 152 ms | −92% |
+| `GET /analytics/spend` | 2798 ms | 128 ms | −95% |
+| `GET /stock/levels` | 348 ms / 589 KB | 167 ms / 7 KB | −52% / −99% |
+| `GET /stock/items` | 128 ms | 33 ms | −74% |
+| Nightly stock sweep | 45.30 s | 11.07 s | ~100,000 queries → ~40 |
+| 100k-row export, retained heap | 16.4 MB | 1.4 MB | streamed |
+
+Endpoints over target: **3 of 14 → 0 of 14**.
+
+Every one of these is measured on one dev laptop against the same generated
+tenant. The *shapes* travel; the absolute milliseconds are this machine's.
