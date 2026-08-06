@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation } from '@tanstack/react-query';
-import { Building2, Pencil, ShieldCheck, UserRound } from 'lucide-react';
+import { Building2, ChevronRight, Clock, Pencil, ShieldCheck, UserRound } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
@@ -167,8 +167,11 @@ export default function ProfilePage() {
       </header>
 
       <Card className="p-5">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <UserRound aria-hidden="true" className="size-4 text-[var(--color-brand)]" /> About you
+        <h2 className="mb-4 flex items-center gap-3 text-base font-semibold">
+          <span className="grid size-9 place-items-center rounded-xl bg-[var(--color-brand)]/10">
+            <UserRound aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+          </span>
+          About you
         </h2>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
           <EditableRow label="First name" value={user.firstName ?? ''} onSave={saveField('firstName')} />
@@ -184,8 +187,11 @@ export default function ProfilePage() {
       </Card>
 
       <Card className="p-5">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <Building2 aria-hidden="true" className="size-4 text-[var(--color-brand)]" /> Your place in the company
+        <h2 className="mb-4 flex items-center gap-3 text-base font-semibold">
+          <span className="grid size-9 place-items-center rounded-xl bg-[var(--color-brand)]/10">
+            <Building2 aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+          </span>
+          Your place in the company
         </h2>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
           <ReadOnlyRow
@@ -219,21 +225,40 @@ export default function ProfilePage() {
         </dl>
       </Card>
 
-      <Card className="flex items-center justify-between gap-4 p-5">
-        <div className="flex items-center gap-3">
-          <ShieldCheck aria-hidden="true" className="size-5 text-[var(--color-brand)]" />
+      <Card className="flex flex-wrap items-center justify-between gap-4 p-5">
+        <div className="flex items-start gap-3">
+          <span className="grid size-9 place-items-center rounded-xl bg-[var(--color-brand)]/10">
+            <ShieldCheck aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+          </span>
           <div>
-            <p className="text-sm font-medium">Two-factor authentication</p>
-            <p className="text-xs text-[var(--color-content-subtle)]">
-              {user.mfaEnabled ? 'Enabled on your account.' : 'Not enabled yet — five minutes well spent.'}
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              Two-factor authentication
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                style={
+                  user.mfaEnabled
+                    ? { background: 'var(--tone-success-bg)', color: 'var(--tone-success-fg)' }
+                    : { background: 'var(--tone-warning-bg)', color: 'var(--tone-warning-fg)' }
+                }
+              >
+                {user.mfaEnabled ? 'Enabled' : 'Not enabled yet'}
+              </span>
             </p>
+            <p className="mt-0.5 text-sm text-[var(--color-content-muted)]">
+              Add an extra layer of security to protect your account.
+            </p>
+            {!user.mfaEnabled ? (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--color-content-subtle)]">
+                <Clock aria-hidden="true" className="size-3.5" /> Estimated setup time: ~5 minutes
+              </p>
+            ) : null}
           </div>
         </div>
         <Link
           href="/settings/security"
-          className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+          className="inline-flex h-9 items-center gap-1 rounded-[var(--radius-control)] border border-[var(--color-brand)] px-3 text-sm font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand)]/10"
         >
-          Security settings
+          Security settings <ChevronRight aria-hidden="true" className="size-4" />
         </Link>
       </Card>
     </div>
