@@ -2,12 +2,16 @@ import { Body, Controller, Get, Param, Patch, Query, Res } from '@nestjs/common'
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  adminUpdateProfileSchema,
   setUserRolesSchema,
+  updateMyProfileSchema,
   setUserStatusSchema,
   userListQuerySchema,
+  type AdminUpdateProfileInput,
   type AuthUser,
   type SetUserRolesInput,
   type SetUserStatusInput,
+  type UpdateMyProfileInput,
   type UserListQuery,
 } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
@@ -54,6 +58,31 @@ export class UsersController {
   })
   findOne(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
     return this.users.findOne(actor, id);
+  }
+
+  @Patch('me/profile')
+  @ApiOperation({
+    summary: 'Edit your own profile (name, phone, job title)',
+    description:
+      'Self-service stops where access begins: department and office feed the data scope, ' +
+      'so they are set by an administrator, and roles are never edited here.',
+  })
+  updateMyProfile(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(updateMyProfileSchema)) body: UpdateMyProfileInput,
+  ) {
+    return this.users.updateProfile(actor, actor.id, body, 'self');
+  }
+
+  @Patch(':id/profile')
+  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @ApiOperation({ summary: "Edit a user's profile, including department and office" })
+  updateProfile(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(adminUpdateProfileSchema)) body: AdminUpdateProfileInput,
+  ) {
+    return this.users.updateProfile(actor, id, body, 'admin');
   }
 
   @Patch(':id/roles')

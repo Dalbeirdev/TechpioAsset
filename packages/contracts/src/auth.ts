@@ -45,6 +45,7 @@ export const authUserSchema = z.object({
   displayName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   jobTitle: z.string().nullable(),
+  phone: z.string().nullable(),
   departmentId: z.string().nullable(),
   departmentName: z.string().nullable(),
   officeId: z.string().nullable(),
