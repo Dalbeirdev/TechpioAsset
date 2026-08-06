@@ -3,12 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation } from '@tanstack/react-query';
-import { Building2, ChevronRight, Clock, Pencil, ShieldCheck, UserRound } from 'lucide-react';
+import { Building2, Check, ChevronRight, Clock, Pencil, ShieldCheck, UserRound, X } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card, Skeleton } from '@/components/ui';
+import { Card, Skeleton } from '@/components/ui';
 
 /**
  * Your own profile — now with an edit path for everything, each field owned by
@@ -54,49 +54,82 @@ function EditableRow({
   const [draft, setDraft] = useState(value);
   const [busy, setBusy] = useState(false);
 
+  const save = async () => {
+    setBusy(true);
+    try {
+      await onSave(draft.trim());
+      setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cancel = () => {
+    setDraft(value);
+    setEditing(false);
+  };
+
+  // Both modes render one row of the SAME height (h-9): the text swaps for an
+  // input in place, and save/cancel are compact icon buttons on the same line.
+  // The first version stacked an input above two full-size buttons, which grew
+  // the grid cell and shoved every neighbouring field around - opening an
+  // editor must never move the thing next to it.
   return (
     <div>
       <dt className="text-xs text-[var(--color-content-subtle)]">{label}</dt>
-      {editing ? (
-        <dd className="mt-1 flex items-center gap-2">
-          <input
-            aria-label={label}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={placeholder}
-            className={inputCls}
-          />
-          <Button
-            loading={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await onSave(draft.trim());
-                setEditing(false);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Save
-          </Button>
-          <Button variant="secondary" onClick={() => { setDraft(value); setEditing(false); }}>
-            Cancel
-          </Button>
-        </dd>
-      ) : (
-        <dd className="mt-0.5 flex items-center gap-2 text-sm font-medium">
-          <span>{value || <span className="text-[var(--color-content-subtle)]">Not set</span>}</span>
-          <button
-            type="button"
-            aria-label={`Edit ${label.toLowerCase()}`}
-            onClick={() => { setDraft(value); setEditing(true); }}
-            className="rounded p-1 text-[var(--color-content-subtle)] hover:bg-[var(--color-surface-sunken)] hover:text-[var(--color-content)]"
-          >
-            <Pencil aria-hidden="true" className="size-3.5" />
-          </button>
-        </dd>
-      )}
+      <dd className="mt-0.5 flex h-9 min-w-0 items-center gap-1.5">
+        {editing ? (
+          <>
+            <input
+              aria-label={label}
+              value={draft}
+              autoFocus
+              disabled={busy}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void save();
+                if (e.key === 'Escape') cancel();
+              }}
+              placeholder={placeholder}
+              className="h-8 w-full min-w-0 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
+            />
+            <button
+              type="button"
+              aria-label={`Save ${label.toLowerCase()}`}
+              disabled={busy}
+              onClick={() => void save()}
+              className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] bg-[var(--color-brand)] text-[var(--color-brand-contrast)] disabled:opacity-50"
+            >
+              <Check aria-hidden="true" className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={`Cancel editing ${label.toLowerCase()}`}
+              disabled={busy}
+              onClick={cancel}
+              className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] border border-[var(--color-border-strong)] hover:bg-[var(--color-surface-sunken)]"
+            >
+              <X aria-hidden="true" className="size-4" />
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="truncate text-sm font-medium">
+              {value || <span className="text-[var(--color-content-subtle)]">Not set</span>}
+            </span>
+            <button
+              type="button"
+              aria-label={`Edit ${label.toLowerCase()}`}
+              onClick={() => {
+                setDraft(value);
+                setEditing(true);
+              }}
+              className="rounded p-1 text-[var(--color-content-subtle)] hover:bg-[var(--color-surface-sunken)] hover:text-[var(--color-content)]"
+            >
+              <Pencil aria-hidden="true" className="size-3.5" />
+            </button>
+          </>
+        )}
+      </dd>
     </div>
   );
 }
@@ -105,7 +138,7 @@ function ReadOnlyRow({ label, value, note }: { label: string; value: React.React
   return (
     <div>
       <dt className="text-xs text-[var(--color-content-subtle)]">{label}</dt>
-      <dd className="mt-0.5 text-sm font-medium">{value || '—'}</dd>
+      <dd className="mt-0.5 flex h-9 items-center text-sm font-medium">{value || '—'}</dd>
       {note ? <dd className="mt-0.5 text-xs text-[var(--color-content-subtle)]">{note}</dd> : null}
     </div>
   );

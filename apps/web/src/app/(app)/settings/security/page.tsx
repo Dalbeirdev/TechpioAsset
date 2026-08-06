@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { useMutation } from '@tanstack/react-query';
 import { KeyRound, ShieldCheck, ShieldOff } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
@@ -27,6 +28,19 @@ export default function SecuritySettingsPage() {
 
   // MFA enrolment flow state — secret exists only between "start" and "confirm".
   const [enrolment, setEnrolment] = useState<{ secret: string; otpauthUrl: string } | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  // The QR is drawn locally from the otpauth URI - the secret never goes to any
+  // external chart service, which is the only acceptable way to render it.
+  useEffect(() => {
+    if (!enrolment) {
+      setQrDataUrl(null);
+      return;
+    }
+    QRCode.toDataURL(enrolment.otpauthUrl, { margin: 1, width: 192 })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(null));
+  }, [enrolment]);
   const [confirmCode, setConfirmCode] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
   const [disableCode, setDisableCode] = useState('');
@@ -124,15 +138,22 @@ export default function SecuritySettingsPage() {
               Add this secret to your authenticator app (Google Authenticator, 1Password, Authy…),
               then enter the 6-digit code it shows.
             </p>
+            {qrDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- a data URL, not a remote asset
+              <img
+                src={qrDataUrl}
+                alt="QR code for your authenticator app"
+                width={192}
+                height={192}
+                className="rounded-lg border border-[var(--color-border)] bg-white p-2"
+              />
+            ) : null}
+            <p className="text-xs text-[var(--color-content-subtle)]">
+              Can&apos;t scan? Enter this setup key manually:
+            </p>
             <code className="w-fit rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-3 py-2 text-sm tracking-wider">
               {enrolment.secret}
             </code>
-            <p className="text-xs text-[var(--color-content-subtle)]">
-              Or open this link on a device with your authenticator installed:{' '}
-              <a href={enrolment.otpauthUrl} className="text-[var(--color-brand)] break-all">
-                {enrolment.otpauthUrl.slice(0, 48)}…
-              </a>
-            </p>
             <div className="flex items-center gap-2">
               <input
                 aria-label="6-digit code"
