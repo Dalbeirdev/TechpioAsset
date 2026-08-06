@@ -259,8 +259,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
               />
               <span className="flex-1 text-left">{group.label}</span>
-              {/* A closed section still says how much is inside it. */}
-              {!open ? <span className="tabular-nums">{group.items.length}</span> : null}
             </button>
 
             {open ? (
