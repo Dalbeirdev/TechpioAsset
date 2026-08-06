@@ -17,6 +17,8 @@ interface AuthState {
   logout: () => Promise<void>;
   /** True when the user holds every listed permission. */
   can: (...permissions: string[]) => boolean;
+  /** Re-reads /auth/me so a just-saved profile edit shows without a reload. */
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -102,9 +104,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user],
   );
 
+  const refresh = useCallback(async () => {
+    try {
+      setUser(await apiFetch<AuthUser>('/auth/me'));
+    } catch {
+      // A failed refresh keeps the session as it was; the edit is already
+      // saved server-side and will appear on the next full load.
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ user, status, login, logout, can }),
-    [user, status, login, logout, can],
+    () => ({ user, status, login, logout, can, refresh }),
+    [user, status, login, logout, can, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -561,6 +561,7 @@ export class AuthService {
         (user.profile ? `${user.profile.firstName} ${user.profile.lastName}` : null),
       avatarUrl: user.profile?.avatarKey ?? null,
       jobTitle: user.profile?.jobTitle ?? null,
+      phone: user.profile?.phone ?? null,
       departmentId: user.profile?.departmentId ?? null,
       departmentName: user.profile?.department?.name ?? null,
       officeId: user.profile?.officeId ?? null,

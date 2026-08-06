@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AuditAction } from '@prisma/client';
-import type { SetUserRolesInput, SetUserStatusInput, UserListQuery } from '@techpioasset/contracts';
+import type {
+  AdminUpdateProfileInput, SetUserRolesInput, SetUserStatusInput, UserListQuery } from '@techpioasset/contracts';
 import type { AuthUser } from '@techpioasset/contracts';
 import { findSodConflicts } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
@@ -141,6 +142,105 @@ export class UsersService {
    * two tells the caller that a record exists at that id, which is the insecure
    * direct object reference the spec's security tests look for.
    */
+
+  /**
+   * v2.11 — profile fields finally have an editor.
+   *
+   * Until now NOBODY could set job title, department or office - not the user,
+   * not an admin. The fields existed, the seed filled some of them, and every
+   * profile rendered dashes forever after.
+   *
+   * `self` mode edits the caller's own record and refuses the org-placement
+   * fields: department feeds the DEPARTMENT data scope, so a self-move would
+   * let a user pick whose assets they can see. Admin mode (users:manage) may
+   * place people. Both are audited with before/after.
+   */
+  async updateProfile(
+    actor: AuthUser,
+    targetUserId: string,
+    input: AdminUpdateProfileInput,
+    mode: 'self' | 'admin',
+  ) {
+    if (mode === 'self' && (input.departmentId !== undefined || input.officeId !== undefined || input.employeeNumber !== undefined)) {
+      throw AppError.forbidden('Department, office and employee number are set by your administrator');
+    }
+    const user = await this.prisma.client.user.findFirst({
+      where: { id: targetUserId, companyId: actor.companyId, deletedAt: null },
+      select: { id: true, profile: true },
+    });
+    if (!user) throw AppError.notFound('User', targetUserId);
+
+    if (input.departmentId) {
+      const department = await this.prisma.client.department.findFirst({
+        where: { id: input.departmentId, companyId: actor.companyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!department) throw AppError.notFound('Department', input.departmentId);
+    }
+    if (input.officeId) {
+      const office = await this.prisma.client.office.findFirst({
+        where: { id: input.officeId, companyId: actor.companyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!office) throw AppError.notFound('Office', input.officeId);
+    }
+
+    const patch = {
+      ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
+      ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
+      ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+      ...(input.phone !== undefined ? { phone: input.phone } : {}),
+      ...(input.jobTitle !== undefined ? { jobTitle: input.jobTitle } : {}),
+      ...(input.departmentId !== undefined ? { departmentId: input.departmentId } : {}),
+      ...(input.officeId !== undefined ? { officeId: input.officeId } : {}),
+      ...(input.employeeNumber !== undefined ? { employeeNumber: input.employeeNumber } : {}),
+    };
+
+    const before = user.profile
+      ? {
+          firstName: user.profile.firstName,
+          lastName: user.profile.lastName,
+          jobTitle: user.profile.jobTitle,
+          departmentId: user.profile.departmentId,
+          officeId: user.profile.officeId,
+        }
+      : null;
+
+    await this.prisma.client.userProfile.upsert({
+      where: { userId: targetUserId },
+      // A user with no profile row yet still deserves an editable profile;
+      // names fall back to empty and can be corrected in the same breath.
+      create: {
+        userId: targetUserId,
+        firstName: input.firstName ?? '',
+        lastName: input.lastName ?? '',
+        displayName: input.displayName ?? null,
+        phone: input.phone ?? null,
+        jobTitle: input.jobTitle ?? null,
+        ...(mode === 'admin'
+          ? {
+              departmentId: input.departmentId ?? null,
+              officeId: input.officeId ?? null,
+              employeeNumber: input.employeeNumber ?? null,
+            }
+          : {}),
+        createdById: actor.id,
+      },
+      update: { ...patch, updatedById: actor.id },
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: targetUserId,
+      previousValues: before ?? undefined,
+      newValues: { ...patch, edited: mode === 'self' ? 'own profile' : 'by administrator' },
+    });
+    return this.findOne(actor, targetUserId);
+  }
+
   async findOne(actor: AuthUser, id: string) {
     const user = await this.prisma.client.user.findFirst({
       where: { id, ...userScopeFilter(actor) },

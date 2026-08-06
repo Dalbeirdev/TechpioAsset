@@ -29,3 +29,34 @@ export const setUserStatusSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 export type SetUserStatusInput = z.infer<typeof setUserStatusSchema>;
+
+/**
+ * v2.11 profile editing — two surfaces, deliberately different.
+ *
+ * Self-service covers what is YOURS to say: name, phone, job title. It stops
+ * exactly where a field starts to drive access — department and office feed the
+ * DEPARTMENT data scope, so letting a user move their own department would let
+ * them choose whose assets they see.
+ */
+export const updateMyProfileSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(60).optional(),
+    lastName: z.string().trim().min(1).max(60).optional(),
+    displayName: z.string().trim().min(2).max(120).optional().nullable(),
+    phone: z.string().trim().max(30).optional().nullable(),
+    jobTitle: z.string().trim().max(120).optional().nullable(),
+  })
+  // Strict on purpose. Zod's default strips unknown keys, which turned a
+  // self-service attempt to set departmentId into a 200 that silently ignored
+  // it - the field feeds the data scope, and "refused with a reason" must never
+  // degrade into "accepted and dropped".
+  .strict();
+export type UpdateMyProfileInput = z.infer<typeof updateMyProfileSchema>;
+
+/** The admin surface adds the org-placement fields self-service must not touch. */
+export const adminUpdateProfileSchema = updateMyProfileSchema.extend({
+  departmentId: z.string().optional().nullable(),
+  officeId: z.string().optional().nullable(),
+  employeeNumber: z.string().trim().max(40).optional().nullable(),
+});
+export type AdminUpdateProfileInput = z.infer<typeof adminUpdateProfileSchema>;
