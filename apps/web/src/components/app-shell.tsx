@@ -12,6 +12,7 @@ import {
   Cpu,
   LayoutDashboard,
   LineChart,
+  Mail,
   Menu,
   BarChart3,
   Package,
@@ -43,6 +44,8 @@ interface NavItem {
   Icon: typeof LayoutDashboard;
   /** Hidden unless the user holds this. The API enforces it regardless. */
   permission?: string;
+  /** Operator console entries: shown only to PLATFORM_ADMIN_EMAILS accounts. */
+  platformOnly?: boolean;
 }
 
 interface NavGroup {
@@ -138,6 +141,9 @@ const NAV_GROUPS: NavGroup[] = [
         permission: PERMISSIONS.INTEGRATIONS_MANAGE,
       },
       { href: '/settings/ai', label: 'AI settings', Icon: Cpu, permission: PERMISSIONS.AI_CONFIGURE },
+      // Operator console - platform plane, not tenant administration.
+      { href: '/platform/mail', label: 'Email (SMTP)', Icon: Mail, platformOnly: true },
+      { href: '/platform/tenants', label: 'Tenants', Icon: Boxes, platformOnly: true },
     ],
   },
 ];
@@ -198,9 +204,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Menu visibility is a convenience, never the control: every route below is
   // independently enforced by the API (spec section 20).
-  // Menu visibility is a convenience, never the control: every route below is
-  // independently enforced by the API (spec section 20).
-  const allowed = (items: NavItem[]) => items.filter((i) => !i.permission || can(i.permission));
+  const allowed = (items: NavItem[]) =>
+    items.filter(
+      (i) =>
+        (!i.permission || can(i.permission)) && (!i.platformOnly || user?.platformAdmin),
+    );
 
   // A group with nothing the user may see is not a group with an empty drawer —
   // it simply is not there.
