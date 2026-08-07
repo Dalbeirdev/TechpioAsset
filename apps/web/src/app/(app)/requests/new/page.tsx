@@ -7,7 +7,9 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { CalendarDays, FileText, Flag, Plus, Send, Tag, Trash2 } from 'lucide-react';
+import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/providers/auth-provider';
 import { Button, Card } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -49,7 +51,7 @@ const PRIORITIES = [
   { value: 'URGENT', label: 'Urgent', dot: 'var(--tone-critical-fg)' },
 ] as const;
 
-const TIPS = [
+const BASE_TIPS = [
   {
     Icon: FileText,
     title: 'Be clear & specific',
@@ -61,16 +63,23 @@ const TIPS = [
     body: 'Choose a date for when you really need it.',
   },
   {
-    Icon: Tag,
-    title: 'Estimate cost',
-    body: 'An accurate cost helps with faster finance approval.',
-  },
-  {
     Icon: Flag,
     title: 'Choose priority wisely',
     body: 'High-priority requests are reviewed on an urgent basis.',
   },
 ] as const;
+
+const COST_TIP = {
+  Icon: Tag,
+  title: 'Estimate cost',
+  body: 'An accurate cost helps with faster finance approval.',
+} as const;
+
+const NOTES_TIP = {
+  Icon: Tag,
+  title: 'Add helpful notes',
+  body: 'A model, spec or link helps IT pick exactly the right equipment.',
+} as const;
 
 const requestSchema = z.object({
   type: z.string().min(1, 'Choose a request type'),
@@ -83,6 +92,7 @@ const requestSchema = z.object({
         description: z.string().min(1, 'Required'),
         quantity: z.coerce.number().int().min(1, 'Min 1'),
         estimatedCost: z.string().optional(),
+        notes: z.string().optional(),
         categoryId: z.string().optional(),
       }),
     )
@@ -92,6 +102,11 @@ type RequestValues = z.infer<typeof requestSchema>;
 
 export default function NewRequestPage() {
   const router = useRouter();
+  const { can } = useAuth();
+  // Money follows the standing rule: only finance roles enter estimated cost.
+  // Everyone else describes the equipment; procurement prices it later. The
+  // server refuses cost from anyone else regardless of what the form shows.
+  const canEnterCost = can(PERMISSIONS.ASSETS_COST_READ);
 
   const form = useForm<RequestValues>({
     resolver: zodResolver(requestSchema),
@@ -100,7 +115,7 @@ export default function NewRequestPage() {
       priority: 'NORMAL',
       businessReason: '',
       requiredBy: '',
-      items: [{ description: '', quantity: 1, estimatedCost: '', categoryId: '' }],
+      items: [{ description: '', quantity: 1, estimatedCost: '', notes: '', categoryId: '' }],
     },
   });
 
@@ -118,7 +133,8 @@ export default function NewRequestPage() {
           items: values.items.map((item) => ({
             description: item.description,
             quantity: item.quantity,
-            ...(item.estimatedCost ? { estimatedCost: item.estimatedCost } : {}),
+            ...(canEnterCost && item.estimatedCost ? { estimatedCost: item.estimatedCost } : {}),
+            ...(item.notes ? { preferredSpec: item.notes } : {}),
             ...(item.categoryId ? { categoryId: item.categoryId } : {}),
           })),
         },
@@ -295,7 +311,7 @@ export default function NewRequestPage() {
                   size="sm"
                   className="border-[var(--color-brand)] text-[var(--color-brand)]"
                   onClick={() =>
-                    append({ description: '', quantity: 1, estimatedCost: '', categoryId: '' })
+                    append({ description: '', quantity: 1, estimatedCost: '', notes: '', categoryId: '' })
                   }
                 >
                   <Plus aria-hidden="true" className="size-3.5" />
@@ -304,17 +320,28 @@ export default function NewRequestPage() {
               </div>
 
               <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)]">
-                <div className="hidden grid-cols-[1fr_5rem_7rem_2.5rem] gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs font-medium text-[var(--color-content-subtle)] sm:grid">
-                  <span>Description</span>
+                <div
+                  className={`hidden gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs font-medium text-[var(--color-content-subtle)] sm:grid ${
+                    canEnterCost
+                      ? 'grid-cols-[1fr_5rem_7rem_10rem_2.5rem]'
+                      : 'grid-cols-[1fr_5rem_12rem_2.5rem]'
+                  }`}
+                >
+                  <span>Equipment name</span>
                   <span>Qty</span>
-                  <span>Est. cost</span>
+                  {canEnterCost ? <span>Est. cost</span> : null}
+                  <span>Notes (optional)</span>
                   <span className="sr-only">Remove</span>
                 </div>
 
                 {fields.map((item, index) => (
                   <fieldset
                     key={item.id}
-                    className="grid items-start gap-3 border-b border-[var(--color-border)] px-3 py-3 last:border-0 sm:grid-cols-[1fr_5rem_7rem_2.5rem]"
+                    className={`grid items-start gap-3 border-b border-[var(--color-border)] px-3 py-3 last:border-0 ${
+                      canEnterCost
+                        ? 'sm:grid-cols-[1fr_5rem_7rem_10rem_2.5rem]'
+                        : 'sm:grid-cols-[1fr_5rem_12rem_2.5rem]'
+                    }`}
                   >
                     <legend className="sr-only">Item {index + 1}</legend>
 
@@ -323,9 +350,9 @@ export default function NewRequestPage() {
                       name={`items.${index}.description`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="sm:sr-only">Description</FormLabel>
+                          <FormLabel className="sm:sr-only">Equipment name</FormLabel>
                           <FormControl>
-                            <Input placeholder="Enter item description" {...field} />
+                            <Input placeholder="e.g. Dell 24-inch monitor" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -346,14 +373,30 @@ export default function NewRequestPage() {
                       )}
                     />
 
+                    {canEnterCost ? (
+                      <FormField
+                        control={form.control}
+                        name={`items.${index}.estimatedCost`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="sm:sr-only">Est. cost</FormLabel>
+                            <FormControl>
+                              <Input inputMode="decimal" placeholder="0.00" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    ) : null}
+
                     <FormField
                       control={form.control}
-                      name={`items.${index}.estimatedCost`}
+                      name={`items.${index}.notes`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="sm:sr-only">Est. cost</FormLabel>
+                          <FormLabel className="sm:sr-only">Notes (optional)</FormLabel>
                           <FormControl>
-                            <Input inputMode="decimal" placeholder="0.00" {...field} />
+                            <Input placeholder="Model, specs or links" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -378,7 +421,9 @@ export default function NewRequestPage() {
               </div>
 
               <p className="text-xs text-[var(--color-content-subtle)]">
-                Estimated cost decides whether finance approval is needed.
+                {canEnterCost
+                  ? 'Estimated cost decides whether finance approval is needed.'
+                  : 'No prices here on purpose — procurement and finance attach costs during approval.'}
               </p>
             </Card>
 
@@ -416,7 +461,7 @@ export default function NewRequestPage() {
             </div>
             <h2 className="text-sm font-semibold">Tips for a smooth approval</h2>
             <ul className="grid gap-4">
-              {TIPS.map(({ Icon, title, body }) => (
+              {[...BASE_TIPS.slice(0, 2), canEnterCost ? COST_TIP : NOTES_TIP, BASE_TIPS[2]].map(({ Icon, title, body }) => (
                 <li key={title} className="flex gap-3">
                   <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[var(--color-brand)]/10">
                     <Icon aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
