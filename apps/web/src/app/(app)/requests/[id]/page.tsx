@@ -2,10 +2,10 @@
 
 import { use, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, CircleDashed, CircleX, Clock, MinusCircle } from 'lucide-react';
+import { Check, CircleDashed, CircleX, Clock, MinusCircle, Paperclip, Trash2 } from 'lucide-react';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
 import { PERMISSIONS, type RequestStatus } from '@techpioasset/domain';
-import { apiFetch, ApiError } from '@/lib/api-client';
+import { apiFetch, apiBaseUrl, getAccessToken, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
@@ -59,6 +59,21 @@ interface RequestDetail {
       profile: { firstName: string; lastName: string } | null;
     } | null;
   }[];
+  attachments: {
+    id: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    caption: string | null;
+    createdAt: string;
+    uploadedById: string | null;
+  }[];
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const DECISION_ICON = {
@@ -88,12 +103,13 @@ function personName(
 
 export default function RequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
 
   const [comment, setComment] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['request', id],
@@ -232,6 +248,101 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </Card>
           ) : null}
+
+          <Card className="p-5">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">Attachments</h2>
+              <label
+                className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2.5 text-xs font-medium hover:bg-[var(--color-surface-sunken)] ${
+                  uploading ? 'pointer-events-none opacity-60' : ''
+                }`}
+              >
+                <Paperclip className="size-3.5" />
+                {uploading ? 'Uploading…' : 'Add file'}
+                <input
+                  type="file"
+                  className="sr-only"
+                  disabled={uploading}
+                  accept="application/pdf,image/jpeg,image/png,image/heic"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!file) return;
+                    setUploading(true);
+                    try {
+                      const form = new FormData();
+                      form.append('file', file);
+                      const res = await fetch(`${apiBaseUrl}/requests/${id}/attachments`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+                        body: form,
+                      });
+                      if (!res.ok) {
+                        const problem = await res.json().catch(() => null);
+                        throw new ApiError(problem, res.status);
+                      }
+                      toast.success('File attached');
+                      await queryClient.invalidateQueries({ queryKey: ['request', id] });
+                    } catch (caught) {
+                      toast.error(
+                        caught instanceof ApiError
+                          ? (caught.problem?.detail ?? caught.problem?.title ?? 'Upload failed')
+                          : 'Upload failed',
+                      );
+                    } finally {
+                      setUploading(false);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {data.attachments.length === 0 ? (
+              <p className="mt-2 text-sm text-[var(--color-content-subtle)]">
+                No files attached. Add a photo of the issue or a spec sheet.
+              </p>
+            ) : (
+              <ul className="mt-3 grid gap-2">
+                {data.attachments.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--color-border)] px-3 py-2 text-sm"
+                  >
+                    <a
+                      href={`${apiBaseUrl}/requests/${id}/attachments/${a.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex min-w-0 items-center gap-2 text-[var(--color-brand)] hover:underline"
+                    >
+                      <Paperclip className="size-3.5 shrink-0" />
+                      <span className="truncate">{a.originalName}</span>
+                      <span className="shrink-0 text-xs text-[var(--color-content-subtle)]">
+                        {formatBytes(a.sizeBytes)}
+                      </span>
+                    </a>
+                    {a.uploadedById === user?.id ? (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${a.originalName}`}
+                        onClick={async () => {
+                          try {
+                            await apiFetch(`/requests/${id}/attachments/${a.id}`, { method: 'DELETE' });
+                            toast.success('Attachment removed');
+                            await queryClient.invalidateQueries({ queryKey: ['request', id] });
+                          } catch {
+                            toast.error('Could not remove');
+                          }
+                        }}
+                        className="shrink-0 rounded p-1 text-[var(--color-content-subtle)] hover:text-[var(--tone-critical-fg)]"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
 
           <Card className="p-5">
             <h2 className="text-sm font-semibold">Comments</h2>

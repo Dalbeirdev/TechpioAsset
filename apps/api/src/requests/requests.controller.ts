@@ -1,6 +1,23 @@
-import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  MaxFileSizeValidator,
+  Param,
+  ParseFilePipe,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import 'multer';
+import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
   approvalDecisionSchema,
@@ -15,8 +32,11 @@ import {
 import { PERMISSIONS, type RequestStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { toCsv } from '../common/csv.js';
+import { AppError } from '../common/errors/app-error.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { RequestsService } from './requests.service.js';
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 const advanceSchema = z.object({ status: requestStatusEnum });
 const cancelSchema = z.object({ reason: z.string().trim().max(500).optional() });
@@ -142,5 +162,63 @@ export class RequestsController {
     @Body(zodBody(requestCommentSchema)) body: { body: string; isInternal: boolean },
   ) {
     return this.requests.addComment(actor, id, body.body, body.isInternal);
+  }
+
+  // Attachments — read permission is enough because the service gates on the
+  // request's own scope (findOne 404s a request the caller may not see).
+  @Post(':id/attachments')
+  @RequirePermissions(PERMISSIONS.REQUESTS_READ)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_ATTACHMENT_BYTES } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Attach a file to a request (photo, spec sheet, quote)' })
+  addAttachment(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: MAX_ATTACHMENT_BYTES })],
+        fileIsRequired: true,
+      }),
+    )
+    file: Express.Multer.File,
+    @Body('caption') caption?: string,
+  ) {
+    if (!file?.buffer) throw new AppError('FILE_REJECTED', 'No file was received');
+    return this.requests.addAttachment(
+      actor,
+      id,
+      { buffer: file.buffer, originalname: file.originalname, mimetype: file.mimetype },
+      caption,
+    );
+  }
+
+  @Get(':id/attachments/:attachmentId')
+  @RequirePermissions(PERMISSIONS.REQUESTS_READ)
+  @ApiOperation({ summary: 'Download a request attachment' })
+  async downloadAttachment(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const att = await this.requests.getAttachment(actor, id, attachmentId);
+    res.set({
+      'Content-Type': att.mimeType,
+      'Content-Disposition': `inline; filename="${encodeURIComponent(att.originalName)}"`,
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(att.data);
+  }
+
+  @Delete(':id/attachments/:attachmentId')
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.REQUESTS_READ)
+  @ApiOperation({ summary: 'Remove a request attachment you added' })
+  removeAttachment(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+  ) {
+    return this.requests.removeAttachment(actor, id, attachmentId);
   }
 }
