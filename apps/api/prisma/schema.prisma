@@ -3189,6 +3189,24 @@ enum WebhookDeliveryStatus {
 
 /// v2.6 A3 - an outbound webhook endpoint a tenant registered. The secret
 /// signs every delivery (HMAC-SHA256 over the raw body); reads mask it.
+/// v2.12 - platform-wide SMTP settings, editable from the operator console so
+/// mail setup never requires a server login. Singleton row (id "default").
+/// The password is AES-256-GCM encrypted - an SMTP key is a credential.
+model MailSettings {
+  id                String  @id @default("default")
+  host              String
+  port              Int     @default(587)
+  secure            Boolean @default(false)
+  username          String?
+  passwordEncrypted String?
+  fromAddress       String
+
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("mail_settings")
+}
+
 model WebhookSubscription {
   id        String @id @default(cuid())
   companyId String
