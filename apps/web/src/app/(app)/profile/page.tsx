@@ -177,6 +177,7 @@ export default function ProfilePage() {
       .join('')
       .toUpperCase() || user.email[0]?.toUpperCase();
   const isPeopleManager = can(PERMISSIONS.USERS_MANAGE);
+  const isSettingsManager = can(PERMISSIONS.SETTINGS_MANAGE);
 
   return (
     <div className="mx-auto grid max-w-2xl gap-4">
@@ -239,8 +240,15 @@ export default function ProfilePage() {
             label="Office"
             value={user.officeName}
             note={
-              isPeopleManager ? (
-                <Link href="/people" className="text-[var(--color-brand)]">Edit on the People page</Link>
+              isPeopleManager || isSettingsManager ? (
+                <span className="flex flex-wrap gap-x-3">
+                  {isPeopleManager ? (
+                    <Link href="/people" className="text-[var(--color-brand)]">Edit on the People page</Link>
+                  ) : null}
+                  {isSettingsManager ? (
+                    <Link href="/settings/offices" className="text-[var(--color-brand)]">Manage offices</Link>
+                  ) : null}
+                </span>
               ) : (
                 'Set by your administrator'
               )

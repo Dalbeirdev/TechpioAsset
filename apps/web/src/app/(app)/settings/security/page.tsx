@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { useMutation } from '@tanstack/react-query';
-import { KeyRound, ShieldCheck, ShieldOff } from 'lucide-react';
+import { KeyRound, Lock, ShieldCheck, ShieldOff } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -25,6 +25,21 @@ const inputCls =
 export default function SecuritySettingsPage() {
   const { user, refresh } = useAuth();
   const toast = useToast();
+
+  // Re-authentication gate: a live session is not proof the account owner is
+  // at the keyboard. Held in memory only - leaving the page or refreshing
+  // asks again. The server verifies too; this is not a client-only curtain.
+  const [confirmed, setConfirmed] = useState(false);
+  const [gatePassword, setGatePassword] = useState('');
+  const gate = useMutation({
+    mutationFn: () =>
+      apiFetch('/auth/confirm-password', { method: 'POST', body: { password: gatePassword } }),
+    onSuccess: () => {
+      setConfirmed(true);
+      setGatePassword('');
+    },
+    onError: () => toast.error('That password is not correct'),
+  });
 
   // MFA enrolment flow state — secret exists only between "start" and "confirm".
   const [enrolment, setEnrolment] = useState<{ secret: string; otpauthUrl: string } | null>(null);
@@ -99,6 +114,47 @@ export default function SecuritySettingsPage() {
   });
 
   if (!user) return <Skeleton className="mx-auto h-96 max-w-2xl" />;
+
+  if (!confirmed) {
+    return (
+      <div className="mx-auto grid max-w-md gap-4 pt-10">
+        <Card className="p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="grid size-9 place-items-center rounded-xl bg-[var(--color-brand)]/10">
+              <Lock aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+            </span>
+            <div>
+              <h1 className="text-base font-semibold">Confirm it&apos;s you</h1>
+              <p className="text-xs text-[var(--color-content-subtle)]">
+                Security settings are locked behind your password.
+              </p>
+            </div>
+          </div>
+          <form
+            className="grid gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (gatePassword) gate.mutate();
+            }}
+          >
+            <input
+              aria-label="Your password"
+              type="password"
+              autoFocus
+              autoComplete="current-password"
+              value={gatePassword}
+              onChange={(e) => setGatePassword(e.target.value)}
+              placeholder="Your password"
+              className={inputCls}
+            />
+            <Button type="submit" loading={gate.isPending} disabled={!gatePassword}>
+              Continue
+            </Button>
+          </form>
+        </Card>
+      </div>
+    );
+  }
 
   const passwordsMatch = newPassword.length > 0 && newPassword === newPasswordAgain;
 

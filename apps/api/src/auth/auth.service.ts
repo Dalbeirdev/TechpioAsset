@@ -432,6 +432,19 @@ export class AuthService {
     });
   }
 
+  /**
+   * Re-authentication gate for sensitive pages. A live session is not proof
+   * the account owner is at the keyboard - a walk-away laptop is. Verifying
+   * the password here lets the web app hold security settings behind a
+   * "confirm it's you" prompt without granting anything new server-side.
+   */
+  async confirmPassword(userId: string, password: string): Promise<void> {
+    const user = await this.prisma.client.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!(await this.passwords.verify(user.passwordHash, password))) {
+      throw new AppError('UNAUTHENTICATED', 'Password is incorrect');
+    }
+  }
+
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
     const user = await this.prisma.client.user.findUniqueOrThrow({ where: { id: userId } });
     if (!(await this.passwords.verify(user.passwordHash, currentPassword))) {

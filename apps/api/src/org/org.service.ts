@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { AuthUser } from '@techpioasset/contracts';
+import { AuditAction } from '@prisma/client';
+import type { AuthUser, CreateOfficeInput, UpdateOfficeInput } from '@techpioasset/contracts';
+import { AppError } from '../common/errors/app-error.js';
 import { tenantFilter } from '../common/scope.js';
+import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { CacheProvider } from '../providers/cache/cache.provider.js';
@@ -21,6 +24,7 @@ export class OrgService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheProvider,
     private readonly config: AppConfig,
+    private readonly audit: AuditService,
   ) {}
 
   private get ttl(): number {
@@ -62,6 +66,98 @@ export class OrgService {
         },
       },
     });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Office management (v2.11). Offices were seed-only until now: readable
+  // everywhere, creatable nowhere. Writes are SETTINGS_MANAGE because org
+  // structure is company configuration, and every write busts the per-company
+  // cache the readers sit behind.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  private static readonly OFFICE_FIELDS = {
+    id: true,
+    code: true,
+    name: true,
+    addressLine1: true,
+    addressLine2: true,
+    city: true,
+    region: true,
+    postalCode: true,
+    country: true,
+    timezone: true,
+    isActive: true,
+  } as const;
+
+  /** Full flat list for the management page - inactive offices included,
+   * because "deactivated" and "invisible to the person who deactivated it"
+   * are very different things. */
+  officesForManagement(actor: AuthUser) {
+    return this.prisma.client.office.findMany({
+      where: { ...tenantFilter(actor), deletedAt: null },
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+      select: OrgService.OFFICE_FIELDS,
+    });
+  }
+
+  async createOffice(actor: AuthUser, input: CreateOfficeInput) {
+    const code = input.code.toUpperCase();
+    const clash = await this.prisma.client.office.findFirst({
+      where: { companyId: actor.companyId, code },
+      select: { id: true },
+    });
+    if (clash) {
+      throw new AppError('CONFLICT', `An office with code ${code} already exists`);
+    }
+    const office = await this.prisma.client.office.create({
+      data: { ...input, code, companyId: actor.companyId, createdById: actor.id },
+      select: OrgService.OFFICE_FIELDS,
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Office',
+      entityId: office.id,
+      newValues: { ...office, edited: 'office created' },
+    });
+    await this.cache.del(`offices:${actor.companyId}`);
+    return office;
+  }
+
+  async updateOffice(actor: AuthUser, officeId: string, input: UpdateOfficeInput) {
+    const before = await this.prisma.client.office.findFirst({
+      where: { id: officeId, ...tenantFilter(actor), deletedAt: null },
+      select: OrgService.OFFICE_FIELDS,
+    });
+    if (!before) throw new AppError('NOT_FOUND', 'Office not found');
+
+    const code = input.code ? input.code.toUpperCase() : undefined;
+    if (code && code !== before.code) {
+      const clash = await this.prisma.client.office.findFirst({
+        where: { companyId: actor.companyId, code, id: { not: officeId } },
+        select: { id: true },
+      });
+      if (clash) {
+        throw new AppError('CONFLICT', `An office with code ${code} already exists`);
+      }
+    }
+    const office = await this.prisma.client.office.update({
+      where: { id: officeId },
+      data: { ...input, ...(code ? { code } : {}), updatedById: actor.id },
+      select: OrgService.OFFICE_FIELDS,
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Office',
+      entityId: officeId,
+      previousValues: before,
+      newValues: office,
+    });
+    await this.cache.del(`offices:${actor.companyId}`);
+    return office;
   }
 
   departments(actor: AuthUser) {
