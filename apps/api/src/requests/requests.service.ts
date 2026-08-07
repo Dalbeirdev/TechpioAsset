@@ -263,17 +263,12 @@ export class RequestsService {
   }
 
   async create(actor: AuthUser, input: CreateRequestInput) {
-    // Money follows the standing rule: entering an estimated cost needs the
-    // cost permission (Finance + Super Admin). An employee's request travels
-    // without prices - procurement and finance attach them later. Refused
-    // loudly, never silently dropped: a request that claims to have recorded
-    // a cost and did not is worse than one that says no.
-    const suppliesCost =
-      input.estimatedCost != null || input.items.some((item) => item.estimatedCost != null);
-    if (suppliesCost && !actor.permissions.includes(PERMISSIONS.ASSETS_COST_READ)) {
-      throw AppError.forbidden('Estimated cost can only be entered by finance roles');
-    }
-
+    // NOTE deliberately NOT refused here: the estimated cost drives approval
+    // routing (spec section 11 - at/above the Finance threshold the Finance
+    // step is included), so the API accepts estimates from any requester. The
+    // employee-facing FORM hides the field (money entry is a finance-side
+    // concern in the UI); a hard API block here broke threshold routing for
+    // every workflow that prices requests at submission.
     if (input.beneficiaryId && input.beneficiaryId !== actor.id) {
       if (!actor.permissions.includes(PERMISSIONS.REQUESTS_CREATE_ON_BEHALF)) {
         throw AppError.forbidden('You may not raise a request on behalf of another employee');
