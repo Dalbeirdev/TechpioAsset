@@ -24,6 +24,8 @@ export function MarketingFooter() {
             { href: '/', label: 'Overview' },
             { href: '/#features', label: 'Features' },
             { href: '/#how', label: 'How it works' },
+            // A real file in public/docs, not a page - opens/downloads directly.
+            { href: '/docs/user-guide.pdf', label: 'User guide (PDF)' },
             { href: '/login', label: 'Sign in' },
           ]}
         />
