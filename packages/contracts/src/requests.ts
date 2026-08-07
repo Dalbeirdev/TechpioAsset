@@ -68,6 +68,11 @@ export const requestListQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((v) => v === 'true'),
+  /** Only requests the caller raised - the "my requests" view. */
+  mine: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
 });
 export type RequestListQuery = z.infer<typeof requestListQuerySchema>;
 

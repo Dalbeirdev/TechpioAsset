@@ -62,6 +62,9 @@ export class RequestsService {
     const filters: Prisma.AssetRequestWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.type ? { type: query.type } : {}),
+      // "My requests" narrows WITHIN the actor's scope, so it can never widen
+      // what a restricted scope would already refuse to show.
+      ...(query.mine ? { requesterId: actor.id } : {}),
       ...(query.q
         ? {
             OR: [

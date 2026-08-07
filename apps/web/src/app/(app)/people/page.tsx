@@ -20,6 +20,8 @@ interface UserRow {
   profile: {
     firstName: string;
     lastName: string;
+    jobTitle: string | null;
+    employeeNumber: string | null;
     department: { id: string; name: string } | null;
     office: { id: string; name: string } | null;
   } | null;
@@ -138,10 +140,78 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     if (ok) setStatus.mutate('DEACTIVATED');
   };
 
+  // Details the admin may set (PATCH /users/:id/profile). Department and
+  // office matter beyond cosmetics: department feeds the DEPARTMENT data
+  // scope, which is exactly why users cannot set these on themselves.
+  const [details, setDetails] = useState({
+    firstName: user.profile?.firstName ?? '',
+    lastName: user.profile?.lastName ?? '',
+    jobTitle: user.profile?.jobTitle ?? '',
+    employeeNumber: user.profile?.employeeNumber ?? '',
+    departmentId: user.profile?.department?.id ?? '',
+    officeId: user.profile?.office?.id ?? '',
+  });
+  const departments = useQuery({
+    queryKey: ['departments'],
+    enabled: canStatus,
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/departments'),
+    staleTime: 60_000,
+  });
+  const offices = useQuery({
+    queryKey: ['offices'],
+    enabled: canStatus,
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/offices'),
+    staleTime: 60_000,
+  });
+
+  const saveDetails = useMutation({
+    mutationFn: () =>
+      apiFetch(`/users/${user.id}/profile`, {
+        method: 'PATCH',
+        body: {
+          firstName: details.firstName.trim(),
+          lastName: details.lastName.trim(),
+          jobTitle: details.jobTitle.trim() || null,
+          employeeNumber: details.employeeNumber.trim() || null,
+          ...(details.departmentId ? { departmentId: details.departmentId } : {}),
+          ...(details.officeId ? { officeId: details.officeId } : {}),
+        },
+      }),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+      toast.success(`${name}'s details updated`);
+    },
+    onError,
+  });
+
+  // Soft delete: the account vanishes from lists and cannot sign in, but the
+  // row - and with it every "who had that laptop when" answer - stays.
+  const removeUser = useMutation({
+    mutationFn: () => apiFetch(`/users/${user.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+      toast.success(`${name} deleted — their asset history is retained`);
+      onClose();
+    },
+    onError,
+  });
+  const deleteUser = async () => {
+    const ok = await confirm({
+      title: `Delete ${name}?`,
+      body: 'They disappear from People and can never sign in again. Their asset assignment history and audit trail are kept, so past laptop custody stays answerable. Refused if equipment is still assigned to them.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (ok) removeUser.mutate();
+  };
+
   const toggleRole = (key: string) =>
     setRoleKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
-  const busy = saveRoles.isPending || setStatus.isPending;
+  const busy =
+    saveRoles.isPending || setStatus.isPending || saveDetails.isPending || removeUser.isPending;
 
   return (
     <div
@@ -152,12 +222,81 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
       onClick={onClose}
     >
       <Card
-        className="w-full max-w-md p-5"
+        className="max-h-[85vh] w-full max-w-lg overflow-y-auto p-5"
         // Stop backdrop clicks inside the card from closing the modal.
       >
         <div ref={trapRef} onClick={(e) => e.stopPropagation()}>
           <h2 className="text-[15px] font-semibold">Manage {name}</h2>
           <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">{user.email}</p>
+
+          {canStatus ? (
+            <fieldset className="mt-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                Details
+              </legend>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Input
+                  aria-label="First name"
+                  value={details.firstName}
+                  onChange={(e) => setDetails((d) => ({ ...d, firstName: e.target.value }))}
+                  placeholder="First name"
+                />
+                <Input
+                  aria-label="Last name"
+                  value={details.lastName}
+                  onChange={(e) => setDetails((d) => ({ ...d, lastName: e.target.value }))}
+                  placeholder="Last name"
+                />
+                <Input
+                  aria-label="Job title"
+                  value={details.jobTitle}
+                  onChange={(e) => setDetails((d) => ({ ...d, jobTitle: e.target.value }))}
+                  placeholder="Job title"
+                />
+                <Input
+                  aria-label="Employee number"
+                  value={details.employeeNumber}
+                  onChange={(e) => setDetails((d) => ({ ...d, employeeNumber: e.target.value }))}
+                  placeholder="Employee number"
+                />
+                <select
+                  aria-label="Department"
+                  value={details.departmentId}
+                  onChange={(e) => setDetails((d) => ({ ...d, departmentId: e.target.value }))}
+                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
+                >
+                  <option value="">No department</option>
+                  {(departments.data ?? []).map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Office"
+                  value={details.officeId}
+                  onChange={(e) => setDetails((d) => ({ ...d, officeId: e.target.value }))}
+                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
+                >
+                  <option value="">No office</option>
+                  {(offices.data ?? []).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                className="mt-3"
+                size="sm"
+                loading={saveDetails.isPending}
+                disabled={busy || !details.firstName.trim() || !details.lastName.trim()}
+                onClick={() => saveDetails.mutate()}
+              >
+                Save details
+              </Button>
+            </fieldset>
+          ) : null}
 
           {canRoles ? (
             <fieldset className="mt-4">
@@ -251,8 +390,23 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                       Deactivate
                     </Button>
                   ) : null}
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    loading={removeUser.isPending}
+                    disabled={busy}
+                    onClick={deleteUser}
+                  >
+                    Delete
+                  </Button>
                 </div>
               )}
+              {!isSelf ? (
+                <p className="mt-2 text-xs text-[var(--color-content-subtle)]">
+                  Delete is a soft delete: the account vanishes and cannot sign in, but asset
+                  assignment history and the audit trail are kept.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
