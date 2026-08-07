@@ -185,6 +185,23 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     onError,
   });
 
+  // Re-send an invitation: fresh 7-day link, the old one dies. The returned
+  // link is shown inline once, same hand-over story as the original invite.
+  const [resentUrl, setResentUrl] = useState<string | null>(null);
+  const resend = useMutation({
+    mutationFn: () =>
+      apiFetch<{ email: string; inviteUrl: string }>(`/users/${user.id}/resend-invite`, {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (data) => {
+      setError(null);
+      setResentUrl(data.inviteUrl);
+      toast.success(`Invitation re-sent to ${data.email}`);
+    },
+    onError,
+  });
+
   // Soft delete: the account vanishes from lists and cannot sign in, but the
   // row - and with it every "who had that laptop when" answer - stays.
   const removeUser = useMutation({
@@ -211,7 +228,11 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     setRoleKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
   const busy =
-    saveRoles.isPending || setStatus.isPending || saveDetails.isPending || removeUser.isPending;
+    saveRoles.isPending ||
+    setStatus.isPending ||
+    saveDetails.isPending ||
+    removeUser.isPending ||
+    resend.isPending;
 
   return (
     <div
@@ -375,6 +396,17 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                 </p>
               ) : (
                 <div className="mt-2 flex flex-wrap gap-2">
+                  {user.status === 'INVITED' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={resend.isPending}
+                      disabled={busy}
+                      onClick={() => resend.mutate()}
+                    >
+                      Resend invitation
+                    </Button>
+                  ) : null}
                   {user.status !== 'ACTIVE' ? (
                     <Button
                       size="sm"
@@ -401,6 +433,23 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                   </Button>
                 </div>
               )}
+              {resentUrl ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-2 py-1.5 text-xs">
+                    {resentUrl}
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(resentUrl);
+                      toast.success('Link copied');
+                    }}
+                  >
+                    <Copy aria-hidden="true" className="size-4" />
+                  </Button>
+                </div>
+              ) : null}
               {!isSelf ? (
                 <p className="mt-2 text-xs text-[var(--color-content-subtle)]">
                   Delete is a soft delete: the account vanishes and cannot sign in, but asset

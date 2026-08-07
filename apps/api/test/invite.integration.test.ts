@@ -90,6 +90,37 @@ describe('inviting a user', () => {
     expect(res.status).toBe(409);
   });
 
+  it('resending issues a fresh link and kills the old one', async () => {
+    const user = await prisma.client.user.findFirst({
+      where: { companyId, email: EMAIL },
+      select: { id: true },
+    });
+
+    const denied = await api(app)
+      .post(`/api/v1/users/${user!.id}/resend-invite`)
+      .set(auth(s.employee))
+      .send({});
+    expect(denied.status).toBe(403);
+
+    const res = await api(app)
+      .post(`/api/v1/users/${user!.id}/resend-invite`)
+      .set(auth(s.superAdmin))
+      .send({});
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.data.inviteUrl).toContain('/accept-invite?token=');
+    expect(res.body.data.inviteUrl).not.toBe(inviteUrl);
+
+    // The ORIGINAL link must now be dead.
+    const oldToken = new URL(inviteUrl).searchParams.get('token')!;
+    const oldAttempt = await api(app)
+      .post('/api/v1/auth/accept-invite')
+      .send({ token: oldToken, password: PASSWORD });
+    expect([400, 422]).toContain(oldAttempt.status);
+
+    // Continue the suite with the fresh link.
+    inviteUrl = res.body.data.inviteUrl;
+  });
+
   it('the invited account cannot sign in before accepting', async () => {
     const res = await api(app)
       .post('/api/v1/auth/login')
@@ -123,6 +154,18 @@ describe('inviting a user', () => {
       .post('/api/v1/auth/login')
       .send({ email: EMAIL, password: PASSWORD });
     expect(login.status, JSON.stringify(login.body)).toBe(200);
+  });
+
+  it('resending for an already-active account is refused', async () => {
+    const user = await prisma.client.user.findFirst({
+      where: { companyId, email: EMAIL },
+      select: { id: true },
+    });
+    const res = await api(app)
+      .post(`/api/v1/users/${user!.id}/resend-invite`)
+      .set(auth(s.superAdmin))
+      .send({});
+    expect(res.status).toBe(409);
   });
 
   it('the link never works twice', async () => {
