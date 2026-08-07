@@ -13,6 +13,8 @@ interface AuditRow {
   action: string;
   entityType: string;
   entityId: string;
+  /** Server-resolved human name for the entity (user, asset tag, role...). */
+  entityLabel: string | null;
   previousValues: Record<string, unknown> | null;
   newValues: Record<string, unknown> | null;
   reason: string | null;
@@ -213,11 +215,17 @@ export default function AuditPage() {
                           {actionLabel(row.action)}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-[var(--color-content-muted)]">
-                        {row.entityType}
-                        <span className="ml-1 font-mono text-xs text-[var(--color-content-subtle)]">
-                          {row.entityId.slice(0, 8)}
-                        </span>
+                      <td className="px-4 py-2.5 text-[var(--color-content-muted)]">
+                        <span className="whitespace-nowrap">{row.entityType}</span>
+                        {row.entityLabel ? (
+                          <span className="ml-1.5 font-medium text-[var(--color-content)]">
+                            {row.entityLabel}
+                          </span>
+                        ) : (
+                          <span className="ml-1 font-mono text-xs text-[var(--color-content-subtle)]">
+                            {row.entityId.slice(0, 8)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{actorName}</td>
                       <td className="max-w-md px-4 py-2.5 text-xs text-[var(--color-content-muted)]">

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, KeyRound, Lock, Pencil, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, CopyPlus, KeyRound, Lock, Pencil, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -26,7 +26,11 @@ interface RoleDetail extends Omit<RoleListItem, 'permissionCount'> {
 interface Catalogue {
   resources: { resource: string; permissions: { key: string; action: string; readOnly: boolean }[] }[];
 }
-type Editor = { mode: 'new' } | { mode: 'edit'; id: string } | null;
+type Editor =
+  | { mode: 'new' }
+  | { mode: 'edit'; id: string }
+  | { mode: 'duplicate'; id: string }
+  | null;
 
 const RESOURCE_LABELS: Record<string, string> = { ai: 'AI', qr: 'QR' };
 const titleize = (s: string) =>
@@ -88,8 +92,9 @@ export default function RolesSettingsPage() {
               <RoleRow
                 key={r.id}
                 role={r}
-                active={editor?.mode === 'edit' && editor.id === r.id}
+                active={editor?.mode !== 'new' && editor != null && 'id' in editor && editor.id === r.id}
                 onEdit={() => setEditor({ mode: 'edit', id: r.id })}
+                onDuplicate={() => setEditor({ mode: 'duplicate', id: r.id })}
               />
             ))
           )}
@@ -131,10 +136,12 @@ function RoleRow({
   role,
   active,
   onEdit,
+  onDuplicate,
 }: {
   role: RoleListItem;
   active: boolean;
   onEdit: () => void;
+  onDuplicate: () => void;
 }) {
   return (
     <Card className={`p-4 transition ${active ? 'ring-2 ring-[var(--color-brand)]' : ''}`}>
@@ -161,13 +168,26 @@ function RoleRow({
             <span className="font-mono text-[11px] text-[var(--color-content-subtle)]">{role.key}</span>
           </div>
         </div>
-        {role.isSystem ? (
-          <span className="shrink-0 text-xs text-[var(--color-content-subtle)]">Fixed</span>
-        ) : (
-          <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${role.name}`}>
-            <Pencil className="size-3.5" /> Edit
+        <div className="flex shrink-0 items-center gap-1">
+          {/* System roles stay fixed (the seed re-syncs them); the editable
+              path is a custom copy. Custom roles can be both edited and used
+              as a starting point for another. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDuplicate}
+            aria-label={`Duplicate ${role.name} as a custom role`}
+          >
+            <CopyPlus className="size-3.5" /> Duplicate
           </Button>
-        )}
+          {role.isSystem ? (
+            <span className="text-xs text-[var(--color-content-subtle)]">Fixed</span>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${role.name}`}>
+              <Pencil className="size-3.5" /> Edit
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -187,11 +207,12 @@ function RoleEditor({
   onDeleted: () => void | Promise<void>;
 }) {
   const toast = useToast();
-  const isNew = editor.mode === 'new';
+  const isNew = editor.mode === 'new' || editor.mode === 'duplicate';
+  const isDuplicate = editor.mode === 'duplicate';
 
   const detail = useQuery({
-    queryKey: ['role', isNew ? 'new' : editor.id],
-    enabled: !isNew,
+    queryKey: ['role', editor.mode === 'new' ? 'new' : editor.id],
+    enabled: editor.mode !== 'new',
     queryFn: () => apiFetch<RoleDetail>(`/roles/${(editor as { id: string }).id}`),
   });
 
@@ -203,15 +224,16 @@ function RoleEditor({
   const [sodAcknowledged, setSodAcknowledged] = useState(false);
   const loaded = detail.data;
 
-  // Prefill from the loaded role once.
+  // Prefill from the loaded role once. A duplicate starts from the source
+  // role's permissions under a new name - the copy is custom and editable.
   useEffect(() => {
     if (loaded) {
-      setName(loaded.name);
+      setName(isDuplicate ? `${loaded.name} (custom)` : loaded.name);
       setDescription(loaded.description ?? '');
       setReadOnly(loaded.isReadOnly);
       setPerms(new Set(loaded.permissions));
     }
-  }, [loaded]);
+  }, [loaded, isDuplicate]);
 
   const readOnlyKeys = useMemo(() => {
     const set = new Set<string>();
@@ -272,7 +294,17 @@ function RoleEditor({
     },
   });
 
-  if (!isNew && detail.isPending) {
+  // duties is allowed but must be an explicit choice: saving with conflicts
+  // requires ticking the acknowledgment below (RBAC-024).
+  const sodConflicts = findSodConflicts([...perms]);
+  const sodKey = sodConflicts.map((c) => c.id).join('|');
+  // A different conflict set is a different decision — re-require the tick.
+  useEffect(() => {
+    setSodAcknowledged(false);
+  }, [sodKey]);
+  const sodBlocked = sodConflicts.length > 0 && !sodAcknowledged;
+
+  if (editor.mode !== 'new' && detail.isPending) {
     return (
       <Card className="grid gap-4 p-6">
         <Skeleton className="h-8 w-48" />
@@ -285,20 +317,17 @@ function RoleEditor({
   const nameError = save.error && name.trim().length < 2 ? 'Give the role a name' : undefined;
   const inUse = !isNew && (loaded?.userCount ?? 0) > 0;
   // Live segregation-of-duties check over the current selection. Combining
-  // duties is allowed but must be an explicit choice: saving with conflicts
-  // requires ticking the acknowledgment below (RBAC-024).
-  const sodConflicts = findSodConflicts([...perms]);
-  const sodKey = sodConflicts.map((c) => c.id).join('|');
-  // A different conflict set is a different decision — re-require the tick.
-  useEffect(() => {
-    setSodAcknowledged(false);
-  }, [sodKey]);
-  const sodBlocked = sodConflicts.length > 0 && !sodAcknowledged;
 
   return (
     <Card className="grid gap-5 p-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-[17px] font-semibold">{isNew ? 'New role' : `Edit ${loaded?.name ?? 'role'}`}</h2>
+        <h2 className="text-[17px] font-semibold">
+          {isDuplicate
+            ? `Duplicate ${loaded?.name ?? 'role'}`
+            : isNew
+              ? 'New role'
+              : `Edit ${loaded?.name ?? 'role'}`}
+        </h2>
         <button
           type="button"
           onClick={onClose}
