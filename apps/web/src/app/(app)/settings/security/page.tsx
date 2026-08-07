@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { useMutation } from '@tanstack/react-query';
-import { KeyRound, Lock, ShieldCheck, ShieldOff } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { KeyRound, Lock, Monitor, ShieldCheck, ShieldOff } from 'lucide-react';
+import type { SessionInfo } from '@techpioasset/contracts';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -316,6 +317,124 @@ export default function SecuritySettingsPage() {
           </div>
         </div>
       </Card>
+
+      <SessionsCard />
     </div>
+  );
+}
+
+/** A short, human device label from a raw user-agent string. */
+function deviceLabel(ua: string | null): string {
+  if (!ua) return 'Unknown device';
+  const os = /Windows/i.test(ua)
+    ? 'Windows'
+    : /Mac OS X|Macintosh/i.test(ua)
+      ? 'macOS'
+      : /Android/i.test(ua)
+        ? 'Android'
+        : /iPhone|iPad|iOS/i.test(ua)
+          ? 'iOS'
+          : /Linux/i.test(ua)
+            ? 'Linux'
+            : 'Unknown OS';
+  const browser = /Edg\//i.test(ua)
+    ? 'Edge'
+    : /Chrome\//i.test(ua)
+      ? 'Chrome'
+      : /Firefox\//i.test(ua)
+        ? 'Firefox'
+        : /Safari\//i.test(ua)
+          ? 'Safari'
+          : 'browser';
+  return `${browser} on ${os}`;
+}
+
+/**
+ * Active sessions (v2.12). Every device currently signed in as you, with a
+ * one-click "sign out everywhere else" — the standard account-security control.
+ * The current device is labelled and never revoked by that action.
+ */
+function SessionsCard() {
+  const toast = useToast();
+  const qc = useQueryClient();
+
+  const sessions = useQuery({
+    queryKey: ['sessions'],
+    queryFn: () => apiFetch<SessionInfo[]>('/auth/sessions'),
+  });
+
+  const revokeOthers = useMutation({
+    mutationFn: () =>
+      apiFetch<{ revoked: number }>('/auth/sessions/revoke-others', { method: 'POST', body: {} }),
+    onSuccess: (r) => {
+      toast.success(
+        r.revoked > 0
+          ? `Signed out of ${r.revoked} other device${r.revoked === 1 ? '' : 's'}`
+          : 'No other devices were signed in',
+      );
+      void qc.invalidateQueries({ queryKey: ['sessions'] });
+    },
+    onError: () => toast.error('Could not sign out other devices'),
+  });
+
+  const list = sessions.data ?? [];
+  const otherCount = list.filter((s) => !s.current).length;
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Monitor aria-hidden="true" className="size-4 text-[var(--color-brand)]" /> Active sessions
+        </h2>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={revokeOthers.isPending}
+          disabled={otherCount === 0}
+          onClick={() => revokeOthers.mutate()}
+        >
+          Sign out other devices
+        </Button>
+      </div>
+      <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+        Every device currently signed in as you. If you see something you don&apos;t recognise, sign
+        out other devices and change your password.
+      </p>
+
+      {sessions.isPending ? (
+        <Skeleton className="mt-3 h-24" />
+      ) : list.length === 0 ? (
+        <p className="mt-3 text-sm text-[var(--color-content-muted)]">No active sessions.</p>
+      ) : (
+        <ul className="mt-3 grid gap-2">
+          {list.map((s) => (
+            <li
+              key={s.id}
+              className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] px-3 py-2.5 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="font-medium">
+                  {deviceLabel(s.device)}
+                  {s.current ? (
+                    <span
+                      className="ml-2 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{
+                        background: 'var(--tone-success-bg)',
+                        color: 'var(--tone-success-fg)',
+                      }}
+                    >
+                      This device
+                    </span>
+                  ) : null}
+                </p>
+                <p className="text-xs text-[var(--color-content-subtle)]">
+                  {s.ipAddress ? `${s.ipAddress} · ` : ''}active {new Date(s.lastActiveAt).toLocaleString()}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

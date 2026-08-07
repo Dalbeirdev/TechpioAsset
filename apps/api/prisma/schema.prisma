@@ -610,6 +610,12 @@ model UserProfile {
   hireDate        DateTime?
   terminationDate DateTime?
 
+  /// v2.12 - personal display preferences the user manages themselves.
+  /// Null means "follow the company/browser default"; they never affect access.
+  locale     String?
+  timezone   String?
+  dateFormat String?
+
   departmentId String?
   officeId     String?
   managerId    String?
