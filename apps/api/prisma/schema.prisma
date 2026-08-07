@@ -472,6 +472,8 @@ model Company {
   timezone     String  @default("UTC")
   logoKey      String?
   isActive     Boolean @default(true)
+  /// v2.12 - Teams/Slack incoming-webhook for high-signal operational alerts.
+  teamAlertWebhookUrl String?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

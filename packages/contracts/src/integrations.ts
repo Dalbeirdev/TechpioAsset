@@ -58,3 +58,21 @@ export const scimPatchSchema = z.object({
     .min(1),
 });
 export type ScimPatchInput = z.infer<typeof scimPatchSchema>;
+
+/**
+ * Team alerts (v2.12): one Teams/Slack incoming-webhook per company, posted to
+ * for high-signal operational events. HTTPS only - an incoming webhook IS the
+ * write credential for the channel, and it never travels in clear.
+ */
+export const setTeamAlertsSchema = z
+  .object({
+    webhookUrl: z
+      .string()
+      .trim()
+      .url()
+      .max(500)
+      .refine((v) => v.startsWith('https://'), 'Webhook URL must use https')
+      .nullable(),
+  })
+  .strict();
+export type SetTeamAlertsInput = z.infer<typeof setTeamAlertsSchema>;

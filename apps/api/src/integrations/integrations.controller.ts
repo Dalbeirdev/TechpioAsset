@@ -3,18 +3,24 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@ne
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createWebhookSchema,
+  setTeamAlertsSchema,
   updateWebhookSchema,
   WEBHOOK_EVENTS,
   type AuthUser,
   type CreateWebhookInput,
+  type SetTeamAlertsInput,
   type UpdateWebhookInput,
 } from '@techpioasset/contracts';
+import { AuditAction } from '@prisma/client';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { AppConfig } from '../config/config.module.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { AppError } from '../common/errors/app-error.js';
+import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ChatProvider } from '../providers/chat/chat.provider.js';
+import { MailProvider } from '../providers/mail/mail.provider.js';
 import { WebhooksService } from './webhooks.service.js';
 
 /**
@@ -28,6 +34,9 @@ export class IntegrationsController {
     private readonly webhooks: WebhooksService,
     private readonly prisma: PrismaService,
     private readonly config: AppConfig,
+    private readonly audit: AuditService,
+    private readonly chat: ChatProvider,
+    private readonly mail: MailProvider,
   ) {}
 
   @Get()
@@ -46,6 +55,10 @@ export class IntegrationsController {
     const ssoEnabled = Boolean(
       this.config.get('ENTRA_TENANT_ID') && this.config.get('ENTRA_CLIENT_ID'),
     );
+    const company = await this.prisma.client.company.findUnique({
+      where: { id: actor.companyId },
+      select: { teamAlertWebhookUrl: true },
+    });
     return {
       sso: { provider: ssoEnabled ? 'entra' : 'disabled', enabled: ssoEnabled },
       scim: {
@@ -54,7 +67,72 @@ export class IntegrationsController {
         lastUsedAt: scimToken?.lastUsedAt ?? null,
       },
       webhooks: { events: WEBHOOK_EVENTS, deadDeliveries: deadCount },
+      teamAlerts: { webhookUrl: company?.teamAlertWebhookUrl ?? null },
+      mail: { provider: this.config.get('MAIL_PROVIDER'), from: this.config.get('MAIL_FROM') },
     };
+  }
+
+  // ── team alerts (v2.12) ───────────────────────────────────────────────────
+  // One Teams/Slack incoming-webhook per company; the notification service
+  // posts high-signal operational events to it.
+
+  @Patch('team-alerts')
+  @RequirePermissions(PERMISSIONS.INTEGRATIONS_MANAGE)
+  @ApiOperation({ summary: 'Set or clear the Teams/Slack alert webhook' })
+  async setTeamAlerts(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(setTeamAlertsSchema)) body: SetTeamAlertsInput,
+  ) {
+    await this.prisma.client.company.update({
+      where: { id: actor.companyId },
+      data: { teamAlertWebhookUrl: body.webhookUrl },
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Company',
+      entityId: actor.companyId,
+      // The URL itself is a channel credential - audit THAT it changed, not it.
+      newValues: { teamAlerts: body.webhookUrl ? 'configured' : 'cleared' },
+    });
+    return { webhookUrl: body.webhookUrl };
+  }
+
+  @Post('team-alerts/test')
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.INTEGRATIONS_MANAGE)
+  @ApiOperation({ summary: 'Post a test message to the configured alert webhook' })
+  async testTeamAlerts(@CurrentUser() actor: AuthUser) {
+    const company = await this.prisma.client.company.findUnique({
+      where: { id: actor.companyId },
+      select: { teamAlertWebhookUrl: true },
+    });
+    if (!company?.teamAlertWebhookUrl) {
+      throw new AppError('VALIDATION_FAILED', 'No alert webhook is configured yet');
+    }
+    const result = await this.chat.post(company.teamAlertWebhookUrl, {
+      title: 'TechpioAsset test alert',
+      text: 'Team alerts are working. High-signal events (overdue approvals, low stock, security alerts) will arrive here.',
+    });
+    return result;
+  }
+
+  @Post('mail/test')
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.INTEGRATIONS_MANAGE)
+  @ApiOperation({
+    summary: 'Send a test email to yourself',
+    description: 'Reports which mail provider handled it - "mock" means email is simulated and nothing was actually delivered.',
+  })
+  async testMail(@CurrentUser() actor: AuthUser) {
+    const provider = this.config.get('MAIL_PROVIDER');
+    await this.mail.send({
+      to: actor.email,
+      subject: 'TechpioAsset test email',
+      text: 'Email delivery is working. Invitations and notification emails will reach inboxes.',
+    });
+    return { provider, delivered: provider !== 'mock', to: actor.email };
   }
 
   // ── webhooks ───────────────────────────────────────────────────────────────
