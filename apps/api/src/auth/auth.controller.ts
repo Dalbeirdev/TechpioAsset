@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
+  acceptInviteRequestSchema,
   changePasswordRequestSchema,
   confirmPasswordRequestSchema,
   forgotPasswordRequestSchema,
@@ -253,6 +254,17 @@ export class AuthController {
     @Body(zodBody(verifyEmailRequestSchema)) body: { token: string },
   ): Promise<void> {
     await this.auth.verifyEmail(body.token);
+  }
+
+  @Post('accept-invite')
+  @Public()
+  @HttpCode(204)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Accept an invitation: set a password and activate the account' })
+  async acceptInvite(
+    @Body(zodBody(acceptInviteRequestSchema)) body: { token: string; password: string },
+  ): Promise<void> {
+    await this.auth.acceptInvite(body.token, body.password);
   }
 
   @Post('confirm-password')

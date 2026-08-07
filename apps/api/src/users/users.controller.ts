@@ -1,13 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   adminUpdateProfileSchema,
+  inviteUserSchema,
   setUserRolesSchema,
   updateMyProfileSchema,
   setUserStatusSchema,
   userListQuerySchema,
   type AdminUpdateProfileInput,
+  type InviteUserInput,
   type AuthUser,
   type SetUserRolesInput,
   type SetUserStatusInput,
@@ -112,6 +114,17 @@ export class UsersController {
     @Body(zodBody(setUserStatusSchema)) body: SetUserStatusInput,
   ) {
     return this.users.setStatus(actor, id, body);
+  }
+
+  @Post('invite')
+  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @ApiOperation({
+    summary: 'Invite a new user',
+    description:
+      'Creates the account as INVITED and emails a 7-day single-use link. The link is also returned once so it can be handed over directly.',
+  })
+  invite(@CurrentUser() actor: AuthUser, @Body(zodBody(inviteUserSchema)) body: InviteUserInput) {
+    return this.users.invite(actor, body);
   }
 
   @Delete(':id')

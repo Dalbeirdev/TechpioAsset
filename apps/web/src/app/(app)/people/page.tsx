@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Download, Search, Settings2 } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Download, Search, Settings2, UserPlus } from 'lucide-react';
 import { PERMISSIONS, SYSTEM_ROLES, findSodConflicts } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
@@ -435,6 +435,229 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   );
 }
 
+/**
+ * Invite a new user (v2.12). Least privilege by default: Registered Employee
+ * is pre-ticked. On success the modal switches to a hand-over view showing
+ * the invite link ONCE, because not every company has email delivery
+ * configured and an invite that cannot reach its person is worthless.
+ */
+function InviteUserModal({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    jobTitle: '',
+    departmentId: '',
+    officeId: '',
+  });
+  const [roleKeys, setRoleKeys] = useState<string[]>(['EMPLOYEE']);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ email: string; inviteUrl: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const tenantRoles = useQuery({
+    queryKey: ['roles'],
+    queryFn: () =>
+      apiFetch<{ key: string; name: string; isSystem: boolean; permissions: string[] }[]>('/roles'),
+    staleTime: 60_000,
+  });
+  const roleOptions =
+    tenantRoles.data ??
+    SYSTEM_ROLES.map((key) => ({ key, name: roleLabel(key), isSystem: true, permissions: [] }));
+  const departments = useQuery({
+    queryKey: ['departments'],
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/departments'),
+    staleTime: 60_000,
+  });
+  const offices = useQuery({
+    queryKey: ['offices'],
+    queryFn: () => apiFetch<{ id: string; name: string }[]>('/offices'),
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const invite = useMutation({
+    mutationFn: () =>
+      apiFetch<{ id: string; email: string; inviteUrl: string }>('/users/invite', {
+        method: 'POST',
+        body: {
+          email: form.email.trim(),
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          jobTitle: form.jobTitle.trim() || null,
+          ...(form.departmentId ? { departmentId: form.departmentId } : {}),
+          ...(form.officeId ? { officeId: form.officeId } : {}),
+          roleKeys,
+        },
+      }),
+    onSuccess: (data) => {
+      setError(null);
+      setResult({ email: data.email, inviteUrl: data.inviteUrl });
+      void queryClient.invalidateQueries({ queryKey: ['people'] });
+    },
+    onError: (caught) => {
+      const message =
+        caught instanceof ApiError
+          ? (caught.problem.detail ?? caught.problem.title)
+          : 'Something went wrong.';
+      setError(message);
+      toast.error(message);
+    },
+  });
+
+  const toggleRole = (key: string) =>
+    setRoleKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const canSubmit =
+    form.firstName.trim() && form.lastName.trim() && /\S+@\S+\.\S+/.test(form.email) && roleKeys.length > 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Invite user"
+      onClick={onClose}
+    >
+      <Card className="max-h-[85vh] w-full max-w-lg overflow-y-auto p-5">
+        <div ref={trapRef} onClick={(e) => e.stopPropagation()}>
+          {result ? (
+            <>
+              <h2 className="text-[15px] font-semibold">Invitation created</h2>
+              <p className="mt-1 text-sm text-[var(--color-content-muted)]">
+                {result.email} has been emailed an invitation. The same link is below —{' '}
+                <span className="font-medium">it is shown only once</span>, so copy it now if you
+                want to hand it over yourself (chat, in person). It works for 7 days, once.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs">
+                  {result.inviteUrl}
+                </code>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(result.inviteUrl);
+                    setCopied(true);
+                    toast.success('Link copied');
+                  }}
+                >
+                  {copied ? (
+                    <Check aria-hidden="true" className="size-4" />
+                  ) : (
+                    <Copy aria-hidden="true" className="size-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="mt-3 text-xs text-[var(--color-content-subtle)]">
+                The account shows as Invited in People until the person sets their password.
+              </p>
+              <div className="mt-4 flex justify-end">
+                <Button size="sm" onClick={onClose}>
+                  Done
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="text-[15px] font-semibold">Invite a new user</h2>
+              <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+                They receive a link to set their own password. Nobody ever types a password for
+                someone else.
+              </p>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Input aria-label="First name" placeholder="First name" value={form.firstName} onChange={set('firstName')} />
+                <Input aria-label="Last name" placeholder="Last name" value={form.lastName} onChange={set('lastName')} />
+                <div className="col-span-2">
+                  <Input aria-label="Email" type="email" placeholder="Work email" value={form.email} onChange={set('email')} />
+                </div>
+                <Input aria-label="Job title" placeholder="Job title (optional)" value={form.jobTitle} onChange={set('jobTitle')} />
+                <select
+                  aria-label="Department"
+                  value={form.departmentId}
+                  onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value }))}
+                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
+                >
+                  <option value="">No department</option>
+                  {(departments.data ?? []).map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Office"
+                  value={form.officeId}
+                  onChange={(e) => setForm((f) => ({ ...f, officeId: e.target.value }))}
+                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
+                >
+                  <option value="">No office</option>
+                  {(offices.data ?? []).map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <fieldset className="mt-4">
+                <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                  Roles
+                </legend>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  {roleOptions.map((r) => (
+                    <label key={r.key} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={roleKeys.includes(r.key)}
+                        onChange={() => toggleRole(r.key)}
+                        className="size-4 rounded border-[var(--color-border-strong)]"
+                      />
+                      <span className="min-w-0 truncate">{r.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              {error ? (
+                <p
+                  role="alert"
+                  className="mt-4 rounded-[var(--radius-control)] border px-3 py-2 text-sm"
+                  style={{
+                    color: 'var(--tone-critical-fg)',
+                    backgroundColor: 'var(--tone-critical-bg)',
+                    borderColor: 'var(--tone-critical-border)',
+                  }}
+                >
+                  {error}
+                </p>
+              ) : null}
+
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onClick={onClose} disabled={invite.isPending}>
+                  Cancel
+                </Button>
+                <Button size="sm" loading={invite.isPending} disabled={!canSubmit} onClick={() => invite.mutate()}>
+                  Send invitation
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function PeopleTable() {
   const { can } = useAuth();
   const toast = useToast();
@@ -445,6 +668,8 @@ function PeopleTable() {
   const [role, setRole] = useState('');
   const [view, setView] = useState<'active' | 'deactivated'>('active');
   const [managing, setManaging] = useState<UserRow | null>(null);
+  const [inviting, setInviting] = useState(false);
+  const canInvite = can(PERMISSIONS.USERS_MANAGE);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -575,6 +800,12 @@ function PeopleTable() {
           <Download aria-hidden="true" className="size-4" />
           Export
         </button>
+        {canInvite ? (
+          <Button onClick={() => setInviting(true)}>
+            <UserPlus aria-hidden="true" className="mr-1.5 size-4" />
+            Invite user
+          </Button>
+        ) : null}
       </div>
 
       <Card>
@@ -697,6 +928,7 @@ function PeopleTable() {
       ) : null}
 
       {managing ? <ManageUserModal user={managing} onClose={() => setManaging(null)} /> : null}
+      {inviting ? <InviteUserModal onClose={() => setInviting(false)} /> : null}
     </div>
   );
 }
