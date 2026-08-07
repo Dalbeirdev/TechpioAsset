@@ -49,7 +49,12 @@ interface AssetDetail {
   availabilityState: AvailabilityState | null;
   ownershipType: OwnershipType | null;
   purchaseDate: string | null;
+  warrantyStartDate: string | null;
   warrantyEndDate: string | null;
+  expectedReplacementDate: string | null;
+  /** Total times this device has been assigned — how "assigned N times" is shown
+   * without revealing who previous holders were. */
+  assignmentCount?: number;
   purchaseCost?: string | null;
   currency?: string | null;
   category: { name: string } | null;
@@ -85,7 +90,15 @@ interface AssetDetail {
   _count: { installedSoftware: number };
 }
 
-type AssetTab = 'overview' | 'hardware' | 'os' | 'software' | 'health' | 'history' | 'financials';
+type AssetTab =
+  | 'overview'
+  | 'lifecycle'
+  | 'hardware'
+  | 'os'
+  | 'software'
+  | 'health'
+  | 'history'
+  | 'financials';
 
 function fmtDate(value: string | null): string {
   if (!value) return '—';
@@ -103,6 +116,21 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
       <dd className="mt-0.5 text-sm font-medium">{value ?? '—'}</dd>
     </div>
   );
+}
+
+/** Whole months between two dates, floored — for age and warranty-remaining. */
+function monthsBetween(from: Date, to: Date): number {
+  return Math.max(
+    0,
+    (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()),
+  );
+}
+
+function humanDuration(months: number): string {
+  if (months <= 0) return '—';
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return [y ? `${y} yr${y > 1 ? 's' : ''}` : '', m ? `${m} mo` : ''].filter(Boolean).join(' ') || '—';
 }
 
 export default function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -200,6 +228,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         {(
           [
             ['overview', 'Overview'],
+            ['lifecycle', 'Lifecycle'],
             ['hardware', 'Hardware'],
             ['os', 'OS & Security'],
             ['software', `Software${data._count.installedSoftware ? ` (${data._count.installedSoftware})` : ''}`],
@@ -267,6 +296,8 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
           ) : null}
         </Card>
       ) : null}
+
+      {tab === 'lifecycle' ? <LifecycleTab data={data} /> : null}
 
       {tab === 'hardware' ? <HardwareTab hw={data.hardwareProfile} /> : null}
       {tab === 'os' ? <OsTab os={data.osInfo} /> : null}
@@ -379,6 +410,148 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
           )}
         </Card>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Device lifecycle (v2.12) — the story of one device, for the person holding it.
+ *
+ * Built entirely from data the asset endpoint already returns and already
+ * anonymises for OWN-scope viewers: purchase and warranty dates, assignment
+ * events (previous holders reduced to a count, never named), and condition /
+ * status changes that stand in for repairs and maintenance. No cost, no vendor,
+ * no colleague identities — those never leave the API for an employee.
+ */
+function LifecycleTab({ data }: { data: AssetDetail }) {
+  const now = new Date();
+  const purchase = data.purchaseDate ? new Date(data.purchaseDate) : null;
+  const warrantyEnd = data.warrantyEndDate ? new Date(data.warrantyEndDate) : null;
+  const ageMonths = purchase ? monthsBetween(purchase, now) : 0;
+  const warrantyMonthsLeft = warrantyEnd && warrantyEnd > now ? monthsBetween(now, warrantyEnd) : 0;
+  const underWarranty = Boolean(warrantyEnd && warrantyEnd > now);
+
+  type Event = { date: Date | null; title: string; detail?: string; tone: string };
+  const events: Event[] = [];
+  if (purchase) events.push({ date: purchase, title: 'Purchased', tone: 'info' });
+  if (data.warrantyStartDate)
+    events.push({ date: new Date(data.warrantyStartDate), title: 'Warranty started', tone: 'success' });
+
+  for (const a of data.assignments) {
+    events.push({
+      date: new Date(a.assignedAt),
+      title: a.user ? 'Assigned to you' : 'Assigned',
+      detail: a.user ? undefined : 'to a team member',
+      tone: 'progress',
+    });
+    if (a.returnedAt)
+      events.push({
+        date: new Date(a.returnedAt),
+        title: 'Returned',
+        detail: a.assetReturn?.conditionIn ? `condition: ${a.assetReturn.conditionIn.toLowerCase()}` : undefined,
+        tone: 'muted',
+      });
+  }
+
+  for (const log of data.conditionLogs) {
+    const bits = [
+      log.previousStatus && log.newStatus && log.previousStatus !== log.newStatus
+        ? `${log.previousStatus.toLowerCase()} → ${log.newStatus.toLowerCase()}`
+        : null,
+      log.previousCondition && log.newCondition && log.previousCondition !== log.newCondition
+        ? `condition ${log.newCondition.toLowerCase()}`
+        : null,
+      log.reason ?? null,
+    ].filter(Boolean);
+    events.push({
+      date: new Date(log.recordedAt),
+      title: 'Status update',
+      detail: bits.join(' · ') || undefined,
+      tone: 'warning',
+    });
+  }
+
+  if (warrantyEnd)
+    events.push({
+      date: warrantyEnd,
+      title: warrantyEnd > now ? 'Warranty ends' : 'Warranty ended',
+      tone: warrantyEnd > now ? 'muted' : 'critical',
+    });
+  if (data.expectedReplacementDate)
+    events.push({
+      date: new Date(data.expectedReplacementDate),
+      title: 'Expected replacement',
+      tone: 'info',
+    });
+
+  // Chronological story, oldest first, ending with where the device stands now.
+  events.sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
+
+  const chips: { label: string; value: string }[] = [
+    { label: 'Purchased', value: fmtDate(data.purchaseDate) },
+    { label: 'Asset age', value: purchase ? humanDuration(ageMonths) : '—' },
+    {
+      label: 'Warranty',
+      value: warrantyEnd
+        ? underWarranty
+          ? `${humanDuration(warrantyMonthsLeft)} left`
+          : 'Expired'
+        : '—',
+    },
+    { label: 'Expected replacement', value: fmtDate(data.expectedReplacementDate) },
+    {
+      label: 'Times assigned',
+      value: String(data.assignmentCount ?? data.assignments.length),
+    },
+  ];
+
+  return (
+    <div className="grid gap-4">
+      <Card className="p-5">
+        <h2 className="text-[15px] font-semibold">Device lifecycle</h2>
+        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+          {chips.map((c) => (
+            <Row key={c.label} label={c.label} value={c.value} />
+          ))}
+        </dl>
+        <p className="mt-4 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-content-subtle)]">
+          This device has been assigned {data.assignmentCount ?? data.assignments.length} time
+          {(data.assignmentCount ?? data.assignments.length) === 1 ? '' : 's'}. Previous holders are
+          not shown.
+        </p>
+      </Card>
+
+      <Card className="p-5">
+        <h2 className="text-[15px] font-semibold">Timeline</h2>
+        {events.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--color-content-muted)]">
+            Nothing recorded for this device yet.
+          </p>
+        ) : (
+          <ol className="mt-4 grid gap-4">
+            {events.map((e, i) => (
+              <li key={i} className="flex gap-3">
+                <span
+                  aria-hidden="true"
+                  className="mt-1 size-2.5 shrink-0 rounded-full"
+                  style={{ background: `var(--tone-${e.tone}-fg)` }}
+                />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {e.title}
+                    {e.detail ? (
+                      <span className="font-normal text-[var(--color-content-muted)]"> — {e.detail}</span>
+                    ) : null}
+                  </p>
+                  <p className="text-xs text-[var(--color-content-subtle)]">
+                    {e.date ? fmtDate(e.date.toISOString()) : '—'}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Card>
     </div>
   );
 }
