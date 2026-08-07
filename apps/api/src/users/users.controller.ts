@@ -127,6 +127,17 @@ export class UsersController {
     return this.users.invite(actor, body);
   }
 
+  @Post(':id/resend-invite')
+  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @ApiOperation({
+    summary: 'Re-send an invitation',
+    description:
+      'Issues a fresh 7-day link (invalidating the old one) for an account still in the Invited state, emails it, and returns it once.',
+  })
+  resendInvite(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.users.resendInvite(actor, id);
+  }
+
   @Delete(':id')
   @HttpCode(204)
   @RequirePermissions(PERMISSIONS.USERS_MANAGE)

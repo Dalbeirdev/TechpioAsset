@@ -492,26 +492,7 @@ export class UsersService {
       select: { id: true, email: true },
     });
 
-    const token = await this.auth.issueInviteToken(user.id);
-    const inviteUrl = `${this.config.get('WEB_URL')}/accept-invite?token=${token}`;
-
-    // Best effort: a mail failure must not lose the invite - the link is
-    // returned to the inviter either way.
-    try {
-      await this.mail.send({
-        to: user.email,
-        subject: 'You have been invited to TechpioAsset',
-        text: [
-          `${input.firstName}, you have been invited to your company's TechpioAsset workspace.`,
-          '',
-          `Set your password and sign in here: ${inviteUrl}`,
-          '',
-          'The link is valid for 7 days and can be used once.',
-        ].join('\n'),
-      });
-    } catch (error) {
-      this.logger.error(`Invite email failed to send: ${(error as Error).message}`);
-    }
+    const inviteUrl = await this.sendInviteLink(user.id, user.email, input.firstName);
 
     await this.audit.record({
       companyId: actor.companyId,
@@ -523,6 +504,67 @@ export class UsersService {
     });
 
     return { id: user.id, email: user.email, inviteUrl };
+  }
+
+  /**
+   * Re-send an invitation (v2.12). Only INVITED accounts qualify - an active
+   * account holding a fresh set-password link would be a password reset that
+   * skipped the current password. Issuing the new token invalidates any
+   * outstanding one, so exactly one link works at any moment.
+   */
+  async resendInvite(actor: AuthUser, id: string) {
+    const target = await this.prisma.client.user.findFirst({
+      where: { id, companyId: actor.companyId, deletedAt: null },
+      select: { id: true, email: true, status: true, profile: { select: { firstName: true } } },
+    });
+    if (!target) throw AppError.notFound('User', id);
+    if (target.status !== 'INVITED') {
+      throw new AppError('CONFLICT', 'This account has already been activated', {
+        detail: 'Only accounts still in the Invited state can have their invitation re-sent.',
+      });
+    }
+
+    const inviteUrl = await this.sendInviteLink(
+      target.id,
+      target.email,
+      target.profile?.firstName ?? 'Hello',
+    );
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: target.id,
+      newValues: { email: target.email, note: 'Invitation re-sent - previous link invalidated' },
+    });
+
+    return { id: target.id, email: target.email, inviteUrl };
+  }
+
+  /** Issue a fresh invite token (killing any outstanding one) and email the link, best effort. */
+  private async sendInviteLink(userId: string, email: string, firstName: string) {
+    const token = await this.auth.issueInviteToken(userId);
+    const inviteUrl = `${this.config.get('WEB_URL')}/accept-invite?token=${token}`;
+
+    // Best effort: a mail failure must not lose the invite - the link is
+    // returned to the inviter either way.
+    try {
+      await this.mail.send({
+        to: email,
+        subject: 'You have been invited to TechpioAsset',
+        text: [
+          `${firstName}, you have been invited to your company's TechpioAsset workspace.`,
+          '',
+          `Set your password and sign in here: ${inviteUrl}`,
+          '',
+          'The link is valid for 7 days and can be used once.',
+        ].join('\n'),
+      });
+    } catch (error) {
+      this.logger.error(`Invite email failed to send: ${(error as Error).message}`);
+    }
+    return inviteUrl;
   }
 
   /**
