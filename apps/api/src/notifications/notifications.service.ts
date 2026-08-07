@@ -5,6 +5,8 @@ import { AppError } from '../common/errors/app-error.js';
 import { paginate } from '../common/paginate.js';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { CacheProvider } from '../providers/cache/cache.provider.js';
+import { ChatProvider } from '../providers/chat/chat.provider.js';
 import { MailProvider } from '../providers/mail/mail.provider.js';
 import { PushProvider } from '../providers/push/push.provider.js';
 import { QueueProvider } from '../providers/queue/queue.provider.js';
@@ -12,6 +14,28 @@ import { NOTIFICATION_CATALOGUE, isMandatory } from './notification-catalogue.js
 
 export const SEND_NOTIFICATION_JOB = 'notification.send';
 export const SEND_PUSH_JOB = 'notification.push';
+export const SEND_CHAT_JOB = 'notification.chat';
+
+/**
+ * Team alerts (v2.12): the notification types worth interrupting a shared
+ * Teams/Slack channel for. Personal traffic (your request was approved, your
+ * asset is ready) stays out - a channel that repeats every user's inbox gets
+ * muted within a week, and then the alerts that matter are muted with it.
+ */
+const TEAM_ALERT_TYPES: ReadonlySet<NotificationType> = new Set([
+  'APPROVAL_ESCALATED',
+  'RETURN_OVERDUE',
+  'INVOICE_MISMATCH',
+  'WARRANTY_EXPIRATION',
+  'LOW_STOCK',
+  'STOCK_EXPIRING',
+  'LICENSE_EXPIRING',
+  'SEAT_LIMIT_REACHED',
+  'SECURITY_ALERT',
+  'WORK_ORDER_ESCALATED',
+  'AI_PROCESSING_FAILED',
+  'REPORT_FAILED',
+] as NotificationType[]);
 
 export interface NotifyInput {
   companyId: string;
@@ -38,6 +62,13 @@ interface PushJobPayload {
   linkPath?: string;
 }
 
+interface ChatJobPayload {
+  companyId: string;
+  title: string;
+  body: string;
+  linkPath?: string;
+}
+
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
@@ -47,6 +78,8 @@ export class NotificationsService implements OnModuleInit {
     private readonly queue: QueueProvider,
     private readonly mail: MailProvider,
     private readonly push: PushProvider,
+    private readonly chat: ChatProvider,
+    private readonly cache: CacheProvider,
     private readonly config: AppConfig,
   ) {}
 
@@ -61,6 +94,23 @@ export class NotificationsService implements OnModuleInit {
       await this.prisma.client.notification.update({
         where: { id: payload.notificationId },
         data: { deliveredAt: new Date(), simulated: result.simulated },
+      });
+    });
+
+    // Team alerts post to the company's Teams/Slack webhook off the request
+    // path. No webhook configured is a no-op, not an error.
+    this.queue.register<ChatJobPayload>(SEND_CHAT_JOB, async (payload) => {
+      const company = await this.prisma.client.company.findUnique({
+        where: { id: payload.companyId },
+        select: { teamAlertWebhookUrl: true },
+      });
+      if (!company?.teamAlertWebhookUrl) return;
+      await this.chat.post(company.teamAlertWebhookUrl, {
+        title: payload.title,
+        text: payload.body,
+        ...(payload.linkPath
+          ? { linkUrl: `${this.config.get('WEB_URL')}${payload.linkPath}` }
+          : {}),
       });
     });
 
@@ -113,6 +163,23 @@ export class NotificationsService implements OnModuleInit {
         entityId: input.entityId,
       },
     });
+
+    // High-signal types also go to the company's team channel - once per
+    // event, not once per recipient. The same escalation may notify five
+    // people; the cache key collapses them into a single channel post per
+    // hour, which also survives the sweep re-raising an unresolved alert.
+    if (TEAM_ALERT_TYPES.has(input.type)) {
+      const dedupeKey = `team-alert:${input.companyId}:${input.type}:${input.entityId ?? input.title}`;
+      await this.cache.wrap(dedupeKey, 3600, async () => {
+        await this.queue.enqueue<ChatJobPayload>(SEND_CHAT_JOB, {
+          companyId: input.companyId,
+          title: input.title,
+          body: input.body,
+          ...(input.linkPath ? { linkPath: input.linkPath } : {}),
+        });
+        return 1;
+      });
+    }
 
     // Push runs alongside email where the type and the user's preference allow.
     if (

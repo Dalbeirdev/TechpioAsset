@@ -19,6 +19,8 @@ interface Hub {
   sso: { provider: string; enabled: boolean };
   scim: { enabled: boolean; createdAt: string | null; lastUsedAt: string | null };
   webhooks: { events: string[]; deadDeliveries: number };
+  teamAlerts: { webhookUrl: string | null };
+  mail: { provider: string; from: string };
 }
 
 interface WebhookRow {
@@ -72,6 +74,7 @@ export default function IntegrationsPage() {
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [alertUrl, setAlertUrl] = useState<string | null>(null);
 
   const hub = useQuery({ queryKey: ['integrations-hub'], queryFn: () => apiFetch<Hub>('/integrations') });
   const webhooks = useQuery({
@@ -82,6 +85,53 @@ export default function IntegrationsPage() {
     queryKey: ['integrations-deliveries', expanded],
     queryFn: () => apiFetch<DeliveryRow[]>(`/integrations/webhooks/${expanded}/deliveries`),
     enabled: expanded !== null,
+  });
+
+  const saveTeamAlerts = useMutation({
+    mutationFn: (webhookUrl: string | null) =>
+      apiFetch<{ webhookUrl: string | null }>('/integrations/team-alerts', {
+        method: 'PATCH',
+        body: { webhookUrl },
+      }),
+    onSuccess: (data) => {
+      toast.success(data.webhookUrl ? 'Team alerts configured' : 'Team alerts turned off');
+      setAlertUrl(null);
+      void queryClient.invalidateQueries({ queryKey: ['integrations-hub'] });
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not save'),
+  });
+
+  const testTeamAlerts = useMutation({
+    mutationFn: () =>
+      apiFetch<{ delivered: boolean; simulated?: boolean }>('/integrations/team-alerts/test', {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (r) =>
+      r.delivered
+        ? toast.success('Test alert posted — check the channel')
+        : toast.error(
+            r.simulated
+              ? 'Chat delivery is simulated on this server (CHAT_PROVIDER is not "webhook")'
+              : 'The webhook refused the test message — check the URL',
+          ),
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Test failed'),
+  });
+
+  const testMail = useMutation({
+    mutationFn: () =>
+      apiFetch<{ provider: string; delivered: boolean; to: string }>('/integrations/mail/test', {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (r) =>
+      r.delivered
+        ? toast.success(`Test email sent to ${r.to}`)
+        : toast.error('Email is SIMULATED on this server — configure SMTP to actually deliver'),
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Test failed'),
   });
 
   const refresh = () => {
@@ -209,6 +259,79 @@ export default function IntegrationsPage() {
               Revoke
             </Button>
           ) : null}
+        </div>
+      </Card>
+
+      <Card className="grid gap-3 p-5">
+        <h2 className="text-sm font-semibold">Team alerts (Teams / Slack)</h2>
+        <p className="text-xs text-[var(--color-content-subtle)]">
+          Paste an incoming-webhook URL from a Teams or Slack channel. High-signal events —
+          overdue approvals, low stock, licence expiry, security alerts — are posted there, once
+          per event. Personal notifications never go to the channel.
+        </p>
+        <Field label="Incoming webhook URL (https)" htmlFor="ta-url">
+          <Input
+            id="ta-url"
+            value={alertUrl ?? hub.data.teamAlerts.webhookUrl ?? ''}
+            onChange={(e) => setAlertUrl(e.target.value)}
+            placeholder="https://outlook.office.com/webhook/… or https://hooks.slack.com/services/…"
+          />
+        </Field>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            loading={saveTeamAlerts.isPending}
+            disabled={alertUrl === null || alertUrl === (hub.data.teamAlerts.webhookUrl ?? '')}
+            onClick={() => saveTeamAlerts.mutate(alertUrl?.trim() ? alertUrl.trim() : null)}
+          >
+            Save
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={testTeamAlerts.isPending}
+            disabled={!hub.data.teamAlerts.webhookUrl}
+            onClick={() => testTeamAlerts.mutate()}
+          >
+            Send test alert
+          </Button>
+          {hub.data.teamAlerts.webhookUrl ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={saveTeamAlerts.isPending}
+              onClick={() => saveTeamAlerts.mutate(null)}
+            >
+              Turn off
+            </Button>
+          ) : null}
+        </div>
+      </Card>
+
+      <Card className="grid gap-3 p-5">
+        <h2 className="text-sm font-semibold">Email delivery</h2>
+        <p className="text-sm">
+          Provider:{' '}
+          <span
+            className="font-semibold"
+            style={
+              hub.data.mail.provider === 'mock' ? { color: 'var(--tone-warning-fg)' } : undefined
+            }
+          >
+            {hub.data.mail.provider === 'mock' ? 'Simulated (no real email is sent)' : 'SMTP'}
+          </span>
+          {'  ·  from '}
+          <code className="text-xs">{hub.data.mail.from}</code>
+        </p>
+        <p className="text-xs text-[var(--color-content-subtle)]">
+          {hub.data.mail.provider === 'mock'
+            ? 'Invitations and notification emails are written to a file on the server instead of being delivered. To send real email, set MAIL_PROVIDER=smtp plus SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD / MAIL_FROM in the server environment and restart the API.'
+            : 'Emails are delivered through the configured SMTP server.'}
+        </p>
+        <div>
+          <Button size="sm" variant="secondary" loading={testMail.isPending} onClick={() => testMail.mutate()}>
+            Send me a test email
+          </Button>
         </div>
       </Card>
 
