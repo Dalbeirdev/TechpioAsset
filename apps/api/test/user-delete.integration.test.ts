@@ -162,18 +162,11 @@ describe('the deactivated view', () => {
   });
 });
 
-describe('estimated cost is a finance field (v2.12)', () => {
-  it('an employee supplying a cost is refused; without one the request is accepted', async () => {
-    const refused = await api(app)
-      .post('/api/v1/requests')
-      .set(auth(s.employee))
-      .send({
-        type: 'ADDITIONAL_EQUIPMENT',
-        businessReason: 'Second monitor for code review work',
-        items: [{ description: 'Monitor', quantity: 1, estimatedCost: '250.00' }],
-      });
-    expect(refused.status).toBe(403);
-
+describe('request items carry notes without prices (v2.12)', () => {
+  it('an employee request with notes and no cost is accepted and the note persists', async () => {
+    // Costs stay accepted at the API for everyone - approval routing depends
+    // on them (spec section 11) - but the employee FORM never sends one; it
+    // sends notes (preferredSpec) instead. This holds the notes path.
     const accepted = await api(app)
       .post('/api/v1/requests')
       .set(auth(s.employee))
@@ -184,22 +177,15 @@ describe('estimated cost is a finance field (v2.12)', () => {
       });
     expect(accepted.status, JSON.stringify(accepted.body)).toBe(201);
 
-    // Finance keeps the field.
-    const finance = await api(app)
-      .post('/api/v1/requests')
-      .set(auth(s.finance))
-      .send({
-        type: 'ADDITIONAL_EQUIPMENT',
-        businessReason: 'Replacement dock for the finance desk',
-        items: [{ description: 'Dock', quantity: 1, estimatedCost: '120.00' }],
-      });
-    expect(finance.status, JSON.stringify(finance.body)).toBe(201);
+    const item = await prisma.client.requestItem.findFirst({
+      where: { requestId: accepted.body.data.id },
+      select: { preferredSpec: true, estimatedCost: true },
+    });
+    expect(item?.preferredSpec).toBe('24-inch, IPS');
+    expect(item?.estimatedCost).toBeNull();
 
-    // Leave no test residue behind.
-    for (const id of [accepted.body.data.id, finance.body.data.id]) {
-      await prisma.client.$executeRawUnsafe('DELETE FROM request_items WHERE "requestId" = $1', id);
-      await prisma.client.$executeRawUnsafe('DELETE FROM asset_requests WHERE id = $1', id);
-    }
+    await prisma.client.$executeRawUnsafe('DELETE FROM request_items WHERE "requestId" = $1', accepted.body.data.id);
+    await prisma.client.$executeRawUnsafe('DELETE FROM asset_requests WHERE id = $1', accepted.body.data.id);
   });
 });
 
