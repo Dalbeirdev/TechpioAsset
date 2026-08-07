@@ -42,7 +42,7 @@ export class BudgetsService {
   // ── cost centres ───────────────────────────────────────────────────────────
 
   async listCostCentres(actor: AuthUser, query: CostCentreListQuery) {
-    return paginate(query, {
+    const page = await paginate(query, {
       count: () =>
         this.prisma.client.costCentre.count({
           where: {
@@ -73,6 +73,13 @@ export class BudgetsService {
           },
         }),
     });
+    // OWN-scope actors (employees) reach this list only as a picker when
+    // raising a purchase request - they get names to choose from, not the
+    // owner's identity or internal notes (v2.12 least-privilege audit, G4).
+    if (actor.scope === 'OWN') {
+      return { ...page, data: page.data.map((row) => ({ ...row, notes: null, owner: null })) };
+    }
+    return page;
   }
 
   async createCostCentre(actor: AuthUser, input: CreateCostCentreInput) {

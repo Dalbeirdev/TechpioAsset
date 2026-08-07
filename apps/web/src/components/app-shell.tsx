@@ -46,6 +46,10 @@ interface NavItem {
   permission?: string;
   /** Operator console entries: shown only to PLATFORM_ADMIN_EMAILS accounts. */
   platformOnly?: boolean;
+  /** Hidden from OWN-scope users (employees): the page would only mirror
+   * their personal view, and least privilege says they should not be shown
+   * company-shaped modules at all. The API stays scoped regardless. */
+  ownScopeHidden?: boolean;
 }
 
 interface NavGroup {
@@ -86,7 +90,13 @@ const NAV_GROUPS: NavGroup[] = [
     key: 'assets',
     label: 'Assets',
     items: [
-      { href: '/assets', label: 'Assets', Icon: Boxes, permission: PERMISSIONS.ASSETS_READ },
+      {
+        href: '/assets',
+        label: 'Assets',
+        Icon: Boxes,
+        permission: PERMISSIONS.ASSETS_READ,
+        ownScopeHidden: true,
+      },
       { href: '/licenses', label: 'Licenses', Icon: KeyRound, permission: PERMISSIONS.LICENSES_READ },
       {
         href: '/maintenance',
@@ -106,6 +116,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Procurement',
         Icon: ShoppingCart,
         permission: PERMISSIONS.PROCUREMENT_PR_READ,
+        ownScopeHidden: true,
       },
       { href: '/inventory', label: 'Inventory', Icon: Boxes, permission: PERMISSIONS.INVENTORY_READ },
       // v2.9 C2: a budget is a money figure, so it follows the cost-read rule.
@@ -207,7 +218,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const allowed = (items: NavItem[]) =>
     items.filter(
       (i) =>
-        (!i.permission || can(i.permission)) && (!i.platformOnly || user?.platformAdmin),
+        (!i.permission || can(i.permission)) &&
+        (!i.platformOnly || user?.platformAdmin) &&
+        (!i.ownScopeHidden || user?.scope !== 'OWN'),
     );
 
   // A group with nothing the user may see is not a group with an empty drawer —

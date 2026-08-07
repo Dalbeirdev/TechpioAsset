@@ -282,7 +282,33 @@ export class AssetsService {
     });
 
     if (!asset) throw AppError.notFound('Asset', id);
-    return asset;
+
+    // OWN-scope viewers (employees looking at their own device) get the
+    // device's history without their colleagues' identities: their own
+    // assignment rows stay named, everyone else's collapse to "assigned
+    // before" - plus a count, so "this device has been assigned 3 times"
+    // stays answerable (v2.12 least-privilege audit, G3). Damage notes on
+    // other people's returns are internal detail and go with the name.
+    if (actor.scope === 'OWN') {
+      return {
+        ...asset,
+        // Internal notes are written by IT for IT.
+        notes: null,
+        assignmentCount: asset.assignments.length,
+        assignments: asset.assignments.map((assignment) =>
+          assignment.user?.id === actor.id
+            ? assignment
+            : {
+                ...assignment,
+                user: null,
+                assetReturn: assignment.assetReturn
+                  ? { ...assignment.assetReturn, damageNotes: null }
+                  : null,
+              },
+        ),
+      };
+    }
+    return { ...asset, assignmentCount: asset.assignments.length };
   }
 
   /** v2.5 H4 — the discovered software inventory, paginated (Software tab). */

@@ -94,6 +94,10 @@ export class RfqService {
         companyId: actor.companyId,
         deletedAt: null,
         ...(purchaseRequestId ? { purchaseRequestId } : {}),
+        // OWN-scope actors (employees) may hold procurement:pr:read for their
+        // own PRs; vendor quotes and comparisons are buyer material, so they
+        // see only RFQs raised from PRs they themselves requested.
+        ...(actor.scope === 'OWN' ? { purchaseRequest: { requesterId: actor.id } } : {}),
       },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -112,7 +116,12 @@ export class RfqService {
   /** One RFQ with its quotes and the comparison a buyer defends a choice with. */
   async find(actor: AuthUser, id: string) {
     const rfq = await this.prisma.client.quoteRequest.findFirst({
-      where: { id, companyId: actor.companyId, deletedAt: null },
+      where: {
+        id,
+        companyId: actor.companyId,
+        deletedAt: null,
+        ...(actor.scope === 'OWN' ? { purchaseRequest: { requesterId: actor.id } } : {}),
+      },
       select: {
         id: true,
         rfqNumber: true,

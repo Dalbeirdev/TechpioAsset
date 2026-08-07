@@ -119,6 +119,45 @@ function Kpi({
   );
 }
 
+// Employee quick actions (OWN scope): the three things an employee actually
+// comes to do, phrased as intents. Each lands on the request form with the
+// type pre-selected.
+const EMPLOYEE_QUICK_ACTIONS: {
+  href: string;
+  label: string;
+  icon: ReactNode;
+  tone: string;
+  perm?: Permission;
+}[] = [
+  {
+    href: '/requests/new',
+    label: 'Request equipment',
+    icon: <ClipboardList className="size-[18px]" />,
+    tone: 'progress',
+    perm: PERMISSIONS.REQUESTS_CREATE,
+  },
+  {
+    href: '/requests/new?type=DAMAGE',
+    label: 'Report an issue',
+    icon: <Wrench className="size-[18px]" />,
+    tone: 'warning',
+    perm: PERMISSIONS.REQUESTS_CREATE,
+  },
+  {
+    href: '/requests/new?type=REPLACEMENT',
+    label: 'Request replacement',
+    icon: <Boxes className="size-[18px]" />,
+    tone: 'info',
+    perm: PERMISSIONS.REQUESTS_CREATE,
+  },
+  {
+    href: '/my-assets',
+    label: 'My assets',
+    icon: <Users className="size-[18px]" />,
+    tone: 'success',
+  },
+];
+
 // Quick actions, each gated by the permission that makes it usable, so a role
 // only ever sees the shortcuts it can actually act on.
 const QUICK_ACTIONS: {
@@ -189,7 +228,9 @@ export default function DashboardPage() {
     !!user && user.permissions.length > 0 && user.permissions.every((p) => isReadOnlyPermission(p as Permission));
   const roleLabel = user?.roles?.[0] ? formatRole(user.roles[0]) : null;
   const scopeLabel = scope ? SCOPE_LABELS[scope] : null;
-  const quickActions = QUICK_ACTIONS.filter((a) => !a.perm || can(a.perm));
+  const quickActions = (user?.scope === 'OWN' ? EMPLOYEE_QUICK_ACTIONS : QUICK_ACTIONS).filter(
+    (a) => !a.perm || can(a.perm),
+  );
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['dashboard-assets'],

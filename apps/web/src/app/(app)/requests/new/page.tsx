@@ -1,7 +1,8 @@
 'use client';
 
+import { Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -101,8 +102,25 @@ const requestSchema = z.object({
 type RequestValues = z.infer<typeof requestSchema>;
 
 export default function NewRequestPage() {
+  // useSearchParams needs a Suspense boundary during prerender.
+  return (
+    <Suspense fallback={null}>
+      <NewRequestForm />
+    </Suspense>
+  );
+}
+
+function NewRequestForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const { can } = useAuth();
+  // Quick actions and per-asset buttons land here with the intent pre-filled:
+  // /requests/new?type=DAMAGE&about=AST-0201 opens a damage report about that
+  // device instead of a blank form.
+  const prefillType = TYPES.some((t) => t.value === params.get('type'))
+    ? (params.get('type') as string)
+    : 'ADDITIONAL_EQUIPMENT';
+  const prefillAbout = params.get('about')?.slice(0, 120) ?? '';
   // Money follows the standing rule: only finance roles enter estimated cost.
   // Everyone else describes the equipment; procurement prices it later. The
   // server refuses cost from anyone else regardless of what the form shows.
@@ -111,11 +129,13 @@ export default function NewRequestPage() {
   const form = useForm<RequestValues>({
     resolver: zodResolver(requestSchema),
     defaultValues: {
-      type: 'ADDITIONAL_EQUIPMENT',
+      type: prefillType,
       priority: 'NORMAL',
       businessReason: '',
       requiredBy: '',
-      items: [{ description: '', quantity: 1, estimatedCost: '', notes: '', categoryId: '' }],
+      items: [
+        { description: prefillAbout, quantity: 1, estimatedCost: '', notes: '', categoryId: '' },
+      ],
     },
   });
 

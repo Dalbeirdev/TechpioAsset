@@ -37,6 +37,16 @@ export class MobileController {
     @Body(zodBody(registerDeviceSchema))
     body: { token: string; platform: 'ios' | 'android'; deviceName?: string },
   ) {
+    // A token already registered to ANOTHER user is refused, not silently
+    // reassigned - re-registering someone else's push token would redirect
+    // their notifications to your handset (v2.12 least-privilege audit, G6).
+    const existing = await this.prisma.client.deviceToken.findUnique({
+      where: { token: body.token },
+      select: { userId: true },
+    });
+    if (existing && existing.userId !== actor.id) {
+      throw new AppError('CONFLICT', 'This device token is registered to another account');
+    }
     await this.prisma.client.deviceToken.upsert({
       where: { token: body.token },
       update: {

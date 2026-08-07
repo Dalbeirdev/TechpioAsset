@@ -672,7 +672,10 @@ export class RequestsService {
 
     const isOwner = request.requesterId === actor.id;
     if (!isOwner && !actor.permissions.includes(PERMISSIONS.REQUESTS_APPROVE)) {
-      throw AppError.forbidden('Only the requester or an approver may cancel this request');
+      // 404, not 403: a guessed id must read the same whether the request
+      // exists outside the caller's reach or not at all - the read path
+      // already follows this convention (v2.12 least-privilege audit, G7).
+      throw AppError.notFound('Request', id);
     }
     assertTransition(requestStatusMachine, request.status as RequestStatus, 'CANCELLED');
 
