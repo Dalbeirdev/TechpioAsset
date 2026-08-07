@@ -55,6 +55,10 @@ export const authUserSchema = z.object({
   permissions: z.array(z.string()),
   scope: z.enum(['ALL', 'DEPARTMENT', 'DIRECT_REPORTS', 'OWN']),
   mfaEnabled: z.boolean(),
+  /** Operator-designated (PLATFORM_ADMIN_EMAILS) - NOT a tenant permission.
+   * Drives visibility of the platform console in the navigation only; every
+   * platform endpoint re-checks the list server-side. */
+  platformAdmin: z.boolean().default(false),
 });
 export type AuthUser = z.infer<typeof authUserSchema>;
 

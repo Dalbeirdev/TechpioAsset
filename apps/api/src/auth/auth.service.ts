@@ -632,6 +632,14 @@ export class AuthService {
       permissions: [...permissions],
       scope,
       mfaEnabled: user.mfaEnabledAt !== null,
+      // Mirror of PlatformGuard's check, for navigation only - the guard
+      // remains the authority on every platform endpoint.
+      platformAdmin: this.config
+        .get('PLATFORM_ADMIN_EMAILS')
+        .split(',')
+        .map((entry: string) => entry.trim().toLowerCase())
+        .filter(Boolean)
+        .includes(user.email.toLowerCase()),
     };
   }
 
