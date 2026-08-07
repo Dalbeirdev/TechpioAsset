@@ -1,23 +1,17 @@
 import { Global, Module } from '@nestjs/common';
-import { AppConfig } from '../../config/config.module.js';
 import { MailProvider } from './mail.provider.js';
-import { LocalMailProvider } from './local-mail.provider.js';
-import { SmtpMailProvider } from './smtp-mail.provider.js';
+import { RoutingMailProvider } from './routing-mail.provider.js';
 
 @Global()
 @Module({
   providers: [
-    {
-      provide: MailProvider,
-      // Selected once at startup from configuration. Call sites depend on the
-      // abstract class, so swapping providers needs no application changes.
-      useFactory: (config: AppConfig): MailProvider =>
-        config.get('MAIL_PROVIDER') === 'smtp'
-          ? new SmtpMailProvider(config)
-          : new LocalMailProvider(config),
-      inject: [AppConfig],
-    },
+    RoutingMailProvider,
+    // Call sites depend on the abstract class; since v2.12 the concrete
+    // behaviour is decided per-send by the router (DB settings first, env
+    // SMTP second, simulated last), because SMTP is now editable from the
+    // operator console and must take effect without a restart.
+    { provide: MailProvider, useExisting: RoutingMailProvider },
   ],
-  exports: [MailProvider],
+  exports: [MailProvider, RoutingMailProvider],
 })
 export class MailModule {}

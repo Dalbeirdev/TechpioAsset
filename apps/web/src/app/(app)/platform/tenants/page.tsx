@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
@@ -101,11 +102,16 @@ export default function TenantsPage() {
 
   return (
     <div className="mx-auto grid max-w-4xl gap-4">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Tenants</h1>
-        <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-          Every workspace on this installation. Suspension blocks all of a tenant's logins.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Tenants</h1>
+          <p className="mt-1 text-sm text-[var(--color-content-muted)]">
+            Every workspace on this installation. Suspension blocks all of a tenant's logins.
+          </p>
+        </div>
+        <Link href="/platform/mail" className="text-sm text-[var(--color-brand)]">
+          Email (SMTP) →
+        </Link>
       </header>
 
       <Card className="grid gap-3 p-5">
