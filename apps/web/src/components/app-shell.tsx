@@ -37,6 +37,7 @@ import { cn } from '@/lib/cn';
 import { ProfileMenu } from './profile-menu';
 import { NotificationBell } from './notification-bell';
 import { ThemeToggle } from './theme-toggle';
+import { RouteGuard, canViewRoute } from './route-guard';
 
 interface NavItem {
   href: string;
@@ -431,7 +432,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           ) : null}
-          {children}
+          {/* A page the user may not view never paints: the guard redirects to
+              the dashboard and we render nothing here in the meantime. */}
+          <RouteGuard user={user} can={can} />
+          {canViewRoute(pathname, user, (p) => can(p)) ? children : null}
         </main>
       </div>
     </div>
