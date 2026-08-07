@@ -162,6 +162,47 @@ describe('the deactivated view', () => {
   });
 });
 
+describe('estimated cost is a finance field (v2.12)', () => {
+  it('an employee supplying a cost is refused; without one the request is accepted', async () => {
+    const refused = await api(app)
+      .post('/api/v1/requests')
+      .set(auth(s.employee))
+      .send({
+        type: 'ADDITIONAL_EQUIPMENT',
+        businessReason: 'Second monitor for code review work',
+        items: [{ description: 'Monitor', quantity: 1, estimatedCost: '250.00' }],
+      });
+    expect(refused.status).toBe(403);
+
+    const accepted = await api(app)
+      .post('/api/v1/requests')
+      .set(auth(s.employee))
+      .send({
+        type: 'ADDITIONAL_EQUIPMENT',
+        businessReason: 'Second monitor for code review work',
+        items: [{ description: 'Monitor', quantity: 1, preferredSpec: '24-inch, IPS' }],
+      });
+    expect(accepted.status, JSON.stringify(accepted.body)).toBe(201);
+
+    // Finance keeps the field.
+    const finance = await api(app)
+      .post('/api/v1/requests')
+      .set(auth(s.finance))
+      .send({
+        type: 'ADDITIONAL_EQUIPMENT',
+        businessReason: 'Replacement dock for the finance desk',
+        items: [{ description: 'Dock', quantity: 1, estimatedCost: '120.00' }],
+      });
+    expect(finance.status, JSON.stringify(finance.body)).toBe(201);
+
+    // Leave no test residue behind.
+    for (const id of [accepted.body.data.id, finance.body.data.id]) {
+      await prisma.client.$executeRawUnsafe('DELETE FROM request_items WHERE "requestId" = $1', id);
+      await prisma.client.$executeRawUnsafe('DELETE FROM asset_requests WHERE id = $1', id);
+    }
+  });
+});
+
 describe('the mine=true request filter', () => {
   it('returns only requests the caller raised', async () => {
     const res = await api(app)
