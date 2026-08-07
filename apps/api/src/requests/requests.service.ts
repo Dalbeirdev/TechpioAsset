@@ -10,9 +10,12 @@ import {
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { requestScopeFilter, tenantFilter } from '../common/scope.js';
+import { AppConfig } from '../config/config.module.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { StorageProvider } from '../providers/storage/storage.provider.js';
+import { validateUpload } from '../providers/storage/file-validation.js';
 import { WebhooksService } from '../integrations/webhooks.service.js';
 import { WorkflowService } from './workflow.service.js';
 
@@ -26,6 +29,8 @@ export class RequestsService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly webhooks: WebhooksService,
+    private readonly storage: StorageProvider,
+    private readonly config: AppConfig,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -222,6 +227,19 @@ export class RequestsService {
                 profile: { select: { firstName: true, lastName: true } },
               },
             },
+          },
+        },
+        attachments: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            originalName: true,
+            mimeType: true,
+            sizeBytes: true,
+            caption: true,
+            createdAt: true,
+            uploadedById: true,
           },
         },
       },
@@ -721,6 +739,106 @@ export class RequestsService {
       data: { requestId: id, authorId: actor.id, body, isInternal },
     });
 
+    return this.findOne(actor, id);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Attachments (v2.12) — a photo of the damage, a spec sheet, a quote. Reuses
+  // the generic Attachment model (assetRequestId), stored privately, validated
+  // by signature not by claimed type. Reachability follows the request's own
+  // scope: findOne 404s a request the actor may not see, so attaching to or
+  // reading attachments of a foreign request is impossible.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  async addAttachment(
+    actor: AuthUser,
+    id: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string },
+    caption?: string,
+  ) {
+    await this.findOne(actor, id); // ownership/scope gate + 404
+
+    const { contentType } = validateUpload({
+      data: file.buffer,
+      declaredMime: file.mimetype,
+      allowedMimes: this.config.get('ALLOWED_UPLOAD_MIME'),
+      maxBytes: this.config.get('MAX_UPLOAD_MB') * 1024 * 1024,
+    });
+
+    const stored = await this.storage.put({
+      prefix: `requests/${actor.companyId}`,
+      originalName: file.originalname,
+      contentType,
+      data: file.buffer,
+    });
+
+    await this.prisma.client.attachment.create({
+      data: {
+        companyId: actor.companyId,
+        entityType: 'AssetRequest',
+        entityId: id,
+        assetRequestId: id,
+        storageKey: stored.key,
+        originalName: file.originalname,
+        mimeType: contentType,
+        sizeBytes: stored.sizeBytes,
+        sha256: stored.sha256,
+        scanStatus: 'SKIPPED',
+        caption: caption ?? null,
+        uploadedById: actor.id,
+      },
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.REQUEST_SUBMITTED,
+      entityType: 'AssetRequest',
+      entityId: id,
+      newValues: { attachment: file.originalname },
+      reason: 'Attachment added',
+    });
+
+    return this.findOne(actor, id);
+  }
+
+  /** Streams one attachment, but only if it belongs to a request the actor may see. */
+  async getAttachment(actor: AuthUser, id: string, attachmentId: string) {
+    await this.findOne(actor, id); // scope gate first
+
+    const attachment = await this.prisma.client.attachment.findFirst({
+      where: {
+        id: attachmentId,
+        assetRequestId: id,
+        companyId: actor.companyId,
+        deletedAt: null,
+      },
+      select: { storageKey: true, originalName: true, mimeType: true },
+    });
+    if (!attachment) throw AppError.notFound('Attachment', attachmentId);
+
+    const data = await this.storage.get(attachment.storageKey);
+    return { data, ...attachment };
+  }
+
+  /** The requester may remove an attachment they added while the request is theirs. */
+  async removeAttachment(actor: AuthUser, id: string, attachmentId: string) {
+    const request = await this.findOne(actor, id);
+    const attachment = await this.prisma.client.attachment.findFirst({
+      where: { id: attachmentId, assetRequestId: id, companyId: actor.companyId, deletedAt: null },
+      select: { id: true, uploadedById: true },
+    });
+    if (!attachment) throw AppError.notFound('Attachment', attachmentId);
+
+    const isOwner = request.requester?.id === actor.id;
+    if (!isOwner && !actor.permissions.includes(PERMISSIONS.REQUESTS_APPROVE)) {
+      throw AppError.notFound('Attachment', attachmentId);
+    }
+
+    await this.prisma.client.attachment.update({
+      where: { id: attachmentId },
+      data: { deletedAt: new Date() },
+    });
     return this.findOne(actor, id);
   }
 
