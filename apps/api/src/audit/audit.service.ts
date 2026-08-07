@@ -109,6 +109,100 @@ export class AuditService {
    * the optional filters. Read-only by construction — this class has no way to
    * amend or delete an entry.
    */
+  /**
+   * Resolve raw entity ids into the names a human recognises (v2.12) - "User
+   * Sukhdev Singh", not "User cmxjaaie". One batched query per entity type on
+   * the page, so the cost is a handful of IN() lookups regardless of page
+   * size. Unknown types or deleted rows fall back to the id.
+   */
+  private async entityLabels(
+    rows: { entityType: string; entityId: string }[],
+  ): Promise<Map<string, string>> {
+    const byType = new Map<string, Set<string>>();
+    for (const row of rows) {
+      if (!byType.has(row.entityType)) byType.set(row.entityType, new Set());
+      byType.get(row.entityType)!.add(row.entityId);
+    }
+    const labels = new Map<string, string>();
+    const put = (type: string, id: string, label: string | null | undefined) => {
+      if (label) labels.set(`${type}:${id}`, label);
+    };
+
+    const lookups: Promise<void>[] = [];
+    for (const [type, idSet] of byType) {
+      const ids = [...idSet];
+      switch (type) {
+        case 'User':
+          lookups.push(
+            this.prisma.client.user
+              .findMany({
+                where: { id: { in: ids } },
+                select: {
+                  id: true,
+                  email: true,
+                  profile: { select: { firstName: true, lastName: true } },
+                },
+              })
+              .then((users) => {
+                for (const u of users)
+                  put(type, u.id, u.profile ? `${u.profile.firstName} ${u.profile.lastName}` : u.email);
+              }),
+          );
+          break;
+        case 'Asset':
+          lookups.push(
+            this.prisma.client.asset
+              .findMany({ where: { id: { in: ids } }, select: { id: true, assetTag: true, name: true } })
+              .then((assets) => {
+                for (const a of assets) put(type, a.id, `${a.assetTag} — ${a.name}`);
+              }),
+          );
+          break;
+        case 'Role':
+          lookups.push(
+            this.prisma.client.role
+              .findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+              .then((roles) => {
+                for (const r of roles) put(type, r.id, r.name);
+              }),
+          );
+          break;
+        case 'Office':
+          lookups.push(
+            this.prisma.client.office
+              .findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+              .then((offices) => {
+                for (const o of offices) put(type, o.id, o.name);
+              }),
+          );
+          break;
+        case 'AssetRequest':
+        case 'Request':
+          lookups.push(
+            this.prisma.client.assetRequest
+              .findMany({ where: { id: { in: ids } }, select: { id: true, requestNumber: true } })
+              .then((requests) => {
+                for (const r of requests) put(type, r.id, r.requestNumber);
+              }),
+          );
+          break;
+        case 'Invoice':
+          lookups.push(
+            this.prisma.client.invoice
+              .findMany({ where: { id: { in: ids } }, select: { id: true, invoiceNumber: true } })
+              .then((invoices) => {
+                for (const inv of invoices) put(type, inv.id, inv.invoiceNumber);
+              }),
+          );
+          break;
+        default:
+          break;
+      }
+    }
+    await Promise.all(lookups);
+    return labels;
+  }
+
   async list(actor: AuthUser, query: AuditQuery) {
     const where: Prisma.AuditLogWhereInput = {
       companyId: actor.companyId,
@@ -126,7 +220,7 @@ export class AuditService {
         : {}),
     };
 
-    return paginate(query, {
+    const page = await paginate(query, {
       count: () => this.prisma.client.auditLog.count({ where }),
       // v2.10 S6 — the total is cached for 15 seconds; the page never is.
       //
@@ -165,5 +259,16 @@ export class AuditService {
           },
         }),
     });
+
+    // Attach human-readable entity labels to the page. Applies to every
+    // audit:read holder equally - Finance sees exactly what an admin sees.
+    const labels = await this.entityLabels(page.data);
+    return {
+      ...page,
+      data: page.data.map((row) => ({
+        ...row,
+        entityLabel: labels.get(`${row.entityType}:${row.entityId}`) ?? null,
+      })),
+    };
   }
 }
