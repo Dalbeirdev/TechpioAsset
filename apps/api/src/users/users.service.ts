@@ -593,6 +593,65 @@ export class UsersService {
   }
 
   /**
+   * Sign in as another user (v2.12). The support move: see exactly what a
+   * user sees, with their permissions and their scope - never more.
+   *
+   * The containment lines, each deliberate:
+   *  - Super Admin accounts can never be impersonated. Nobody needs it, and
+   *    it closes the only privilege-relevant direction.
+   *  - The token is access-only and capped at 15 minutes: no refresh token is
+   *    minted, so the session cannot be renewed - on expiry the browser's
+   *    refresh cookie restores the administrator's own session.
+   *  - Audited from BOTH identities: whatever the impersonated session does,
+   *    the trail starts with who really did it.
+   */
+  async impersonate(actor: AuthUser, targetUserId: string) {
+    if (targetUserId === actor.id) {
+      throw new AppError('VALIDATION_FAILED', 'You are already signed in as yourself');
+    }
+    const target = await this.prisma.client.user.findFirst({
+      where: { id: targetUserId, companyId: actor.companyId, deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        roles: { select: { role: { select: { key: true } } } },
+      },
+    });
+    if (!target) throw AppError.notFound('User', targetUserId);
+    if (target.status !== 'ACTIVE') {
+      throw new AppError('CONFLICT', 'Only active accounts can be impersonated');
+    }
+    if (target.roles.some((r) => r.role.key === 'SUPER_ADMIN')) {
+      throw new AppError('FORBIDDEN', 'Super Admin accounts cannot be impersonated');
+    }
+
+    const user = await this.auth.buildAuthUser(target.id);
+    const issued = await this.tokens.issueAccessOnly({
+      userId: user.id,
+      companyId: user.companyId,
+      permissions: user.permissions,
+      scope: user.scope,
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.LOGIN,
+      entityType: 'User',
+      entityId: target.id,
+      newValues: {
+        impersonation: true,
+        impersonatedBy: actor.email,
+        target: target.email,
+        expiresInSeconds: issued.expiresIn,
+      },
+    });
+
+    return { accessToken: issued.accessToken, expiresIn: issued.expiresIn, user };
+  }
+
+  /**
    * Soft delete (v2.11). The row keeps its id, profile, assignment history and
    * audit trail - "who had that laptop in 2025" must survive the person
    * leaving - but the user vanishes from every list, cannot sign in (status

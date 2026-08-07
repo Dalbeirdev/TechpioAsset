@@ -50,13 +50,19 @@ function roleLabel(key: string): string {
 /** Modal to change a user's roles and account status. Admins only. */
 function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { can, user: me } = useAuth();
+  const { can, user: me, impersonate } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
   const canRoles = can(PERMISSIONS.ROLES_MANAGE);
   const canStatus = can(PERMISSIONS.USERS_MANAGE);
   const canEmployees = can(PERMISSIONS.EMPLOYEES_CREATE);
   const isSelf = me?.id === user.id;
+  // Sign-in-as: active non-Super-Admin accounts only; the server enforces both.
+  const canImpersonate =
+    can(PERMISSIONS.USERS_IMPERSONATE) &&
+    !isSelf &&
+    user.status === 'ACTIVE' &&
+    !user.roles.some((r) => r.role.key === 'SUPER_ADMIN');
   const name = user.profile ? `${user.profile.firstName} ${user.profile.lastName}` : user.email;
 
   const [roleKeys, setRoleKeys] = useState<string[]>(user.roles.map((r) => r.role.key));
@@ -182,6 +188,17 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
       setError(null);
       invalidate();
       toast.success(`${name}'s details updated`);
+    },
+    onError,
+  });
+
+  // Sign in as this user: the provider swaps the in-memory token; the
+  // admin's refresh cookie survives, so the session self-restores on expiry.
+  const signInAs = useMutation({
+    mutationFn: () => impersonate(user.id),
+    onSuccess: () => {
+      toast.success(`Now viewing as ${name} — 15 minutes max`);
+      onClose();
     },
     onError,
   });
@@ -397,6 +414,17 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                 </p>
               ) : (
                 <div className="mt-2 flex flex-wrap gap-2">
+                  {canImpersonate ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={signInAs.isPending}
+                      disabled={busy}
+                      onClick={() => signInAs.mutate()}
+                    >
+                      Sign in as {user.profile?.firstName ?? 'user'}
+                    </Button>
+                  ) : null}
                   {user.status === 'INVITED' ? (
                     <Button
                       size="sm"
