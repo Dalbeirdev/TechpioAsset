@@ -280,6 +280,20 @@ export class AuthController {
     await this.auth.confirmPassword(user.id, body.password);
   }
 
+  @Get('sessions')
+  @ApiOperation({ summary: 'List your active sign-in sessions (devices)' })
+  sessions(@CurrentUser() user: AuthUser, @Req() req: Request) {
+    return this.tokens.listSessions(user.id, this.readRefreshCookie(req));
+  }
+
+  @Post('sessions/revoke-others')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Sign out every other device, keeping this one' })
+  async revokeOtherSessions(@CurrentUser() user: AuthUser, @Req() req: Request) {
+    const revoked = await this.tokens.revokeOtherSessions(user.id, this.readRefreshCookie(req));
+    return { revoked };
+  }
+
   @Post('change-password')
   @HttpCode(204)
   @ApiOperation({ summary: 'Change your own password' })

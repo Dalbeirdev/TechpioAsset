@@ -46,6 +46,9 @@ export const authUserSchema = z.object({
   avatarUrl: z.string().nullable(),
   jobTitle: z.string().nullable(),
   phone: z.string().nullable(),
+  locale: z.string().nullable(),
+  timezone: z.string().nullable(),
+  dateFormat: z.string().nullable(),
   departmentId: z.string().nullable(),
   departmentName: z.string().nullable(),
   officeId: z.string().nullable(),
@@ -103,6 +106,17 @@ export const confirmPasswordRequestSchema = z.object({ password: z.string().min(
 export const acceptInviteRequestSchema = z
   .object({ token: z.string().min(16), password: passwordSchema })
   .strict();
+
+/** One active sign-in session (a refresh-token family), for the security page. */
+export const sessionSchema = z.object({
+  id: z.string(),
+  device: z.string().nullable(),
+  ipAddress: z.string().nullable(),
+  lastActiveAt: z.string(),
+  createdAt: z.string(),
+  current: z.boolean(),
+});
+export type SessionInfo = z.infer<typeof sessionSchema>;
 
 export const mfaEnrolStartResponseSchema = z.object({
   /** Base32 shared secret, shown once so it can be typed in manually. */

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation } from '@tanstack/react-query';
-import { Building2, Check, ChevronRight, Clock, Pencil, ShieldCheck, UserRound, X } from 'lucide-react';
+import { Building2, Check, ChevronRight, Clock, Globe, Pencil, ShieldCheck, UserRound, X } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
@@ -263,6 +263,57 @@ export default function ProfilePage() {
         </dl>
       </Card>
 
+      <Card className="p-5">
+        <h2 className="mb-4 flex items-center gap-3 text-base font-semibold">
+          <span className="grid size-9 place-items-center rounded-xl bg-[var(--color-brand)]/10">
+            <Globe aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+          </span>
+          Preferences
+        </h2>
+        <p className="mb-3 text-xs text-[var(--color-content-subtle)]">
+          How dates and language appear for you. These are personal and change nothing about your
+          access.
+        </p>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+          <PreferenceSelect
+            label="Language"
+            value={user.locale ?? ''}
+            options={[
+              ['', 'System default'],
+              ['en-US', 'English (US)'],
+              ['en-GB', 'English (UK)'],
+              ['en-IN', 'English (India)'],
+              ['hi-IN', 'हिन्दी'],
+            ]}
+            onSave={saveField('locale')}
+          />
+          <PreferenceSelect
+            label="Time zone"
+            value={user.timezone ?? ''}
+            options={[
+              ['', 'System default'],
+              ['Asia/Kolkata', 'India (IST)'],
+              ['UTC', 'UTC'],
+              ['America/New_York', 'US Eastern'],
+              ['Europe/London', 'UK'],
+              ['Asia/Dubai', 'Gulf (GST)'],
+            ]}
+            onSave={saveField('timezone')}
+          />
+          <PreferenceSelect
+            label="Date format"
+            value={user.dateFormat ?? ''}
+            options={[
+              ['', 'System default'],
+              ['DD/MM/YYYY', 'DD/MM/YYYY'],
+              ['MM/DD/YYYY', 'MM/DD/YYYY'],
+              ['YYYY-MM-DD', 'YYYY-MM-DD'],
+            ]}
+            onSave={saveField('dateFormat')}
+          />
+        </dl>
+      </Card>
+
       <Card className="flex flex-wrap items-center justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
           <span className="grid size-9 place-items-center rounded-xl bg-[var(--color-brand)]/10">
@@ -299,6 +350,39 @@ export default function ProfilePage() {
           Security settings <ChevronRight aria-hidden="true" className="size-4" />
         </Link>
       </Card>
+    </div>
+  );
+}
+
+/** A labelled dropdown that saves on change — used for personal preferences. */
+function PreferenceSelect({
+  label,
+  value,
+  options,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  options: [string, string][];
+  onSave: (value: string) => Promise<void>;
+}) {
+  return (
+    <div>
+      <dt className="text-xs text-[var(--color-content-subtle)]">{label}</dt>
+      <dd className="mt-0.5">
+        <select
+          aria-label={label}
+          value={value}
+          onChange={(e) => void onSave(e.target.value)}
+          className="h-9 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
+        >
+          {options.map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </dd>
     </div>
   );
 }

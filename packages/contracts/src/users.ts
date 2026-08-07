@@ -48,6 +48,11 @@ export const updateMyProfileSchema = z
     displayName: z.string().trim().min(2).max(120).optional().nullable(),
     phone: z.string().trim().max(30).optional().nullable(),
     jobTitle: z.string().trim().max(120).optional().nullable(),
+    // v2.12 personal display preferences - safe for self-service; they never
+    // affect access or scope, only how dates and language render for this user.
+    locale: z.string().trim().max(20).optional().nullable(),
+    timezone: z.string().trim().max(60).optional().nullable(),
+    dateFormat: z.string().trim().max(20).optional().nullable(),
   })
   // Strict on purpose. Zod's default strips unknown keys, which turned a
   // self-service attempt to set departmentId into a 200 that silently ignored

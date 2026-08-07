@@ -197,4 +197,67 @@ export class TokenService {
       data: { revokedAt: new Date(), revokedReason: reason },
     });
   }
+
+  /**
+   * Active sign-in sessions for the security page (v2.12). A "session" is a
+   * refresh-token family; tokens rotate within it, so we collapse each family
+   * to its most recent live row. The family of the presented token is flagged
+   * `current` so the UI can label "this device" and refuse to revoke it.
+   */
+  async listSessions(userId: string, currentToken?: string) {
+    const currentFamily = currentToken
+      ? (
+          await this.prisma.client.refreshToken.findUnique({
+            where: { tokenHash: TokenService.hashToken(currentToken) },
+            select: { familyId: true },
+          })
+        )?.familyId
+      : undefined;
+
+    const rows = await this.prisma.client.refreshToken.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { issuedAt: 'desc' },
+      select: {
+        familyId: true,
+        issuedAt: true,
+        rotatedAt: true,
+        ipAddress: true,
+        userAgent: true,
+      },
+    });
+
+    const byFamily = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) if (!byFamily.has(row.familyId)) byFamily.set(row.familyId, row);
+
+    return [...byFamily.values()].map((row) => ({
+      id: row.familyId,
+      device: row.userAgent ?? null,
+      ipAddress: row.ipAddress ?? null,
+      lastActiveAt: (row.rotatedAt ?? row.issuedAt).toISOString(),
+      createdAt: row.issuedAt.toISOString(),
+      current: row.familyId === currentFamily,
+    }));
+  }
+
+  /** "Sign out everywhere else": revoke every family except the current one. */
+  async revokeOtherSessions(userId: string, currentToken?: string): Promise<number> {
+    const currentFamily = currentToken
+      ? (
+          await this.prisma.client.refreshToken.findUnique({
+            where: { tokenHash: TokenService.hashToken(currentToken) },
+            select: { familyId: true },
+          })
+        )?.familyId
+      : undefined;
+
+    const result = await this.prisma.client.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+        ...(currentFamily ? { familyId: { not: currentFamily } } : {}),
+      },
+      data: { revokedAt: new Date(), revokedReason: 'SIGNED_OUT_OTHERS' },
+    });
+    return result.count;
+  }
 }
