@@ -141,6 +141,18 @@ export class UsersController {
     return this.users.resendInvite(actor, id);
   }
 
+  @Post(':id/impersonate')
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.USERS_IMPERSONATE)
+  @ApiOperation({
+    summary: 'Sign in as another user',
+    description:
+      'Returns a 15-minute access-only session with the target\'s exact permissions. Super Admin accounts can never be impersonated. Audited from both identities.',
+  })
+  impersonate(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.users.impersonate(actor, id);
+  }
+
   @Delete(':id')
   @HttpCode(204)
   @RequirePermissions(PERMISSIONS.USERS_MANAGE)

@@ -93,6 +93,35 @@ export class TokenService {
     return { accessToken, expiresIn: this.accessTtlSeconds, refreshToken, refreshExpiresAt };
   }
 
+  /**
+   * Access token WITHOUT a refresh token (v2.12, impersonation). The session
+   * cannot be renewed: when it expires, the browser's refresh cookie - which
+   * still belongs to the administrator - quietly restores their own session.
+   * Capped at 15 minutes regardless of the configured access TTL.
+   */
+  async issueAccessOnly(input: {
+    userId: string;
+    companyId: string;
+    permissions: string[];
+    scope: string;
+  }): Promise<{ accessToken: string; expiresIn: number }> {
+    const expiresIn = Math.min(this.accessTtlSeconds, 900);
+    const accessToken = await this.jwt.signAsync(
+      {
+        sub: input.userId,
+        companyId: input.companyId,
+        perms: input.permissions,
+        scope: input.scope,
+        jti: randomUUID(),
+      } satisfies AccessTokenClaims,
+      {
+        secret: this.config.get('JWT_ACCESS_SECRET'),
+        expiresIn,
+      },
+    );
+    return { accessToken, expiresIn };
+  }
+
   async verifyAccessToken(token: string): Promise<AccessTokenClaims> {
     try {
       return await this.jwt.verifyAsync<AccessTokenClaims>(token, {

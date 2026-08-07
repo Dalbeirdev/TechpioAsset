@@ -65,6 +65,9 @@ export const PERMISSIONS = {
   // Administration
   USERS_READ: 'users:read',
   USERS_MANAGE: 'users:manage',
+  /** Sign in as another user (v2.12). Granted to no explicit role list -
+   * only ALL_PERMISSIONS holders (Super Admin, Company Admin) carry it. */
+  USERS_IMPERSONATE: 'users:impersonate',
   ROLES_MANAGE: 'roles:manage',
   PERMISSIONS_MANAGE: 'permissions:manage',
   CATEGORIES_MANAGE: 'categories:manage',

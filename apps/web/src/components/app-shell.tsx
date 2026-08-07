@@ -154,7 +154,7 @@ const isActive = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { user, status, can } = useAuth();
+  const { user, status, can, impersonating, stopImpersonating } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -395,6 +395,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ) : null}
 
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-4 py-6 lg:px-6">
+          {impersonating ? (
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] border px-4 py-2.5 text-sm"
+              style={{
+                color: 'var(--tone-warning-fg)',
+                backgroundColor: 'var(--tone-warning-bg)',
+                borderColor: 'var(--tone-warning-border)',
+              }}
+            >
+              <span>
+                Viewing as <span className="font-semibold">{user.displayName ?? user.email}</span>{' '}
+                — you are {impersonating.adminName}. This session ends by itself within 15 minutes.
+              </span>
+              <button
+                type="button"
+                onClick={() => void stopImpersonating()}
+                className="rounded-[var(--radius-control)] border border-current px-2.5 py-1 text-xs font-semibold"
+              >
+                Return to my account
+              </button>
+            </div>
+          ) : null}
           {children}
         </main>
       </div>
