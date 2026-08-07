@@ -1,11 +1,12 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Trash2, Plus } from 'lucide-react';
+import { CalendarDays, FileText, Flag, Plus, Send, Tag, Trash2 } from 'lucide-react';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { Button, Card } from '@/components/ui';
 import { Input } from '@/components/ui/input';
@@ -27,13 +28,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-interface Category {
-  id: string;
-  key: string;
-  name: string;
-  subcategories: { id: string; name: string }[];
-}
-
 const TYPES = [
   { value: 'ADDITIONAL_EQUIPMENT', label: 'Additional equipment' },
   { value: 'REPLACEMENT', label: 'Replacement' },
@@ -47,7 +41,36 @@ const TYPES = [
   { value: 'PROJECT_REQUIREMENT', label: 'Project requirement' },
 ] as const;
 
-const PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
+/** Dot colours mirror the priority tones used across the app. */
+const PRIORITIES = [
+  { value: 'LOW', label: 'Low', dot: 'var(--color-content-subtle)' },
+  { value: 'NORMAL', label: 'Normal', dot: 'var(--tone-success-fg)' },
+  { value: 'HIGH', label: 'High', dot: 'var(--tone-warning-fg)' },
+  { value: 'URGENT', label: 'Urgent', dot: 'var(--tone-critical-fg)' },
+] as const;
+
+const TIPS = [
+  {
+    Icon: FileText,
+    title: 'Be clear & specific',
+    body: 'Provide a detailed reason and item description.',
+  },
+  {
+    Icon: CalendarDays,
+    title: 'Set a realistic date',
+    body: 'Choose a date for when you really need it.',
+  },
+  {
+    Icon: Tag,
+    title: 'Estimate cost',
+    body: 'An accurate cost helps with faster finance approval.',
+  },
+  {
+    Icon: Flag,
+    title: 'Choose priority wisely',
+    body: 'High-priority requests are reviewed on an urgent basis.',
+  },
+] as const;
 
 const requestSchema = z.object({
   type: z.string().min(1, 'Choose a request type'),
@@ -69,13 +92,6 @@ type RequestValues = z.infer<typeof requestSchema>;
 
 export default function NewRequestPage() {
   const router = useRouter();
-
-  // Loaded for the "estimated cost drives approval" hint and future category
-  // selection; the query stays even though the field array is the focus.
-  const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => apiFetch<Category[]>('/categories'),
-  });
 
   const form = useForm<RequestValues>({
     resolver: zodResolver(requestSchema),
@@ -128,81 +144,57 @@ export default function NewRequestPage() {
     },
   });
 
+  const priorityDot = (value: string) => PRIORITIES.find((p) => p.value === value)?.dot;
+
   return (
-    <div className="mx-auto grid max-w-2xl gap-4">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">New request</h1>
-        <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-          Your request is routed for approval automatically based on what you ask for and its cost.
-        </p>
+    <div className="mx-auto max-w-6xl">
+      <nav aria-label="Breadcrumb" className="text-sm">
+        <Link href="/requests" className="text-[var(--color-brand)]">
+          Requests
+        </Link>
+        <span className="mx-1.5 text-[var(--color-content-subtle)]">/</span>
+        <span className="text-[var(--color-content-muted)]">New Request</span>
+      </nav>
+
+      <header className="mt-4 flex items-start gap-4">
+        <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[var(--color-brand)]/10">
+          <FileText aria-hidden="true" className="size-6 text-[var(--color-brand)]" />
+        </span>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">New Request</h1>
+          <p className="mt-1 text-sm text-[var(--color-content-muted)]">
+            Your request will be routed for approval automatically based on what you ask for and
+            its cost.
+          </p>
+        </div>
       </header>
 
-      <Form {...form}>
-        <form
-          onSubmit={form.handleSubmit((values) => submit.mutate(values))}
-          className="grid gap-4"
-          noValidate
-        >
-          <Card className="grid gap-4 p-5">
-            <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>What do you need?</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {TYPES.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="businessReason"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Why do you need it?</FormLabel>
-                  <FormControl>
-                    <Textarea rows={3} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    At least 10 characters. Approvers read this first.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit((values) => submit.mutate(values))}
+            className="grid content-start gap-4"
+            noValidate
+          >
+            <Card className="grid gap-5 p-6">
               <FormField
                 control={form.control}
-                name="priority"
+                name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Priority</FormLabel>
+                    <FormLabel>
+                      What do you need? <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                    </FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue />
+                          <SelectValue placeholder="Select a type" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {PRIORITIES.map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {value.charAt(0) + value.slice(1).toLowerCase()}
+                        {TYPES.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -214,52 +206,65 @@ export default function NewRequestPage() {
 
               <FormField
                 control={form.control}
-                name="requiredBy"
+                name="businessReason"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Needed by</FormLabel>
+                    <FormLabel>
+                      Why do you need it?{' '}
+                      <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                    </FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <Textarea
+                        rows={4}
+                        placeholder="Provide a brief description of why you need this."
+                        {...field}
+                      />
                     </FormControl>
+                    <FormDescription>
+                      At least 10 characters. Approvers read this first.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            </div>
-          </Card>
 
-          <Card className="grid gap-4 p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Items</h2>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  append({ description: '', quantity: 1, estimatedCost: '', categoryId: '' })
-                }
-              >
-                <Plus aria-hidden="true" className="size-3.5" />
-                Add item
-              </Button>
-            </div>
-
-            {fields.map((item, index) => (
-              <fieldset
-                key={item.id}
-                className="grid gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] p-3 sm:grid-cols-[1fr_5rem_7rem_auto]"
-              >
-                <legend className="sr-only">Item {index + 1}</legend>
-
+              <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name={`items.${index}.description`}
+                  name="priority"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
+                      <FormLabel>
+                        Priority <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                      </FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <span className="flex items-center gap-2">
+                              <span
+                                aria-hidden="true"
+                                className="size-2 rounded-full"
+                                style={{ background: priorityDot(field.value) }}
+                              />
+                              <SelectValue />
+                            </span>
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {PRIORITIES.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              <span className="flex items-center gap-2">
+                                <span
+                                  aria-hidden="true"
+                                  className="size-2 rounded-full"
+                                  style={{ background: option.dot }}
+                                />
+                                {option.label}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -267,78 +272,167 @@ export default function NewRequestPage() {
 
                 <FormField
                   control={form.control}
-                  name={`items.${index}.quantity`}
+                  name="requiredBy"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Qty</FormLabel>
+                      <FormLabel>Needed by</FormLabel>
                       <FormControl>
-                        <Input type="number" min={1} {...field} />
+                        <Input type="date" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+              </div>
+            </Card>
 
-                <FormField
-                  control={form.control}
-                  name={`items.${index}.estimatedCost`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Est. cost</FormLabel>
-                      <FormControl>
-                        <Input inputMode="decimal" placeholder="0.00" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <Card className="grid gap-4 p-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Items</h2>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="border-[var(--color-brand)] text-[var(--color-brand)]"
+                  onClick={() =>
+                    append({ description: '', quantity: 1, estimatedCost: '', categoryId: '' })
+                  }
+                >
+                  <Plus aria-hidden="true" className="size-3.5" />
+                  Add Item
+                </Button>
+              </div>
 
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Remove item ${index + 1}`}
-                    disabled={fields.length === 1}
-                    onClick={() => remove(index)}
-                  >
-                    <Trash2 aria-hidden="true" className="size-4" />
-                  </Button>
+              <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)]">
+                <div className="hidden grid-cols-[1fr_5rem_7rem_2.5rem] gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs font-medium text-[var(--color-content-subtle)] sm:grid">
+                  <span>Description</span>
+                  <span>Qty</span>
+                  <span>Est. cost</span>
+                  <span className="sr-only">Remove</span>
                 </div>
-              </fieldset>
-            ))}
 
-            {categories ? (
+                {fields.map((item, index) => (
+                  <fieldset
+                    key={item.id}
+                    className="grid items-start gap-3 border-b border-[var(--color-border)] px-3 py-3 last:border-0 sm:grid-cols-[1fr_5rem_7rem_2.5rem]"
+                  >
+                    <legend className="sr-only">Item {index + 1}</legend>
+
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.description`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="sm:sr-only">Description</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter item description" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.quantity`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="sm:sr-only">Qty</FormLabel>
+                          <FormControl>
+                            <Input type="number" min={1} {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.estimatedCost`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="sm:sr-only">Est. cost</FormLabel>
+                          <FormControl>
+                            <Input inputMode="decimal" placeholder="0.00" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <button
+                      type="button"
+                      aria-label={`Remove item ${index + 1}`}
+                      disabled={fields.length === 1}
+                      onClick={() => remove(index)}
+                      className="grid size-9 place-items-center justify-self-end rounded-[var(--radius-control)] disabled:opacity-40"
+                      style={{
+                        color: 'var(--tone-critical-fg)',
+                        backgroundColor: 'var(--tone-critical-bg)',
+                      }}
+                    >
+                      <Trash2 aria-hidden="true" className="size-4" />
+                    </button>
+                  </fieldset>
+                ))}
+              </div>
+
               <p className="text-xs text-[var(--color-content-subtle)]">
                 Estimated cost decides whether finance approval is needed.
               </p>
+            </Card>
+
+            {form.formState.errors.root ? (
+              <p
+                role="alert"
+                className="rounded-[var(--radius-control)] border px-3 py-2 text-sm"
+                style={{
+                  color: 'var(--tone-critical-fg)',
+                  backgroundColor: 'var(--tone-critical-bg)',
+                  borderColor: 'var(--tone-critical-border)',
+                }}
+              >
+                {form.formState.errors.root.message}
+              </p>
             ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => router.back()}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={submit.isPending}>
+                Submit for approval <Send aria-hidden="true" className="ml-1.5 size-4" />
+              </Button>
+            </div>
+          </form>
+        </Form>
+
+        <aside className="content-start">
+          <Card className="grid gap-5 p-5">
+            <div className="grid place-items-center rounded-[var(--radius-card)] bg-[var(--color-brand)]/5 py-6">
+              <span className="grid size-16 place-items-center rounded-2xl bg-[var(--color-brand)]/10">
+                <Send aria-hidden="true" className="size-7 text-[var(--color-brand)]" />
+              </span>
+            </div>
+            <h2 className="text-sm font-semibold">Tips for a smooth approval</h2>
+            <ul className="grid gap-4">
+              {TIPS.map(({ Icon, title, body }) => (
+                <li key={title} className="flex gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[var(--color-brand)]/10">
+                    <Icon aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium">{title}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-content-subtle)]">
+                      {body}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </Card>
-
-          {form.formState.errors.root ? (
-            <p
-              role="alert"
-              className="rounded-[var(--radius-control)] border px-3 py-2 text-sm"
-              style={{
-                color: 'var(--tone-critical-fg)',
-                backgroundColor: 'var(--tone-critical-bg)',
-                borderColor: 'var(--tone-critical-border)',
-              }}
-            >
-              {form.formState.errors.root.message}
-            </p>
-          ) : null}
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => router.back()}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={submit.isPending}>
-              Submit for approval
-            </Button>
-          </div>
-        </form>
-      </Form>
+        </aside>
+      </div>
     </div>
   );
 }
