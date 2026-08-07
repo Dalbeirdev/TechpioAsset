@@ -17,12 +17,14 @@ let prisma: PrismaService;
 let companyId: string;
 
 const EMAIL = 'invitee@techpioasset.test';
+const HR_EMAIL = 'hr-invitee@techpioasset.test';
 const PASSWORD = 'Invitee!Pass2026x';
 
 async function cleanupInvitee() {
   const rows = await prisma.client.$queryRawUnsafe<{ id: string }[]>(
-    'SELECT id FROM users WHERE email = $1',
+    'SELECT id FROM users WHERE email = $1 OR email = $2',
     EMAIL,
+    HR_EMAIL,
   );
   for (const { id } of rows) {
     await prisma.client.$executeRawUnsafe('DELETE FROM verification_tokens WHERE "userId" = $1', id);
@@ -174,6 +176,33 @@ describe('inviting a user', () => {
       .post('/api/v1/auth/accept-invite')
       .send({ token, password: 'Another!Pass2026x' });
     expect([400, 409, 422]).toContain(res.status);
+  });
+
+  it('HR can invite - but only as Registered Employee, and can resend', async () => {
+    // The escalation line: HR minting anything but an EMPLOYEE is refused.
+    const escalation = await api(app)
+      .post('/api/v1/users/invite')
+      .set(auth(s.hr))
+      .send({ email: HR_EMAIL, firstName: 'Joi', lastName: 'Ner', roleKeys: ['IT_ADMIN'] });
+    expect(escalation.status).toBe(403);
+
+    const res = await api(app)
+      .post('/api/v1/users/invite')
+      .set(auth(s.hr))
+      .send({ email: HR_EMAIL, firstName: 'Joi', lastName: 'Ner' });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+
+    const resend = await api(app)
+      .post(`/api/v1/users/${res.body.data.id}/resend-invite`)
+      .set(auth(s.hr))
+      .send({});
+    expect(resend.status, JSON.stringify(resend.body)).toBe(201);
+
+    const user = await prisma.client.user.findFirst({
+      where: { companyId, email: HR_EMAIL },
+      select: { roles: { select: { role: { select: { key: true } } } } },
+    });
+    expect(user?.roles.map((r) => r.role.key)).toEqual(['EMPLOYEE']);
   });
 
   it('refuses an unknown role and a foreign-tenant department', async () => {

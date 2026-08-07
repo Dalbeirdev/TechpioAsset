@@ -427,7 +427,29 @@ export class UsersService {
    * can hand it over directly when email is not configured. The account cannot
    * sign in until the invite is accepted (INVITED blocks login).
    */
+  /**
+   * Who may invite: full user managers (users:manage) or HR-style inviters
+   * (employees:create). The guard decorator can only AND permissions, so this
+   * OR lives here - and it is also where the escalation line is held: an
+   * inviter WITHOUT users:manage may only invite Registered Employees. HR
+   * registering a joiner is fine; HR minting a Super Admin is not.
+   */
+  private assertMayInvite(actor: AuthUser, roleKeys?: string[]): void {
+    const held = new Set(actor.permissions);
+    const fullManager = held.has('users:manage');
+    if (!fullManager && !held.has('employees:create')) {
+      throw AppError.forbidden('You do not have permission to invite users');
+    }
+    if (!fullManager && roleKeys && (roleKeys.length !== 1 || roleKeys[0] !== 'EMPLOYEE')) {
+      throw new AppError('FORBIDDEN', 'You may only invite Registered Employees', {
+        detail:
+          'Granting other roles needs user management permission - ask a user manager to change roles after the person joins.',
+      });
+    }
+  }
+
   async invite(actor: AuthUser, input: InviteUserInput) {
+    this.assertMayInvite(actor, input.roleKeys);
     const existing = await this.prisma.client.user.findFirst({
       where: { companyId: actor.companyId, email: input.email },
       select: { id: true, deletedAt: true },
@@ -513,6 +535,9 @@ export class UsersService {
    * outstanding one, so exactly one link works at any moment.
    */
   async resendInvite(actor: AuthUser, id: string) {
+    // Same OR gate as invite; no role restriction - resending changes nothing
+    // about what the account will be able to do.
+    this.assertMayInvite(actor);
     const target = await this.prisma.client.user.findFirst({
       where: { id, companyId: actor.companyId, deletedAt: null },
       select: { id: true, email: true, status: true, profile: { select: { firstName: true } } },
