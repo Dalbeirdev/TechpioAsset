@@ -11,6 +11,9 @@ const roleKey = z.string().trim().min(1).max(60);
 /** Users list, with an optional role filter on top of the standard page query. */
 export const userListQuerySchema = pageQuerySchema.extend({
   role: roleKey.optional(),
+  /** Deactivated accounts live in their own view instead of padding the
+   * default list with people who cannot sign in. */
+  view: z.enum(['active', 'deactivated']).default('active'),
 });
 export type UserListQuery = z.infer<typeof userListQuerySchema>;
 
