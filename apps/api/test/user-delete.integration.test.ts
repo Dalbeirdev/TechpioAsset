@@ -130,6 +130,38 @@ describe('soft-deleting a user', () => {
   });
 });
 
+describe('the deactivated view', () => {
+  it('deactivated users leave the default list and appear under view=deactivated', async () => {
+    // Reuse the victim before its deletion tests run? No - this block runs
+    // after them, so make a fresh deactivated (not deleted) user.
+    const parked = await prisma.client.user.upsert({
+      where: { companyId_email: { companyId, email: 'parked@techpioasset.test' } },
+      update: { status: 'DEACTIVATED', deletedAt: null },
+      create: {
+        companyId,
+        email: 'parked@techpioasset.test',
+        passwordHash: 'x',
+        status: 'DEACTIVATED',
+        profile: { create: { firstName: 'Parked', lastName: 'Account' } },
+      },
+    });
+
+    const activeList = await api(app)
+      .get('/api/v1/users?q=parked@techpioasset.test')
+      .set(auth(s.superAdmin));
+    expect(activeList.body.data).toHaveLength(0);
+
+    const deactivatedList = await api(app)
+      .get('/api/v1/users?view=deactivated&q=parked@techpioasset.test')
+      .set(auth(s.superAdmin));
+    expect(deactivatedList.body.data).toHaveLength(1);
+    expect(deactivatedList.body.data[0].status).toBe('DEACTIVATED');
+
+    await prisma.client.$executeRawUnsafe('DELETE FROM user_profiles WHERE "userId" = $1', parked.id);
+    await prisma.client.$executeRawUnsafe('DELETE FROM users WHERE id = $1', parked.id);
+  });
+});
+
 describe('the mine=true request filter', () => {
   it('returns only requests the caller raised', async () => {
     const res = await api(app)

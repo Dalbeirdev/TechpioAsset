@@ -28,6 +28,11 @@ export class UsersService {
         userScopeFilter(actor),
         // Soft-deleted users are gone from every list; their history is not.
         { deletedAt: null },
+        // Deactivated accounts have their own view - the default list shows
+        // only people who can (or could, once invited) sign in.
+        query.view === 'deactivated'
+          ? { status: 'DEACTIVATED' as const }
+          : { status: { not: 'DEACTIVATED' as const } },
         query.q
           ? {
               OR: [

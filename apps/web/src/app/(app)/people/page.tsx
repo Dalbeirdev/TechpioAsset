@@ -443,6 +443,7 @@ function PeopleTable() {
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [role, setRole] = useState('');
+  const [view, setView] = useState<'active' | 'deactivated'>('active');
   const [managing, setManaging] = useState<UserRow | null>(null);
 
   useEffect(() => {
@@ -453,12 +454,12 @@ function PeopleTable() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const query = new URLSearchParams({ page: String(page), pageSize: '25' });
+  const query = new URLSearchParams({ page: String(page), pageSize: '25', view });
   if (q) query.set('q', q);
   if (role) query.set('role', role);
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['people', q, role, page],
+    queryKey: ['people', q, role, view, page],
     queryFn: () => apiFetchPage<UserRow>(`/users?${query.toString()}`),
   });
 
@@ -466,13 +467,49 @@ function PeopleTable() {
 
   return (
     <div className="grid gap-4">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">People</h1>
-        <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-          {canManage
-            ? 'Everyone you can see. Manage roles and access from here.'
-            : 'Everyone you are permitted to see.'}
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">People</h1>
+          <p className="mt-1 text-sm text-[var(--color-content-muted)]">
+            {view === 'deactivated'
+              ? 'Deactivated accounts. They keep their history but cannot sign in.'
+              : canManage
+                ? 'Everyone you can see. Manage roles and access from here.'
+                : 'Everyone you are permitted to see.'}
+          </p>
+        </div>
+        {/* Deactivated accounts get their own view instead of padding the
+            default list with people who cannot sign in. */}
+        <div
+          role="radiogroup"
+          aria-label="Which accounts to show"
+          className="inline-flex rounded-[var(--radius-control)] border border-[var(--color-border-strong)] p-0.5"
+        >
+          {(
+            [
+              { value: 'active', label: 'Active' },
+              { value: 'deactivated', label: 'Deactivated' },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={view === opt.value}
+              onClick={() => {
+                setView(opt.value);
+                setPage(1);
+              }}
+              className={
+                view === opt.value
+                  ? 'rounded-[calc(var(--radius-control)-2px)] bg-[var(--color-brand)] px-3 py-1.5 text-sm font-medium text-[var(--color-brand-contrast)]'
+                  : 'rounded-[calc(var(--radius-control)-2px)] px-3 py-1.5 text-sm text-[var(--color-content-muted)] hover:bg-[var(--color-surface-sunken)]'
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
