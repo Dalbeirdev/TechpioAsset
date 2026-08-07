@@ -8,6 +8,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { userScopeFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
+import { TokenService } from '../auth/token.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const SORTABLE = ['email', 'createdAt', 'lastLoginAt', 'status'] as const;
@@ -17,6 +18,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly tokens: TokenService,
   ) {}
 
   /** Scope + filters, ANDed (never spread — see AssetsService.list for why). */
@@ -24,6 +26,8 @@ export class UsersService {
     return {
       AND: [
         userScopeFilter(actor),
+        // Soft-deleted users are gone from every list; their history is not.
+        { deletedAt: null },
         query.q
           ? {
               OR: [
@@ -243,7 +247,7 @@ export class UsersService {
 
   async findOne(actor: AuthUser, id: string) {
     const user = await this.prisma.client.user.findFirst({
-      where: { id, ...userScopeFilter(actor) },
+      where: { id, deletedAt: null, ...userScopeFilter(actor) },
       select: {
         id: true,
         email: true,
@@ -278,7 +282,7 @@ export class UsersService {
   /** Loads a user within the actor's scope, or 404s (never 403 — see findOne). */
   private async loadInScope(actor: AuthUser, id: string) {
     const user = await this.prisma.client.user.findFirst({
-      where: { id, ...userScopeFilter(actor) },
+      where: { id, deletedAt: null, ...userScopeFilter(actor) },
       select: {
         id: true,
         email: true,
@@ -398,5 +402,64 @@ export class UsersService {
     });
 
     return this.findOne(actor, id);
+  }
+
+  /**
+   * Soft delete (v2.11). The row keeps its id, profile, assignment history and
+   * audit trail - "who had that laptop in 2025" must survive the person
+   * leaving - but the user vanishes from every list, cannot sign in (status
+   * DEACTIVATED + tokens revoked), and cannot be picked for new work.
+   *
+   * Deliberately refused while equipment is still out: deleting the holder of
+   * three laptops would strand them in limbo. Return the assets first; the
+   * error says exactly that.
+   */
+  async softDelete(actor: AuthUser, id: string) {
+    if (id === actor.id) {
+      throw new AppError('VALIDATION_FAILED', 'You cannot delete your own account');
+    }
+    const target = await this.loadInScope(actor, id);
+
+    const isSuperAdmin = target.roles.some((r) => r.role.key === 'SUPER_ADMIN');
+    if (
+      isSuperAdmin &&
+      target.status === 'ACTIVE' &&
+      (await this.activeSuperAdminCount(actor.companyId)) <= 1
+    ) {
+      throw new AppError('VALIDATION_FAILED', 'The company must keep at least one active Super Admin', {
+        detail: 'Make someone else a Super Admin before deleting this account.',
+      });
+    }
+
+    const assetsOut = await this.prisma.client.assetAssignment.count({
+      where: { userId: id, returnedAt: null },
+    });
+    if (assetsOut > 0) {
+      throw new AppError(
+        'CONFLICT',
+        `${assetsOut} asset${assetsOut === 1 ? ' is' : 's are'} still assigned to this user`,
+        { detail: 'Return or reassign their equipment first, then delete the account.' },
+      );
+    }
+
+    await this.prisma.client.user.update({
+      where: { id },
+      data: { deletedAt: new Date(), status: 'DEACTIVATED' },
+    });
+    await this.tokens.revokeAllForUser(id, 'USER_DELETED');
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: id,
+      previousValues: { status: target.status, deletedAt: null },
+      newValues: {
+        status: 'DEACTIVATED',
+        deleted: true,
+        note: 'Soft delete - assignment history and audit trail retained',
+      },
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -112,5 +112,17 @@ export class UsersController {
     @Body(zodBody(setUserStatusSchema)) body: SetUserStatusInput,
   ) {
     return this.users.setStatus(actor, id, body);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @ApiOperation({
+    summary: 'Soft-delete a user',
+    description:
+      'The account disappears from lists and cannot sign in; assignment history and the audit trail are retained. Refused while assets are still assigned.',
+  })
+  async remove(@CurrentUser() actor: AuthUser, @Param('id') id: string): Promise<void> {
+    await this.users.softDelete(actor, id);
   }
 }
