@@ -55,6 +55,7 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   const confirm = useConfirm();
   const canRoles = can(PERMISSIONS.ROLES_MANAGE);
   const canStatus = can(PERMISSIONS.USERS_MANAGE);
+  const canEmployees = can(PERMISSIONS.EMPLOYEES_CREATE);
   const isSelf = me?.id === user.id;
   const name = user.profile ? `${user.profile.firstName} ${user.profile.lastName}` : user.email;
 
@@ -459,6 +460,44 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
             </div>
           ) : null}
 
+          {/* HR-style managers (employees:create, no users:manage) get exactly
+              one action here: re-sending an invitation that went astray. */}
+          {!canStatus && canEmployees && user.status === 'INVITED' && !isSelf ? (
+            <div className="mt-5 border-t border-[var(--color-border)] pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                Invitation
+              </p>
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={resend.isPending}
+                  disabled={busy}
+                  onClick={() => resend.mutate()}
+                >
+                  Resend invitation
+                </Button>
+              </div>
+              {resentUrl ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-2 py-1.5 text-xs">
+                    {resentUrl}
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(resentUrl);
+                      toast.success('Link copied');
+                    }}
+                  >
+                    <Copy aria-hidden="true" className="size-4" />
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {error ? (
             <p
               role="alert"
@@ -492,8 +531,12 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
  */
 function InviteUserModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { can } = useAuth();
   const toast = useToast();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
+  // HR-style inviters (employees:create without users:manage) may only invite
+  // Registered Employees - the server enforces it; the form says it upfront.
+  const isFullManager = can(PERMISSIONS.USERS_MANAGE);
 
   const [form, setForm] = useState({
     firstName: '',
@@ -662,19 +705,26 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
                 <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                   Roles
                 </legend>
-                <div className="mt-2 grid grid-cols-2 gap-1.5">
-                  {roleOptions.map((r) => (
-                    <label key={r.key} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={roleKeys.includes(r.key)}
-                        onChange={() => toggleRole(r.key)}
-                        className="size-4 rounded border-[var(--color-border-strong)]"
-                      />
-                      <span className="min-w-0 truncate">{r.name}</span>
-                    </label>
-                  ))}
-                </div>
+                {isFullManager ? (
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    {roleOptions.map((r) => (
+                      <label key={r.key} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={roleKeys.includes(r.key)}
+                          onChange={() => toggleRole(r.key)}
+                          className="size-4 rounded border-[var(--color-border-strong)]"
+                        />
+                        <span className="min-w-0 truncate">{r.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-[var(--color-content-muted)]">
+                    Invited as <span className="font-medium">Registered Employee</span>. Other
+                    roles are granted afterwards by a user manager.
+                  </p>
+                )}
               </fieldset>
 
               {error ? (
@@ -710,7 +760,8 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
 function PeopleTable() {
   const { can } = useAuth();
   const toast = useToast();
-  const canManage = can(PERMISSIONS.USERS_MANAGE) || can(PERMISSIONS.ROLES_MANAGE);
+  const canManage =
+    can(PERMISSIONS.USERS_MANAGE) || can(PERMISSIONS.ROLES_MANAGE) || can(PERMISSIONS.EMPLOYEES_CREATE);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
@@ -718,7 +769,7 @@ function PeopleTable() {
   const [view, setView] = useState<'active' | 'deactivated'>('active');
   const [managing, setManaging] = useState<UserRow | null>(null);
   const [inviting, setInviting] = useState(false);
-  const canInvite = can(PERMISSIONS.USERS_MANAGE);
+  const canInvite = can(PERMISSIONS.USERS_MANAGE) || can(PERMISSIONS.EMPLOYEES_CREATE);
 
   useEffect(() => {
     const t = setTimeout(() => {

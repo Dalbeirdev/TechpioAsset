@@ -116,8 +116,11 @@ export class UsersController {
     return this.users.setStatus(actor, id, body);
   }
 
+  // No @RequirePermissions here: the rule is users:manage OR employees:create
+  // (HR registers joiners), and the guard can only AND. The service holds the
+  // gate - including the escalation line that HR-style inviters may only
+  // invite Registered Employees.
   @Post('invite')
-  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
   @ApiOperation({
     summary: 'Invite a new user',
     description:
@@ -127,8 +130,8 @@ export class UsersController {
     return this.users.invite(actor, body);
   }
 
+  // Same OR rule as invite - authorization lives in the service.
   @Post(':id/resend-invite')
-  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
   @ApiOperation({
     summary: 'Re-send an invitation',
     description:
