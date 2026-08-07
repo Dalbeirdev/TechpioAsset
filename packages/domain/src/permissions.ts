@@ -311,7 +311,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.REQUESTS_CREATE,
     P.REQUESTS_READ,
     P.REQUESTS_CANCEL,
-    P.MAINTENANCE_REQUEST,
+    // maintenance:request removed (v2.12): no endpoint ever enforced it -
+    // employees report issues through Requests (DAMAGE/REPAIR), and a grant
+    // that gates nothing only misleads an auditor reading the matrix.
   ],
 
   AUDITOR: [

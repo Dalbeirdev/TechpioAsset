@@ -40,12 +40,31 @@ export class DelegationService {
     const [given, received] = await Promise.all([
       this.prisma.client.approvalDelegation.findMany({
         where: { delegatorId: actor.id, revokedAt: null },
-        include: { delegate: { select: { id: true, email: true, profile: true } } },
+        include: {
+          delegate: {
+            select: {
+              id: true,
+              email: true,
+              // Identity only - never the full profile row (phone, employee
+              // number, hire date...): naming someone as a delegate must not
+              // become a way to read their HR record (v2.12 audit, G2).
+              profile: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.client.approvalDelegation.findMany({
         where: { delegateId: actor.id, revokedAt: null },
-        include: { delegator: { select: { id: true, email: true, profile: true } } },
+        include: {
+          delegator: {
+            select: {
+              id: true,
+              email: true,
+              profile: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
       }),
     ]);

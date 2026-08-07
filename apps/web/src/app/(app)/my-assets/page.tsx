@@ -96,6 +96,29 @@ export default function MyAssetsPage() {
               <div className="mt-3">
                 <StatusBadge token={CONDITION_TOKENS[asset.condition]} size="sm" />
               </div>
+
+              {/* Self-service intents, pre-filled with this device so nobody
+                  types an asset tag by hand. */}
+              <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--color-border)] pt-3">
+                <Link
+                  href={`/requests/new?type=DAMAGE&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
+                  className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
+                >
+                  Report issue
+                </Link>
+                <Link
+                  href={`/requests/new?type=REPLACEMENT&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
+                  className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
+                >
+                  Replacement
+                </Link>
+                <Link
+                  href={`/requests/new?type=UPGRADE&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
+                  className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
+                >
+                  Upgrade
+                </Link>
+              </div>
             </Card>
           ))}
         </div>

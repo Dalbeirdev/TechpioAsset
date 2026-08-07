@@ -142,7 +142,9 @@ describe('resolvePermissions / resolveScope', () => {
   it('unions permissions across roles', () => {
     const resolved = resolvePermissions(['EMPLOYEE', 'MANAGER']);
     expect(resolved.has(P.REQUESTS_APPROVE)).toBe(true);
-    expect(resolved.has(P.MAINTENANCE_REQUEST)).toBe(true);
+    // From EMPLOYEE's side of the union (v2.12: the dead maintenance:request
+    // grant was removed from EMPLOYEE - no endpoint ever enforced it).
+    expect(resolved.has(P.REQUESTS_CANCEL)).toBe(true);
     expect(resolved.has(P.AI_CONFIGURE)).toBe(false);
   });
 

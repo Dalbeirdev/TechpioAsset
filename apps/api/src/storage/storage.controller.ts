@@ -75,6 +75,13 @@ export class StorageController {
       if (!valid) throw new AppError('FORBIDDEN', 'This download link is invalid or has expired');
     }
 
+    // Permission check the docstring always promised: a forwarded signed link
+    // must not open invoice documents for someone who cannot read invoices
+    // (v2.12 least-privilege audit, G5).
+    if (!actor.permissions.includes('invoices:read')) {
+      throw AppError.forbidden('You may not view invoice documents');
+    }
+
     // Ownership check: the key must belong to a document in the caller's company.
     // This is what stops one company reading another's invoice by key.
     const document = await this.prisma.client.invoiceDocument.findFirst({

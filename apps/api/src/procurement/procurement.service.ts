@@ -50,12 +50,28 @@ export class ProcurementService {
 
   // ── purchase requests ──────────────────────────────────────────────────────
 
+  /**
+   * OWN-scope actors (employees) see only purchase requests they raised -
+   * before this, procurement:pr:read exposed every PR in the company, with
+   * estimated totals and requester identities, to any employee (v2.12
+   * least-privilege audit, G1). ANDed like every other scope filter so no
+   * query parameter can widen it.
+   */
+  private prScope(actor: AuthUser): Prisma.PurchaseRequestWhereInput {
+    return actor.scope === 'OWN' ? { requesterId: actor.id } : {};
+  }
+
   async listPrs(actor: AuthUser, query: PrListQuery) {
     const where: Prisma.PurchaseRequestWhereInput = {
-      companyId: actor.companyId,
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.mine ? { requesterId: actor.id } : {}),
-      ...(query.q ? { OR: [{ prNumber: { contains: query.q, mode: 'insensitive' } }, { justification: { contains: query.q, mode: 'insensitive' } }] } : {}),
+      AND: [
+        { companyId: actor.companyId },
+        this.prScope(actor),
+        {
+          ...(query.status ? { status: query.status } : {}),
+          ...(query.mine ? { requesterId: actor.id } : {}),
+          ...(query.q ? { OR: [{ prNumber: { contains: query.q, mode: 'insensitive' } }, { justification: { contains: query.q, mode: 'insensitive' } }] } : {}),
+        },
+      ],
     };
     return paginate(query, {
       count: () => this.prisma.client.purchaseRequest.count({ where }),
@@ -72,7 +88,9 @@ export class ProcurementService {
 
   async findPr(actor: AuthUser, id: string) {
     const pr = await this.prisma.client.purchaseRequest.findFirst({
-      where: { id, companyId: actor.companyId },
+      // Scoped like the list: someone else's PR reads as 404 for an
+      // OWN-scope actor, never as data.
+      where: { AND: [{ id, companyId: actor.companyId }, this.prScope(actor)] },
       select: { ...this.prSelect(), lines: { orderBy: { lineNumber: 'asc' }, select: { id: true, lineNumber: true, description: true, quantity: true, estimatedUnitPrice: true, inventoryItemId: true } } },
     });
     if (!pr) throw AppError.notFound('Purchase request', id);
