@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  Building2,
   ChevronRight,
   Boxes,
   CircleHelp,
@@ -123,6 +124,12 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Administration',
     items: [
       { href: '/people', label: 'People', Icon: Users, permission: PERMISSIONS.EMPLOYEES_READ },
+      {
+        href: '/settings/offices',
+        label: 'Offices',
+        Icon: Building2,
+        permission: PERMISSIONS.SETTINGS_MANAGE,
+      },
       { href: '/settings/roles', label: 'Roles', Icon: ShieldCheck, permission: PERMISSIONS.ROLES_MANAGE },
       {
         href: '/settings/integrations',

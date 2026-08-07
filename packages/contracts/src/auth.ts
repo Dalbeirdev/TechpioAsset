@@ -90,6 +90,10 @@ export const changePasswordRequestSchema = z.object({
 
 export const verifyEmailRequestSchema = z.object({ token: z.string().min(16) });
 
+/** Re-authentication before a sensitive page (security settings). Proves the
+ * person at the keyboard is the account owner, not just a live session. */
+export const confirmPasswordRequestSchema = z.object({ password: z.string().min(1) }).strict();
+
 export const mfaEnrolStartResponseSchema = z.object({
   /** Base32 shared secret, shown once so it can be typed in manually. */
   secret: z.string(),

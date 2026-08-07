@@ -21,3 +21,4 @@ export * from './rfq';
 export * from './stock';
 export * from './discovery';
 export * from './integrations';
+export * from './org';

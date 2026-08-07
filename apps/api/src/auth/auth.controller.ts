@@ -5,6 +5,7 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
   changePasswordRequestSchema,
+  confirmPasswordRequestSchema,
   forgotPasswordRequestSchema,
   loginRequestSchema,
   mfaDisableRequestSchema,
@@ -252,6 +253,19 @@ export class AuthController {
     @Body(zodBody(verifyEmailRequestSchema)) body: { token: string },
   ): Promise<void> {
     await this.auth.verifyEmail(body.token);
+  }
+
+  @Post('confirm-password')
+  @HttpCode(204)
+  // Throttled like login: this endpoint answers "is this the right password?",
+  // which is exactly what a brute-force wants to ask.
+  @Throttle({ default: { limit: LOGIN_ATTEMPTS_PER_MINUTE, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Re-authenticate before a sensitive page' })
+  async confirmPassword(
+    @CurrentUser() user: AuthUser,
+    @Body(zodBody(confirmPasswordRequestSchema)) body: { password: string },
+  ): Promise<void> {
+    await this.auth.confirmPassword(user.id, body.password);
   }
 
   @Post('change-password')
