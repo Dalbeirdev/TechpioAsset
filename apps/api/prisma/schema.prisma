@@ -38,6 +38,9 @@ enum UserStatus {
 enum VerificationPurpose {
   EMAIL_VERIFICATION
   PASSWORD_RESET
+  /// v2.12 - invitation links. Long-lived (7 days), single use; accepting one
+  /// sets the password, verifies the email and activates the account.
+  INVITE
 }
 
 enum TrackingType {

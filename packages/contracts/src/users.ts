@@ -56,6 +56,25 @@ export const updateMyProfileSchema = z
   .strict();
 export type UpdateMyProfileInput = z.infer<typeof updateMyProfileSchema>;
 
+/**
+ * Invite a new user (v2.12). The missing registration path: until now accounts
+ * only arrived via platform provisioning or SCIM. Strict for the same reason
+ * every other user-shaped schema is.
+ */
+export const inviteUserSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email(),
+    firstName: z.string().trim().min(1).max(60),
+    lastName: z.string().trim().min(1).max(60),
+    jobTitle: z.string().trim().max(120).optional().nullable(),
+    departmentId: z.string().optional().nullable(),
+    officeId: z.string().optional().nullable(),
+    /** Defaults to Registered Employee - least privilege unless the inviter says otherwise. */
+    roleKeys: z.array(roleKey).min(1).default(['EMPLOYEE']),
+  })
+  .strict();
+export type InviteUserInput = z.infer<typeof inviteUserSchema>;
+
 /** The admin surface adds the org-placement fields self-service must not touch. */
 export const adminUpdateProfileSchema = updateMyProfileSchema.extend({
   departmentId: z.string().optional().nullable(),

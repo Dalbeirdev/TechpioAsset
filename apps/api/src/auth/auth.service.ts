@@ -31,7 +31,13 @@ export interface MfaChallengeResult {
   kind: 'mfa-required';
 }
 
-const VERIFICATION_TTL_MINUTES = { EMAIL_VERIFICATION: 60 * 24, PASSWORD_RESET: 30 } as const;
+// INVITE lives 7 days: a reset link guards an existing account and must be
+// short; an invite guards an empty one and must survive a weekend unopened.
+const VERIFICATION_TTL_MINUTES = {
+  EMAIL_VERIFICATION: 60 * 24,
+  PASSWORD_RESET: 30,
+  INVITE: 60 * 24 * 7,
+} as const;
 
 @Injectable()
 export class AuthService {
@@ -352,6 +358,48 @@ export class AuthService {
       data: { consumedAt: new Date() },
     });
     return record;
+  }
+
+  /** Issue a 7-day single-use invitation token for a freshly created account. */
+  issueInviteToken(userId: string): Promise<string> {
+    return this.issueVerificationToken(userId, 'INVITE');
+  }
+
+  /**
+   * Accepting an invitation (v2.12): one step sets the password, verifies the
+   * email (they are holding a link only that inbox received) and activates the
+   * account. Only INVITED accounts qualify - an active account holding an old
+   * invite link must use the reset flow, where the current password's guarantees
+   * apply.
+   */
+  async acceptInvite(token: string, password: string): Promise<void> {
+    const record = await this.consumeVerificationToken(token, 'INVITE');
+    if (record.user.deletedAt) {
+      throw new AppError('VALIDATION_FAILED', 'This link is invalid or has already been used');
+    }
+    if (record.user.status !== UserStatus.INVITED) {
+      throw new AppError('CONFLICT', 'This invitation was already accepted', {
+        detail: 'Sign in with your password, or use "Forgot password" if you have lost it.',
+      });
+    }
+    await this.prisma.client.user.update({
+      where: { id: record.userId },
+      data: {
+        passwordHash: await this.passwords.hash(password),
+        status: UserStatus.ACTIVE,
+        emailVerifiedAt: record.user.emailVerifiedAt ?? new Date(),
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+    });
+    await this.audit.record({
+      companyId: record.user.companyId,
+      actorId: record.userId,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: record.userId,
+      newValues: { status: 'ACTIVE', note: 'Invitation accepted' },
+    });
   }
 
   /**

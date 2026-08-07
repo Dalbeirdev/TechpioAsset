@@ -94,6 +94,12 @@ export const verifyEmailRequestSchema = z.object({ token: z.string().min(16) });
  * person at the keyboard is the account owner, not just a live session. */
 export const confirmPasswordRequestSchema = z.object({ password: z.string().min(1) }).strict();
 
+/** Accepting an invitation: the invite token plus the password the new user
+ * chooses. Activates the account and verifies the email in one step. */
+export const acceptInviteRequestSchema = z
+  .object({ token: z.string().min(16), password: passwordSchema })
+  .strict();
+
 export const mfaEnrolStartResponseSchema = z.object({
   /** Base32 shared secret, shown once so it can be typed in manually. */
   secret: z.string(),

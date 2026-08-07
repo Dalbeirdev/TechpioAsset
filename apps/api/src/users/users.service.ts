@@ -1,24 +1,35 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { AuditAction } from '@prisma/client';
 import type {
-  AdminUpdateProfileInput, SetUserRolesInput, SetUserStatusInput, UserListQuery } from '@techpioasset/contracts';
+  AdminUpdateProfileInput, InviteUserInput, SetUserRolesInput, SetUserStatusInput, UserListQuery } from '@techpioasset/contracts';
 import type { AuthUser } from '@techpioasset/contracts';
 import { findSodConflicts } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { userScopeFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AuthService } from '../auth/auth.service.js';
+import { PasswordService } from '../auth/password.service.js';
 import { TokenService } from '../auth/token.service.js';
+import { AppConfig } from '../config/config.module.js';
+import { MailProvider } from '../providers/mail/mail.provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const SORTABLE = ['email', 'createdAt', 'lastLoginAt', 'status'] as const;
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly tokens: TokenService,
+    private readonly auth: AuthService,
+    private readonly passwords: PasswordService,
+    private readonly mail: MailProvider,
+    private readonly config: AppConfig,
   ) {}
 
   /** Scope + filters, ANDed (never spread — see AssetsService.list for why). */
@@ -407,6 +418,111 @@ export class UsersService {
     });
 
     return this.findOne(actor, id);
+  }
+
+  /**
+   * Invite a new user (v2.12) - the registration path tenant admins were
+   * missing. Creates the account as INVITED with an unusable random password,
+   * emails a 7-day single-use link, and returns that link ONCE so the inviter
+   * can hand it over directly when email is not configured. The account cannot
+   * sign in until the invite is accepted (INVITED blocks login).
+   */
+  async invite(actor: AuthUser, input: InviteUserInput) {
+    const existing = await this.prisma.client.user.findFirst({
+      where: { companyId: actor.companyId, email: input.email },
+      select: { id: true, deletedAt: true },
+    });
+    if (existing) {
+      throw new AppError(
+        'CONFLICT',
+        existing.deletedAt
+          ? 'A deleted account already uses this email address'
+          : 'A user with this email already exists',
+      );
+    }
+
+    if (input.departmentId) {
+      const department = await this.prisma.client.department.findFirst({
+        where: { id: input.departmentId, companyId: actor.companyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!department) throw AppError.notFound('Department', input.departmentId);
+    }
+    if (input.officeId) {
+      const office = await this.prisma.client.office.findFirst({
+        where: { id: input.officeId, companyId: actor.companyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!office) throw AppError.notFound('Office', input.officeId);
+    }
+
+    const roleKeys = [...new Set(input.roleKeys)];
+    const roles = await this.prisma.client.role.findMany({
+      where: { companyId: actor.companyId, key: { in: roleKeys } },
+      select: { id: true, key: true },
+    });
+    if (roles.length !== roleKeys.length) {
+      const found = new Set(roles.map((r) => r.key));
+      throw new AppError('VALIDATION_FAILED', 'Unknown role', {
+        detail: `No such role: ${roleKeys.filter((k) => !found.has(k)).join(', ')}`,
+      });
+    }
+
+    // Unusable placeholder: random and never revealed, so the account has no
+    // password anyone could guess until the invitee sets their own.
+    const placeholder = await this.passwords.hash(randomBytes(32).toString('base64url'));
+
+    const user = await this.prisma.client.user.create({
+      data: {
+        companyId: actor.companyId,
+        email: input.email,
+        passwordHash: placeholder,
+        status: 'INVITED',
+        profile: {
+          create: {
+            firstName: input.firstName,
+            lastName: input.lastName,
+            jobTitle: input.jobTitle ?? null,
+            departmentId: input.departmentId ?? null,
+            officeId: input.officeId ?? null,
+          },
+        },
+        roles: { create: roles.map((r) => ({ roleId: r.id, createdById: actor.id })) },
+      },
+      select: { id: true, email: true },
+    });
+
+    const token = await this.auth.issueInviteToken(user.id);
+    const inviteUrl = `${this.config.get('WEB_URL')}/accept-invite?token=${token}`;
+
+    // Best effort: a mail failure must not lose the invite - the link is
+    // returned to the inviter either way.
+    try {
+      await this.mail.send({
+        to: user.email,
+        subject: 'You have been invited to TechpioAsset',
+        text: [
+          `${input.firstName}, you have been invited to your company's TechpioAsset workspace.`,
+          '',
+          `Set your password and sign in here: ${inviteUrl}`,
+          '',
+          'The link is valid for 7 days and can be used once.',
+        ].join('\n'),
+      });
+    } catch (error) {
+      this.logger.error(`Invite email failed to send: ${(error as Error).message}`);
+    }
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.USER_CREATED,
+      entityType: 'User',
+      entityId: user.id,
+      newValues: { email: user.email, roles: roleKeys, invited: true },
+    });
+
+    return { id: user.id, email: user.email, inviteUrl };
   }
 
   /**
