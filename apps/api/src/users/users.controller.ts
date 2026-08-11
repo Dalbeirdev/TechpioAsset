@@ -1,4 +1,23 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  MaxFileSizeValidator,
+  Param,
+  ParseFilePipe,
+  Patch,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import 'multer';
+import { ApiConsumes } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -18,6 +37,7 @@ import {
 } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
+import { AppError } from '../common/errors/app-error.js';
 import { toCsv } from '../common/csv.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { UsersService } from './users.service.js';
@@ -74,6 +94,47 @@ export class UsersController {
     @Body(zodBody(updateMyProfileSchema)) body: UpdateMyProfileInput,
   ) {
     return this.users.updateProfile(actor, actor.id, body, 'self');
+  }
+
+  // ── profile photo — always the caller's own; no id parameter exists ──────
+  @Post('me/avatar')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload or replace your profile photo' })
+  setAvatar(
+    @CurrentUser() actor: AuthUser,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 })],
+        fileIsRequired: true,
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    if (!file?.buffer) throw new AppError('FILE_REJECTED', 'No file was received');
+    return this.users.setAvatar(actor, {
+      buffer: file.buffer,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+    });
+  }
+
+  @Get('me/avatar')
+  @ApiOperation({ summary: 'Your profile photo' })
+  async getAvatar(
+    @CurrentUser() actor: AuthUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const avatar = await this.users.getAvatar(actor);
+    res.set({ 'Cache-Control': 'private, max-age=300' });
+    return new StreamableFile(avatar.data);
+  }
+
+  @Delete('me/avatar')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove your profile photo' })
+  async deleteAvatar(@CurrentUser() actor: AuthUser): Promise<void> {
+    await this.users.deleteAvatar(actor);
   }
 
   @Patch(':id/profile')

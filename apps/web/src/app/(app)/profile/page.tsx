@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useMutation } from '@tanstack/react-query';
 import { Building2, Check, ChevronRight, Clock, Globe, Pencil, ShieldCheck, UserRound, X } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, apiBaseUrl, getAccessToken, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Card, Skeleton } from '@/components/ui';
@@ -182,12 +182,7 @@ export default function ProfilePage() {
   return (
     <div className="mx-auto grid max-w-2xl gap-4">
       <header className="flex items-center gap-4">
-        <div
-          aria-hidden="true"
-          className="grid size-14 place-items-center rounded-full bg-[var(--color-brand)] text-lg font-semibold text-[var(--color-brand-contrast)]"
-        >
-          {initials}
-        </div>
+        <AvatarField initials={initials ?? '?'} hasPhoto={Boolean(user.avatarUrl)} onChanged={refresh} />
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{fullName}</h1>
           <p className="text-sm text-[var(--color-content-muted)]">
@@ -383,6 +378,116 @@ function PreferenceSelect({
           ))}
         </select>
       </dd>
+    </div>
+  );
+}
+
+
+/**
+ * Profile photo (v2.12) — upload, replace, remove. Served from the API rather
+ * than a public URL: the object is private and streamed only to its owner, so
+ * the <img> points at /users/me/avatar with a cache-busting stamp.
+ */
+function AvatarField({
+  initials,
+  hasPhoto,
+  onChanged,
+}: {
+  initials: string;
+  hasPhoto: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [stamp, setStamp] = useState(() => Date.now());
+  const [present, setPresent] = useState(hasPhoto);
+
+  const upload = async (file: File) => {
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${apiBaseUrl}/users/me/avatar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+        body: form,
+      });
+      if (!res.ok) throw new ApiError(await res.json().catch(() => null), res.status);
+      setPresent(true);
+      setStamp(Date.now());
+      toast.success('Photo updated');
+      await onChanged();
+    } catch (caught) {
+      toast.error(
+        caught instanceof ApiError
+          ? (caught.problem?.detail ?? caught.problem?.title ?? 'Could not upload that photo')
+          : 'Could not upload that photo',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await apiFetch('/users/me/avatar', { method: 'DELETE' });
+      setPresent(false);
+      toast.success('Photo removed');
+      await onChanged();
+    } catch {
+      toast.error('Could not remove the photo');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      {present ? (
+        // eslint-disable-next-line @next/next/no-img-element -- private, streamed from the API
+        <img
+          src={`${apiBaseUrl}/users/me/avatar?v=${stamp}`}
+          alt="Your profile photo"
+          className="size-14 rounded-full object-cover"
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="grid size-14 place-items-center rounded-full bg-[var(--color-brand)] text-lg font-semibold text-[var(--color-brand-contrast)]"
+        >
+          {initials}
+        </div>
+      )}
+      <div className="flex flex-col gap-1">
+        <label
+          className={`cursor-pointer text-xs font-medium text-[var(--color-brand)] ${busy ? 'pointer-events-none opacity-60' : ''}`}
+        >
+          {present ? 'Change photo' : 'Add photo'}
+          <input
+            type="file"
+            className="sr-only"
+            accept="image/jpeg,image/png,image/heic"
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void upload(file);
+            }}
+          />
+        </label>
+        {present ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void remove()}
+            className="text-left text-xs text-[var(--color-content-subtle)] hover:text-[var(--tone-critical-fg)]"
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
+import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Lock, Pencil } from 'lucide-react';
 import {
@@ -40,6 +41,7 @@ interface AssetDetail {
   id: string;
   assetTag: string;
   name: string;
+  qrToken: string | null;
   brand: string | null;
   model: string | null;
   serialNumber: string | null;
@@ -531,6 +533,8 @@ function LifecycleTab({ data }: { data: AssetDetail }) {
         </p>
       </Card>
 
+      <AssetQrCard assetTag={data.assetTag} qrToken={data.qrToken} />
+
       <Card className="p-5">
         <h2 className="text-[15px] font-semibold">Timeline</h2>
         {events.length === 0 ? (
@@ -563,5 +567,61 @@ function LifecycleTab({ data }: { data: AssetDetail }) {
         )}
       </Card>
     </div>
+  );
+}
+
+
+/**
+ * The asset's QR label (v2.12). Drawn locally from the token the API already
+ * returns — the same reasoning as the MFA QR: the value never goes to an
+ * external chart service. Scanning it opens this device's page.
+ */
+function AssetQrCard({ assetTag, qrToken }: { assetTag: string; qrToken: string | null }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!qrToken) {
+      setDataUrl(null);
+      return;
+    }
+    const url = `${window.location.origin}/assets/scan/${qrToken}`;
+    QRCode.toDataURL(url, { margin: 1, width: 176 })
+      .then(setDataUrl)
+      .catch(() => setDataUrl(null));
+  }, [qrToken]);
+
+  if (!qrToken) return null;
+
+  return (
+    <Card className="p-5">
+      <h2 className="text-[15px] font-semibold">QR label</h2>
+      <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+        Scanning this opens the device&apos;s page. Print it and stick it on the asset.
+      </p>
+      {dataUrl ? (
+        <div className="mt-3 flex flex-wrap items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element -- a local data URL */}
+          <img
+            src={dataUrl}
+            alt={`QR code for ${assetTag}`}
+            width={176}
+            height={176}
+            className="rounded-lg border border-[var(--color-border)] bg-white p-2"
+          />
+          <div className="grid gap-2">
+            <span className="font-mono text-sm">{assetTag}</span>
+            <a
+              href={dataUrl}
+              download={`${assetTag}-qr.png`}
+              className="inline-flex h-9 w-fit items-center rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+            >
+              Download label
+            </a>
+          </div>
+        </div>
+      ) : (
+        <Skeleton className="mt-3 h-44 w-44" />
+      )}
+    </Card>
   );
 }

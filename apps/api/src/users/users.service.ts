@@ -15,6 +15,8 @@ import { TokenService } from '../auth/token.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { MailProvider } from '../providers/mail/mail.provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { StorageProvider } from '../providers/storage/storage.provider.js';
+import { validateUpload } from '../providers/storage/file-validation.js';
 
 const SORTABLE = ['email', 'createdAt', 'lastLoginAt', 'status'] as const;
 
@@ -30,6 +32,7 @@ export class UsersService {
     private readonly passwords: PasswordService,
     private readonly mail: MailProvider,
     private readonly config: AppConfig,
+    private readonly storage: StorageProvider,
   ) {}
 
   /** Scope + filters, ANDed (never spread — see AssetsService.list for why). */
@@ -652,6 +655,70 @@ export class UsersService {
     });
 
     return { accessToken: issued.accessToken, expiresIn: issued.expiresIn, user };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Profile photo (v2.12) — yours alone: every method keys off the caller's own
+  // id, so there is no id parameter that could point at somebody else.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  async setAvatar(actor: AuthUser, file: { buffer: Buffer; originalname: string; mimetype: string }) {
+    // Images only, verified by signature. validateUpload's allowlist is
+    // configurable, so narrow it here to the image types a photo can be.
+    const { contentType } = validateUpload({
+      data: file.buffer,
+      declaredMime: file.mimetype,
+      allowedMimes: ['image/jpeg', 'image/png', 'image/heic'],
+      maxBytes: 5 * 1024 * 1024,
+    });
+
+    const previous = await this.prisma.client.userProfile.findUnique({
+      where: { userId: actor.id },
+      select: { avatarKey: true },
+    });
+
+    const stored = await this.storage.put({
+      prefix: `avatars/${actor.companyId}`,
+      originalName: file.originalname,
+      contentType,
+      data: file.buffer,
+    });
+
+    await this.prisma.client.userProfile.update({
+      where: { userId: actor.id },
+      data: { avatarKey: stored.key },
+    });
+
+    // Replacing a photo should not leave the old bytes lying in the bucket.
+    if (previous?.avatarKey) {
+      await this.storage.delete(previous.avatarKey).catch(() => undefined);
+    }
+    return { avatarKey: stored.key };
+  }
+
+  async deleteAvatar(actor: AuthUser) {
+    const profile = await this.prisma.client.userProfile.findUnique({
+      where: { userId: actor.id },
+      select: { avatarKey: true },
+    });
+    if (profile?.avatarKey) {
+      await this.storage.delete(profile.avatarKey).catch(() => undefined);
+    }
+    await this.prisma.client.userProfile.update({
+      where: { userId: actor.id },
+      data: { avatarKey: null },
+    });
+  }
+
+  /** Streams the caller's own photo. */
+  async getAvatar(actor: AuthUser) {
+    const profile = await this.prisma.client.userProfile.findUnique({
+      where: { userId: actor.id },
+      select: { avatarKey: true },
+    });
+    if (!profile?.avatarKey) throw AppError.notFound('Avatar', actor.id);
+    const data = await this.storage.get(profile.avatarKey);
+    return { data, key: profile.avatarKey };
   }
 
   /**

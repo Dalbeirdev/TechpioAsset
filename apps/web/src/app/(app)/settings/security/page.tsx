@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Lock, Monitor, ShieldCheck, ShieldOff } from 'lucide-react';
+import { History, KeyRound, Lock, Monitor, ShieldCheck, ShieldOff } from 'lucide-react';
 import type { SessionInfo } from '@techpioasset/contracts';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
@@ -319,6 +319,7 @@ export default function SecuritySettingsPage() {
       </Card>
 
       <SessionsCard />
+      <LoginHistoryCard />
     </div>
   );
 }
@@ -431,6 +432,75 @@ function SessionsCard() {
                   {s.ipAddress ? `${s.ipAddress} · ` : ''}active {new Date(s.lastActiveAt).toLocaleString()}
                 </p>
               </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+
+interface LoginEvent {
+  id: string;
+  action: 'LOGIN' | 'LOGIN_FAILED' | 'LOGOUT';
+  at: string;
+  ipAddress: string | null;
+  device: string | null;
+}
+
+/**
+ * Recent sign-in activity (v2.12), read from the audit trail. Failed attempts
+ * are shown deliberately: "someone tried and failed at 3am" is exactly what a
+ * person needs to notice, and it is their own record to see.
+ */
+function LoginHistoryCard() {
+  const history = useQuery({
+    queryKey: ['login-history'],
+    queryFn: () => apiFetch<LoginEvent[]>('/auth/login-history'),
+  });
+
+  const label = { LOGIN: 'Signed in', LOGIN_FAILED: 'Failed sign-in', LOGOUT: 'Signed out' };
+  const tone = { LOGIN: 'success', LOGIN_FAILED: 'critical', LOGOUT: 'muted' } as const;
+  const rows = history.data ?? [];
+
+  return (
+    <Card className="p-5">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <History aria-hidden="true" className="size-4 text-[var(--color-brand)]" /> Recent sign-in
+        activity
+      </h2>
+      <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+        Your last 50 sign-in events, including failed attempts. If you see something you did not
+        do, change your password and sign out other devices.
+      </p>
+      {history.isPending ? (
+        <Skeleton className="mt-3 h-24" />
+      ) : rows.length === 0 ? (
+        <p className="mt-3 text-sm text-[var(--color-content-muted)]">Nothing recorded yet.</p>
+      ) : (
+        <ul className="mt-3 grid gap-1.5">
+          {rows.slice(0, 15).map((e) => (
+            <li
+              key={e.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--color-border)] px-3 py-2 text-sm"
+            >
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                style={{
+                  background: `var(--tone-${tone[e.action]}-bg)`,
+                  color: `var(--tone-${tone[e.action]}-fg)`,
+                }}
+              >
+                {label[e.action]}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-content-subtle)]">
+                {deviceLabel(e.device)}
+                {e.ipAddress ? ` · ${e.ipAddress}` : ''}
+              </span>
+              <span className="text-xs text-[var(--color-content-subtle)]">
+                {new Date(e.at).toLocaleString()}
+              </span>
             </li>
           ))}
         </ul>
