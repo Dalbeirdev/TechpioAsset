@@ -10,6 +10,7 @@ import { apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
+import { AcknowledgeButton } from '@/components/assets/custody-panel';
 
 interface AssetRow {
   id: string;
@@ -23,6 +24,8 @@ interface AssetRow {
   assignmentDate: string | null;
   warrantyEndDate: string | null;
   category: { name: string } | null;
+  /** The open assignment, if any - at most one row. */
+  assignments: { id: string; acknowledgedAt: string | null; expectedReturnAt: string | null }[];
 }
 
 export default function MyAssetsPage() {
@@ -124,6 +127,24 @@ function MyAssetsList() {
               <div className="mt-3">
                 <StatusBadge token={CONDITION_TOKENS[asset.condition]} size="sm" />
               </div>
+
+              {/* Confirming receipt closes the loop on a handover: until the
+                  holder does it, IT only knows the device left the shelf. */}
+              {asset.assignments[0] && !asset.assignments[0].acknowledgedAt ? (
+                <div
+                  className="mt-3 rounded-[var(--radius-control)] border px-3 py-2.5"
+                  style={{
+                    color: 'var(--tone-warning-fg)',
+                    backgroundColor: 'var(--tone-warning-bg)',
+                    borderColor: 'var(--tone-warning-border)',
+                  }}
+                >
+                  <p className="text-xs font-medium">Please confirm you received this.</p>
+                  <div className="mt-2">
+                    <AcknowledgeButton assignmentId={asset.assignments[0].id} />
+                  </div>
+                </div>
+              ) : null}
 
               {/* Self-service intents, pre-filled with this device so nobody
                   types an asset tag by hand. */}

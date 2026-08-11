@@ -140,3 +140,25 @@ export interface BulkActionResult {
   succeeded: string[];
   failed: { id: string; reason: string }[];
 }
+
+/**
+ * Hand a device straight from one person to another (v2.15).
+ *
+ * Reassignment used to mean two calls - return, then assign - with a window in
+ * between where the asset belonged to nobody and nothing recorded that a
+ * handover was intended. This carries both halves so the server can do it in
+ * one transaction.
+ */
+export const reassignAssetSchema = z.object({
+  /** Who receives it. */
+  userId: z.string().min(1),
+  /** Condition as it comes back from the current holder. */
+  conditionIn: assetConditionEnum,
+  /** Condition as it goes out to the next one; usually the same. */
+  conditionOut: assetConditionEnum.optional(),
+  expectedReturnAt: optionalDate,
+  accessoriesIssued: z.string().trim().max(1000).optional().nullable(),
+  damageNotes: z.string().trim().max(2000).optional().nullable(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+});
+export type ReassignAssetInput = z.infer<typeof reassignAssetSchema>;
