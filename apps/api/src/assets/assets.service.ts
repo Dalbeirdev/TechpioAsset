@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { AuditAction, Prisma, type Asset } from '@prisma/client';
 import type {
@@ -24,6 +24,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { assetScopeFilter, canSeeCost, canSeeVendor, tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WebhooksService } from '../integrations/webhooks.service.js';
 
@@ -49,10 +50,13 @@ const AUDITED_FIELDS = [
 
 @Injectable()
 export class AssetsService {
+  private readonly logger = new Logger(AssetsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly webhooks: WebhooksService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -686,7 +690,54 @@ export class AssetsService {
       newValues: { status: 'ASSIGNED', assignedUserId: input.userId, assignmentId: assignment.id },
     });
 
+    await this.announceAssignment({
+      companyId: actor.companyId,
+      userId: input.userId,
+      assetId: id,
+      assetTag: asset.assetTag,
+      assetName: asset.name,
+      expectedReturnAt: input.expectedReturnAt ?? null,
+    });
+
     return this.findOne(actor, id);
+  }
+
+  /**
+   * Tells the new holder a device is theirs (spec section 19).
+   *
+   * ASSET_ASSIGNED is a mandatory notification and nothing had ever emitted it:
+   * an asset could be booked out against someone's name without that person
+   * being told, which makes the receipt confirmation we then chase them for
+   * unanswerable. Failures are logged, not thrown - the handover has already
+   * committed, and losing a message is not a reason to claim it did not happen.
+   */
+  private async announceAssignment(input: {
+    companyId: string;
+    userId: string;
+    assetId: string;
+    assetTag: string;
+    assetName: string;
+    expectedReturnAt: Date | null;
+  }): Promise<void> {
+    const due = input.expectedReturnAt
+      ? ` Please return it by ${input.expectedReturnAt.toDateString()}.`
+      : '';
+    try {
+      await this.notifications.notify({
+        companyId: input.companyId,
+        userId: input.userId,
+        type: 'ASSET_ASSIGNED',
+        title: `${input.assetName} is now assigned to you`,
+        body: `${input.assetTag} has been issued to you.${due} Please confirm you have received it.`,
+        linkPath: '/my-assets',
+        entityType: 'Asset',
+        entityId: input.assetId,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Assigned ${input.assetTag} but could not notify ${input.userId}: ${(error as Error).message}`,
+      );
+    }
   }
 
   /** Employee confirms receipt (spec section 12: capture acknowledgment). */
@@ -716,6 +767,22 @@ export class AssetsService {
     await this.prisma.client.asset.update({
       where: { id: assignment.assetId },
       data: { status: 'IN_USE', updatedById: actor.id, version: { increment: 1 } },
+    });
+
+    // The acknowledgement is the evidence that a device reached a person, and
+    // it was the one custody event that left no audit trail. A receipt nobody
+    // can produce later is not a receipt.
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.RECEIPT_ACKNOWLEDGED,
+      entityType: 'Asset',
+      entityId: assignment.assetId,
+      newValues: {
+        assignmentId: assignment.id,
+        acknowledgedAt: updated.acknowledgedAt,
+        method: 'IN_APP',
+      },
     });
 
     return { acknowledgedAt: updated.acknowledgedAt };
@@ -908,6 +975,15 @@ export class AssetsService {
       previousValues: { assignedUserId: open.userId, status: asset.status },
       newValues: { assignedUserId: input.userId, status: 'ASSIGNED', conditionIn: input.conditionIn },
       reason: 'Reassigned directly to a new holder',
+    });
+
+    await this.announceAssignment({
+      companyId: actor.companyId,
+      userId: input.userId,
+      assetId: id,
+      assetTag: asset.assetTag,
+      assetName: asset.name,
+      expectedReturnAt: input.expectedReturnAt ?? null,
     });
 
     return this.findOne(actor, id);

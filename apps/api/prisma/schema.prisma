@@ -375,6 +375,9 @@ enum AuditAction {
   ASSET_COST_CHANGED
   ASSIGNMENT_CREATED
   ASSIGNMENT_RETURNED
+  // v2.15 - an employee confirming a device reached them. The receipt is the
+  // point of the acknowledgement, so it belongs in the immutable log.
+  RECEIPT_ACKNOWLEDGED
   ASSET_TRANSFERRED
   INVENTORY_ADJUSTED
   INVOICE_UPLOADED

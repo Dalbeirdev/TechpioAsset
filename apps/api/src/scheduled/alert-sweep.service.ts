@@ -33,6 +33,18 @@ import { withSpan } from '../observability/tracing.js';
 /** Matches the warning window the batch list reports against. */
 const EXPIRY_WARN_DAYS = 30;
 
+/** Days a handover may sit unconfirmed before the first nudge. */
+const RECEIPT_GRACE_DAYS = 3;
+/** Then weekly, and no more than this many times. */
+const RECEIPT_INTERVAL_DAYS = 7;
+const RECEIPT_MAX_REMINDERS = 3;
+/**
+ * Rows one nightly pass will walk. The sweeps here are allowlisted as unbounded
+ * because they process their whole working set, but "every open assignment in
+ * every tenant" has no natural ceiling, so these two take a bite per night.
+ */
+const SWEEP_BATCH = 500;
+
 @Injectable()
 export class AlertSweepService implements OnModuleInit {
   private readonly logger = new Logger(AlertSweepService.name);
@@ -65,6 +77,8 @@ export class AlertSweepService implements OnModuleInit {
       void this.runWorkOrderSweep();
       void this.runHealthSweep();
       void this.runDiscoveryStalenessSweep();
+      void this.runReceiptSweep();
+      void this.runReturnOverdueSweep();
       // Retention: delete refresh tokens that have been dead for over a week.
       // Nothing ever removed them before, so the table only grew.
       void this.tokens.purgeDeadTokens();
@@ -628,6 +642,141 @@ export class AlertSweepService implements OnModuleInit {
     return this.assetHealth.recomputeAll(now);
   }
 
+  /**
+   * Chases receipts nobody has confirmed (v2.15).
+   *
+   * RECEIPT_CONFIRMATION is a mandatory notification that nothing emitted, so
+   * an unconfirmed handover simply sat there: the record said a laptop was
+   * issued and no one had ever asked the holder to agree.
+   *
+   * It waits three days before the first nudge - people are on leave, devices
+   * are collected on a Monday - and stops after three. A reminder that has been
+   * ignored three times is a conversation for a manager, not a fourth email,
+   * and a notification that never stops is one users learn to filter.
+   */
+  async runReceiptSweep(now: Date = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - RECEIPT_GRACE_DAYS * 86_400_000);
+
+    const pending = await this.prisma.client.assetAssignment.findMany({
+      where: {
+        returnedAt: null,
+        acknowledgedAt: null,
+        assignedAt: { lte: cutoff },
+        asset: { deletedAt: null },
+      },
+      select: {
+        id: true,
+        userId: true,
+        assignedAt: true,
+        asset: { select: { id: true, companyId: true, assetTag: true, name: true } },
+      },
+      orderBy: { assignedAt: 'asc' },
+      take: SWEEP_BATCH,
+    });
+
+    let raised = 0;
+    for (const assignment of pending) {
+      const sent = await this.prisma.client.notification.count({
+        where: { entityId: assignment.id, type: 'RECEIPT_CONFIRMATION' },
+      });
+      if (sent >= RECEIPT_MAX_REMINDERS) continue;
+      if (await this.remindedWithin(assignment.id, 'RECEIPT_CONFIRMATION', RECEIPT_INTERVAL_DAYS, now))
+        continue;
+
+      const waiting = Math.floor((now.getTime() - assignment.assignedAt.getTime()) / 86_400_000);
+      await this.notifications.notify({
+        companyId: assignment.asset.companyId,
+        userId: assignment.userId,
+        type: 'RECEIPT_CONFIRMATION',
+        title: `Confirm you received ${assignment.asset.name}`,
+        body: `${assignment.asset.assetTag} was issued to you ${waiting} day(s) ago and you have not confirmed you have it. If you do not have this device, tell IT rather than confirming.`,
+        linkPath: '/my-assets',
+        // Keyed to the assignment, not the asset: the count above is what stops
+        // this at three, and an asset reassigned later deserves its own three.
+        entityType: 'AssetAssignment',
+        entityId: assignment.id,
+      });
+      raised += 1;
+    }
+
+    if (raised > 0) this.logger.log(`Receipt sweep chased ${raised} unconfirmed handover(s)`);
+    return raised;
+  }
+
+  /**
+   * Raises RETURN_OVERDUE for equipment past its expected return date (v2.15).
+   *
+   * Both the holder and whoever issued it are told. Telling only the holder
+   * makes an overdue loan invisible to the person accountable for it, and
+   * telling only IT means the one person who can fix it in a minute never
+   * hears. RETURN_OVERDUE is also a team-alert type, so the shared channel
+   * gets a single post per asset per hour however many people are notified.
+   */
+  async runReturnOverdueSweep(now: Date = new Date()): Promise<number> {
+    const overdue = await this.prisma.client.assetAssignment.findMany({
+      where: {
+        returnedAt: null,
+        expectedReturnAt: { lt: now },
+        asset: { deletedAt: null },
+      },
+      select: {
+        id: true,
+        userId: true,
+        assignedById: true,
+        expectedReturnAt: true,
+        asset: { select: { id: true, companyId: true, assetTag: true, name: true } },
+      },
+      orderBy: { expectedReturnAt: 'asc' },
+      take: SWEEP_BATCH,
+    });
+
+    let raised = 0;
+    for (const assignment of overdue) {
+      if (await this.alreadyAlertedToday(assignment.asset.id, 'RETURN_OVERDUE', now)) continue;
+
+      const days = Math.floor(
+        (now.getTime() - (assignment.expectedReturnAt as Date).getTime()) / 86_400_000,
+      );
+      // The holder and the issuer, deduplicated: self-issued kit would
+      // otherwise notify the same person twice about one device.
+      const recipients = new Set(
+        [assignment.userId, assignment.assignedById].filter((v): v is string => Boolean(v)),
+      );
+
+      for (const userId of recipients) {
+        await this.notifications.notify({
+          companyId: assignment.asset.companyId,
+          userId,
+          type: 'RETURN_OVERDUE',
+          title: `Return overdue: ${assignment.asset.name}`,
+          body: `${assignment.asset.assetTag} was due back ${(assignment.expectedReturnAt as Date).toDateString()} - ${days} day(s) ago.`,
+          linkPath: `/assets/${assignment.asset.id}`,
+          entityType: 'Asset',
+          entityId: assignment.asset.id,
+        });
+      }
+      raised += 1;
+    }
+
+    if (raised > 0) this.logger.log(`Return sweep raised ${raised} overdue alert(s)`);
+    return raised;
+  }
+
+  /** Was this exact thing already chased inside the window? */
+  private async remindedWithin(
+    entityId: string,
+    type: 'RECEIPT_CONFIRMATION',
+    days: number,
+    now: Date,
+  ): Promise<boolean> {
+    const since = new Date(now.getTime() - days * 86_400_000);
+    const recent = await this.prisma.client.notification.findFirst({
+      where: { entityId, type, createdAt: { gte: since } },
+      select: { id: true },
+    });
+    return recent !== null;
+  }
+
   private async alreadyAlertedToday(
     entityId: string,
     type:
@@ -636,7 +785,8 @@ export class AlertSweepService implements OnModuleInit {
       | 'LICENSE_EXPIRING'
       | 'SEAT_LIMIT_REACHED'
       | 'LOW_STOCK'
-      | 'STOCK_EXPIRING',
+      | 'STOCK_EXPIRING'
+      | 'RETURN_OVERDUE',
     now: Date,
   ): Promise<boolean> {
     const startOfDay = new Date(now);
