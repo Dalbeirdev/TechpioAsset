@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
 /**
@@ -21,6 +22,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Each run assigns a pile of test laptops to the shared employee account.
+  // Left behind, they accumulate until every scope-comparison test in the
+  // suite saturates its page cap and starts failing for reasons that have
+  // nothing to do with the code under test. Raw SQL so the soft-delete
+  // middleware does not turn this into more residue.
+  await app
+    .get(PrismaService)
+    .client.$executeRawUnsafe(`DELETE FROM assets WHERE "assetTag" LIKE 'RSGN-%'`);
   await app?.close();
 });
 

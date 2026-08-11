@@ -29,6 +29,7 @@ import { StatusBadge } from '@/components/status-badge';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { CustodyPanel } from '@/components/assets/custody-panel';
 import { DisposalPanel, type DisposalDto } from '@/components/assets/disposal-panel';
+import { TransferPanel, type OpenTransferDto } from '@/components/assets/transfer-panel';
 import {
   HardwareTab,
   HealthTab,
@@ -63,7 +64,7 @@ interface AssetDetail {
   currency?: string | null;
   category: { name: string } | null;
   subcategory: { name: string } | null;
-  office: { name: string } | null;
+  office: { id: string; name: string } | null;
   assignedUser: {
     id: string;
     email: string;
@@ -91,6 +92,7 @@ interface AssetDetail {
   hardwareProfile: HardwareProfileDto | null;
   osInfo: OsInfoDto | null;
   disposal: DisposalDto | null;
+  transfers: OpenTransferDto[];
   health: HealthDto | null;
   _count: { installedSoftware: number };
 }
@@ -318,6 +320,16 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
           status={data.status}
           holderName={holderName}
           holderId={data.assignedUser?.id ?? null}
+        />
+      ) : null}
+
+      {tab === 'overview' ? (
+        <TransferPanel
+          assetId={id}
+          status={data.status}
+          officeId={data.office?.id ?? null}
+          holderId={data.assignedUser?.id ?? null}
+          openTransfer={data.transfers[0] ?? null}
         />
       ) : null}
 

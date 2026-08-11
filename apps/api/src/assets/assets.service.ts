@@ -10,6 +10,8 @@ import type {
   ReassignAssetInput,
   ReturnAssetInput,
   DisposeAssetInput,
+  ReceiveTransferInput,
+  TransferAssetInput,
   UpdateAssetInput,
 } from '@techpioasset/contracts';
 import {
@@ -297,6 +299,20 @@ export class AssetsService {
           },
         },
         _count: { select: { installedSoftware: true } },
+        // The open transfer, if the asset is on the road - one row, so the
+        // detail page can say where it is heading and offer "confirm arrival".
+        transfers: {
+          where: { receivedAt: null },
+          orderBy: { transferredAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            transferredAt: true,
+            reason: true,
+            fromOffice: { select: { id: true, name: true } },
+            toOffice: { select: { id: true, name: true } },
+          },
+        },
         // End of life, if it has one. Proceeds are money and follow the same
         // rule as every other price: Finance and Super Admin only.
         disposal: {
@@ -1087,6 +1103,124 @@ export class AssetsService {
         proceeds: input.proceeds ?? null,
       },
       reason: input.reason,
+    });
+
+    return this.findOne(actor, id);
+  }
+
+  /**
+   * Sends an asset to another office (v2.15 Phase 2d).
+   *
+   * AssetTransfer existed in the schema from v1 and nothing ever wrote a row;
+   * IN_TRANSIT was a status no code path could reach. An office move was a
+   * silent officeId edit - the asset was never "between" anywhere, which is
+   * precisely where equipment disappears.
+   *
+   * The asset stays attributed to the origin office until the destination
+   * confirms arrival: a laptop in a courier van is not at either site.
+   */
+  async transfer(actor: AuthUser, id: string, input: TransferAssetInput) {
+    const asset = await this.loadForWrite(actor, id);
+
+    const open = await this.prisma.client.assetAssignment.findFirst({
+      where: { assetId: id, returnedAt: null },
+      select: { id: true },
+    });
+    if (open) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'This asset is assigned to someone. Office transfers move stock; a person changing offices keeps their equipment through their own record.',
+      );
+    }
+    if (asset.officeId === input.toOfficeId) {
+      throw new AppError('VALIDATION_FAILED', 'The asset is already at that office');
+    }
+
+    const destination = await this.prisma.client.office.findFirst({
+      where: { id: input.toOfficeId, companyId: actor.companyId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!destination) throw AppError.notFound('Office', input.toOfficeId);
+
+    assertTransition(assetStatusMachine, asset.status as AssetStatus, 'IN_TRANSIT');
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.assetTransfer.create({
+        data: {
+          assetId: id,
+          transferType: 'OFFICE',
+          fromOfficeId: asset.officeId,
+          toOfficeId: input.toOfficeId,
+          reason: input.reason ?? null,
+          notes: input.notes ?? null,
+          condition: asset.condition,
+          approvedById: actor.id,
+          createdById: actor.id,
+        },
+      });
+      await tx.asset.update({
+        where: { id },
+        data: { status: 'IN_TRANSIT', updatedById: actor.id, version: { increment: 1 } },
+      });
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.ASSET_TRANSFERRED,
+      entityType: 'Asset',
+      entityId: id,
+      previousValues: { status: asset.status, officeId: asset.officeId },
+      newValues: { status: 'IN_TRANSIT', toOfficeId: input.toOfficeId },
+      reason: input.reason ?? `Dispatched to ${destination.name}`,
+    });
+
+    return this.findOne(actor, id);
+  }
+
+  /** Destination confirms arrival; only now does the officeId change hands. */
+  async receiveTransfer(actor: AuthUser, id: string, input: ReceiveTransferInput) {
+    const asset = await this.loadForWrite(actor, id);
+
+    const transfer = await this.prisma.client.assetTransfer.findFirst({
+      where: { assetId: id, receivedAt: null, transferType: 'OFFICE' },
+      orderBy: { transferredAt: 'desc' },
+      select: { id: true, toOfficeId: true },
+    });
+    if (!transfer || !transfer.toOfficeId) {
+      throw new AppError('VALIDATION_FAILED', 'This asset has no transfer waiting to be received');
+    }
+
+    assertTransition(assetStatusMachine, asset.status as AssetStatus, input.resultingStatus);
+
+    const now = new Date();
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.assetTransfer.update({
+        where: { id: transfer.id },
+        data: { receivedAt: now, receivedById: actor.id },
+      });
+      await tx.asset.update({
+        where: { id },
+        data: {
+          status: input.resultingStatus,
+          officeId: transfer.toOfficeId,
+          // Rooms belong to offices; the old room does not exist at the new site.
+          roomId: null,
+          updatedById: actor.id,
+          version: { increment: 1 },
+        },
+      });
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.ASSET_TRANSFERRED,
+      entityType: 'Asset',
+      entityId: id,
+      previousValues: { status: asset.status, officeId: asset.officeId },
+      newValues: { status: input.resultingStatus, officeId: transfer.toOfficeId, receivedAt: now },
+      reason: 'Arrival confirmed at destination office',
     });
 
     return this.findOne(actor, id);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Logger, Injectable } from '@nestjs/common';
 import { ApprovalDecision, AuditAction, Prisma, type RequestType } from '@prisma/client';
 import type { AuthUser, CreateRequestInput, RequestListQuery } from '@techpioasset/contracts';
 import {
@@ -24,6 +24,8 @@ const SORTABLE = ['createdAt', 'requestNumber', 'status', 'priority', 'requiredB
 
 @Injectable()
 export class RequestsService {
+  private readonly logger = new Logger(RequestsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflow: WorkflowService,
@@ -179,6 +181,9 @@ export class RequestsService {
         officeId: true,
         departmentId: true,
         currentStepOrder: true,
+        // v2.15 - the work order this ticket became, so an approved damage
+        // report answers "and then what happened?" on its own page.
+        workOrder: { select: { id: true, status: true, title: true } },
         items: {
           select: {
             id: true,
@@ -409,6 +414,15 @@ export class RequestsService {
         },
       });
       await this.recordSubmission(actor, updated.id, updated.requestNumber, 'APPROVED');
+      // Approved-on-submission is still approved: the same work-order rule
+      // applies here as at the end of an approval chain.
+      await this.raiseWorkOrder(actor, {
+        id: updated.id,
+        requestNumber: updated.requestNumber,
+        type: updated.type,
+        assetId: updated.replacesAssetId,
+        businessReason: updated.businessReason,
+      });
       return this.findOne(actor, id);
     }
 
@@ -665,9 +679,80 @@ export class RequestsService {
         decision: 'APPROVED',
         step: approval.stepName,
       });
+
+      // v2.15 Phase 2d - an approved damage or repair ticket becomes a work
+      // order on the named device. Before this, approval was where the trail
+      // ended: the ticket said "approved" forever and the repair, if it
+      // happened, was a separate record nobody connected to it.
+      await this.raiseWorkOrder(actor, {
+        id,
+        requestNumber: request.requestNumber,
+        type: request.type,
+        assetId: request.replacesAssetId,
+        businessReason: request.businessReason,
+      });
     }
 
     return this.findOne(actor, id);
+  }
+
+  /**
+   * Creates the linked work order for an approved DAMAGE/REPAIR request.
+   *
+   * Skips silently when the request names no asset - a damage ticket about a
+   * meeting-room chair has nothing to schedule a repair against. The unique
+   * requestId on MaintenanceRecord makes a duplicate structurally impossible,
+   * and failures log rather than throw: the approval has already happened.
+   */
+  private async raiseWorkOrder(
+    actor: AuthUser,
+    request: {
+      id: string;
+      requestNumber: string;
+      type: string;
+      assetId: string | null;
+      businessReason: string;
+    },
+  ): Promise<void> {
+    if (request.type !== 'DAMAGE' && request.type !== 'REPAIR') return;
+    if (!request.assetId) return;
+
+    try {
+      const asset = await this.prisma.client.asset.findFirst({
+        where: { id: request.assetId, companyId: actor.companyId, deletedAt: null },
+        select: { id: true, assetTag: true, name: true },
+      });
+      if (!asset) return;
+
+      const workOrder = await this.prisma.client.maintenanceRecord.create({
+        data: {
+          assetId: asset.id,
+          requestId: request.id,
+          type: 'REPAIR',
+          status: 'REQUESTED',
+          title: `${request.type === 'DAMAGE' ? 'Damage' : 'Repair'}: ${asset.name} (${request.requestNumber})`,
+          description: request.businessReason,
+          requestedById: actor.id,
+          isInternal: true,
+          createdById: actor.id,
+        },
+        select: { id: true },
+      });
+
+      await this.audit.record({
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.ASSET_UPDATED,
+        entityType: 'MaintenanceRecord',
+        entityId: workOrder.id,
+        newValues: { assetId: asset.id, requestId: request.id, source: request.requestNumber },
+        reason: 'Work order raised from approved request',
+      });
+    } catch (error) {
+      this.logger.error(
+        `Approved ${request.requestNumber} but could not raise its work order: ${(error as Error).message}`,
+      );
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
