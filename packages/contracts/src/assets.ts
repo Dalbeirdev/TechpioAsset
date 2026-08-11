@@ -122,6 +122,32 @@ export const returnAssetSchema = z.object({
 });
 export type ReturnAssetInput = z.infer<typeof returnAssetSchema>;
 
+export const DISPOSAL_METHODS = [
+  'SOLD',
+  'SCRAPPED',
+  'RECYCLED',
+  'DONATED',
+  'RETURNED_TO_VENDOR',
+  'WRITTEN_OFF',
+] as const;
+
+/**
+ * Records an asset's end of life (spec section 22: disposal is recorded, never
+ * a delete). The reason is mandatory - "why did this leave the company" is the
+ * question every disposal audit starts with.
+ */
+export const disposeAssetSchema = z.object({
+  method: z.enum(DISPOSAL_METHODS),
+  disposedAt: z.coerce.date(),
+  /** What the sale raised, if it was sold. */
+  proceeds: moneyString.optional().nullable(),
+  currency: z.string().length(3).toUpperCase().optional().nullable(),
+  /** Buyer, charity, recycler or vendor the asset went to. */
+  recipient: z.string().trim().max(200).optional().nullable(),
+  reason: z.string().trim().min(10, 'Explain why this asset is being disposed of').max(2000),
+});
+export type DisposeAssetInput = z.infer<typeof disposeAssetSchema>;
+
 export const changeAssetStatusSchema = z.object({
   status: assetStatusEnum,
   reason: z.string().trim().max(500).optional(),

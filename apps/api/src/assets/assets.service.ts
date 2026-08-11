@@ -9,6 +9,7 @@ import type {
   PageQuery,
   ReassignAssetInput,
   ReturnAssetInput,
+  DisposeAssetInput,
   UpdateAssetInput,
 } from '@techpioasset/contracts';
 import {
@@ -296,6 +297,21 @@ export class AssetsService {
           },
         },
         _count: { select: { installedSoftware: true } },
+        // End of life, if it has one. Proceeds are money and follow the same
+        // rule as every other price: Finance and Super Admin only.
+        disposal: {
+          select: {
+            method: true,
+            disposedAt: true,
+            proceeds: canSeeCost(actor),
+            currency: canSeeCost(actor),
+            recipient: true,
+            reason: true,
+            approvedBy: {
+              select: { id: true, profile: { select: { firstName: true, lastName: true } } },
+            },
+          },
+        },
       },
     });
 
@@ -984,6 +1000,93 @@ export class AssetsService {
       assetTag: asset.assetTag,
       assetName: asset.name,
       expectedReturnAt: input.expectedReturnAt ?? null,
+    });
+
+    return this.findOne(actor, id);
+  }
+
+  /**
+   * Records an asset's end of life (spec section 22, v2.15).
+   *
+   * A disposal is recorded, never a delete: the DisposalRecord carries the
+   * method, date, recipient and reason, and the asset row stays for its
+   * history. The unique assetId on the record is what makes "disposed twice"
+   * structurally impossible rather than merely checked.
+   */
+  async dispose(actor: AuthUser, id: string, input: DisposeAssetInput) {
+    const asset = await this.loadForWrite(actor, id);
+
+    // Custody first. Disposing a device someone still holds would write a
+    // clean-looking record over an unreturned laptop.
+    const open = await this.prisma.client.assetAssignment.findFirst({
+      where: { assetId: id, returnedAt: null },
+      select: { id: true },
+    });
+    if (open) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'This asset is still assigned to someone. Record its return before disposing of it.',
+      );
+    }
+
+    // DONATED is its own terminal state; everything else lands in DISPOSED.
+    const target: AssetStatus = input.method === 'DONATED' ? 'DONATED' : 'DISPOSED';
+    assertTransition(assetStatusMachine, asset.status as AssetStatus, target);
+
+    if (input.disposedAt.getTime() > Date.now() + 86_400_000) {
+      throw new AppError('VALIDATION_FAILED', 'The disposal date cannot be in the future');
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.disposalRecord.create({
+        data: {
+          assetId: id,
+          method: input.method,
+          disposedAt: input.disposedAt,
+          proceeds: input.proceeds ?? null,
+          currency: input.proceeds ? (input.currency ?? 'USD') : null,
+          recipient: input.recipient ?? null,
+          reason: input.reason,
+          approvedById: actor.id,
+          createdById: actor.id,
+        },
+      });
+
+      await tx.asset.update({
+        where: { id },
+        data: { status: target, updatedById: actor.id, version: { increment: 1 } },
+      });
+
+      await tx.assetConditionLog.create({
+        data: {
+          assetId: id,
+          previousCondition: asset.condition,
+          newCondition: asset.condition,
+          previousStatus: asset.status,
+          newStatus: target,
+          reason: `Disposed: ${input.method.toLowerCase().replace(/_/g, ' ')}`,
+          createdById: actor.id,
+        },
+      });
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.DISPOSAL_RECORDED,
+      entityType: 'Asset',
+      entityId: id,
+      previousValues: { status: asset.status },
+      newValues: {
+        status: target,
+        method: input.method,
+        disposedAt: input.disposedAt,
+        recipient: input.recipient ?? null,
+        // Proceeds belong in the audit log - it is the record a disposal
+        // dispute reaches for, and its readers already hold audit:read.
+        proceeds: input.proceeds ?? null,
+      },
+      reason: input.reason,
     });
 
     return this.findOne(actor, id);

@@ -24,6 +24,7 @@ import {
   type BulkChangeStatusInput,
   createAssetSchema,
   pageQuerySchema,
+  disposeAssetSchema,
   reassignAssetSchema,
   returnAssetSchema,
   setAssetPriceSchema,
@@ -33,6 +34,7 @@ import {
   type AuthUser,
   type CreateAssetInput,
   type PageQuery,
+  type DisposeAssetInput,
   type ReassignAssetInput,
   type ReturnAssetInput,
   type UpdateAssetInput,
@@ -258,6 +260,21 @@ export class AssetsController {
     @Body(zodBody(reassignAssetSchema)) body: ReassignAssetInput,
   ) {
     return this.assets.reassign(actor, id, body);
+  }
+
+  @Post(':id/dispose')
+  @RequirePermissions(PERMISSIONS.ASSETS_DISPOSE)
+  @ApiOperation({
+    summary: "Record an asset's end of life",
+    description:
+      'Writes a DisposalRecord (method, date, recipient, proceeds, reason) and moves the asset to its terminal status. Recorded, never a delete.',
+  })
+  dispose(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(disposeAssetSchema)) body: DisposeAssetInput,
+  ) {
+    return this.assets.dispose(actor, id, body);
   }
 
   @Post(':id/return')

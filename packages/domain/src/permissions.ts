@@ -267,6 +267,11 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.ANALYTICS_READ,
     P.ASSETS_READ,
     P.ASSETS_COST_READ,
+    // Disposal is a financial act - proceeds, write-offs, the book value it
+    // closes out - so it sits with Finance. IT cannot hold it: dispose plus
+    // inventory:adjust is an SoD pair (write kit off, adjust the count, and
+    // missing equipment disappears), and IT keeps inventory:adjust.
+    P.ASSETS_DISPOSE,
     P.FINANCE_BUDGETS_MANAGE,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_PR_APPROVE,
