@@ -2,11 +2,12 @@ import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
 import { DiscoveryController } from './discovery.controller.js';
 import { DiscoveryService } from './discovery.service.js';
+import { AgentGuard } from './agent.guard.js';
 
 @Module({
   imports: [AuditModule],
   controllers: [DiscoveryController],
-  providers: [DiscoveryService],
+  providers: [DiscoveryService, AgentGuard],
   exports: [DiscoveryService],
 })
 export class DiscoveryModule {}
