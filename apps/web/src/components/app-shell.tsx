@@ -216,6 +216,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Menu visibility is a convenience, never the control: every route below is
   // independently enforced by the API (spec section 20).
+  const ownScope = user.scope === 'OWN';
+
   const allowed = (items: NavItem[]) =>
     items.filter(
       (i) =>
@@ -336,12 +338,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             />
             <input
               type="search"
-              aria-label="Search assets"
+              aria-label={ownScope ? 'Search my assets' : 'Search assets'}
               placeholder="Search…"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   const value = (e.target as HTMLInputElement).value.trim();
-                  if (value) router.push(`/assets?q=${encodeURIComponent(value)}`);
+                  // The destination has to be a page the user may actually
+                  // open. OWN-scope users cannot see /assets (the route guard
+                  // sends them to the dashboard), so searching there bounced
+                  // them straight back and the box looked broken. Their search
+                  // belongs on their own equipment.
+                  if (value)
+                    router.push(
+                      ownScope
+                        ? `/my-assets?q=${encodeURIComponent(value)}`
+                        : `/assets?q=${encodeURIComponent(value)}`,
+                    );
                 }
               }}
               className="h-9 w-44 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] pl-8 text-sm md:w-60"

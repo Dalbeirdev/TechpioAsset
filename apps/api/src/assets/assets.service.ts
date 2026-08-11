@@ -21,7 +21,7 @@ import {
 } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
-import { assetScopeFilter, canSeeCost, tenantFilter } from '../common/scope.js';
+import { assetScopeFilter, canSeeCost, canSeeVendor, tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WebhooksService } from '../integrations/webhooks.service.js';
@@ -60,6 +60,10 @@ export class AssetsService {
 
   private selection(actor: AuthUser) {
     const showCost = canSeeCost(actor);
+    // Who supplied the device is procurement's business, not the holder's.
+    // Omitted from the query itself, like cost, so a value the actor may not
+    // see never leaves the database.
+    const showVendor = canSeeVendor(actor);
     return {
       id: true,
       assetTag: true,
@@ -95,7 +99,7 @@ export class AssetsService {
       office: { select: { id: true, name: true } },
       room: { select: { id: true, name: true } },
       department: { select: { id: true, name: true } },
-      vendor: { select: { id: true, name: true } },
+      vendor: showVendor ? ({ select: { id: true, name: true } } as const) : (false as const),
       assignedUser: {
         select: {
           id: true,

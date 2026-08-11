@@ -135,7 +135,7 @@ function humanDuration(months: number): string {
 
 export default function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
   const canSeeCost = can(PERMISSIONS.ASSETS_COST_READ);
@@ -186,7 +186,17 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="mx-auto grid max-w-3xl gap-4">
       <div>
-        <Breadcrumbs items={[{ label: 'Assets', href: '/assets' }, { label: data.assetTag }]} />
+        {/* The crumb must lead somewhere the viewer may actually go: an
+            OWN-scope holder cannot open /assets, so it would bounce them to
+            the dashboard. Point them back at their own equipment instead. */}
+        <Breadcrumbs
+          items={[
+            can(PERMISSIONS.ASSETS_READ) && user?.scope !== 'OWN'
+              ? { label: 'Assets', href: '/assets' }
+              : { label: 'My assets', href: '/my-assets' },
+            { label: data.assetTag },
+          ]}
+        />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight">{data.name}</h1>
           <StatusBadge token={ASSET_STATUS_TOKENS[data.status]} size="sm" />
