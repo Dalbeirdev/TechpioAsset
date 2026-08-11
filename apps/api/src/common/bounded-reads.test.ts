@@ -46,6 +46,11 @@ const TENANT_SCALED = new Set([
   'budget',
   'costCentre',
   'attachment',
+  // v2.12: a row per login AND per rotation, kept until expiry. The session
+  // list shipped unbounded and a single test-tenant account had 3,252 live
+  // rows - exactly the shape this guard exists to catch, missing only because
+  // the model was never listed here.
+  'refreshToken',
 ]);
 
 /**

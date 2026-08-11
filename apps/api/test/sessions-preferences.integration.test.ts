@@ -83,6 +83,32 @@ describe('session management', () => {
     expect(activeAfter).toBeLessThan(activeBefore);
   });
 
+  it('the list is bounded and one row per device, however many logins exist', async () => {
+    // Log in repeatedly: each login opens a new refresh-token family, and every
+    // rotation adds another ROW to an existing one. Neither may turn the device
+    // list into a log file (a real account in the test tenant reached 3,252
+    // live rows before this was capped).
+    for (let i = 0; i < 6; i++) {
+      const res = await api(app)
+        .post('/api/v1/auth/login')
+        .send({ email: s.employee2.user.email, password: 'TechpioDemo!2026' });
+      expect(res.status).toBe(200);
+    }
+
+    const liveRows = await prisma.client.refreshToken.count({
+      where: { userId: s.employee2.user.id, revokedAt: null },
+    });
+    expect(liveRows).toBeGreaterThanOrEqual(6);
+
+    const list = await api(app).get('/api/v1/auth/sessions').set(auth(s.employee2));
+    expect(list.status).toBe(200);
+    // Bounded...
+    expect(list.body.data.length).toBeLessThanOrEqual(20);
+    // ...and never the same device twice.
+    const ids = list.body.data.map((row: { id: string }) => row.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('sessions endpoint is per-user — never another account', async () => {
     const list = await api(app).get('/api/v1/auth/sessions').set(auth(s.employee));
     expect(list.status).toBe(200);
