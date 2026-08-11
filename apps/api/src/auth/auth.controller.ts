@@ -289,6 +289,16 @@ export class AuthController {
     return this.tokens.listSessions(user.id, this.readRefreshCookie(req));
   }
 
+  @Get('login-history')
+  @ApiOperation({
+    summary: 'Your recent sign-ins',
+    description:
+      'Read from the audit trail, always your own: successful and failed sign-ins with device and IP, newest first.',
+  })
+  loginHistory(@CurrentUser() user: AuthUser) {
+    return this.auth.loginHistory(user);
+  }
+
   @Post('sessions/revoke-others')
   @HttpCode(200)
   @ApiOperation({ summary: 'Sign out every other device, keeping this one' })

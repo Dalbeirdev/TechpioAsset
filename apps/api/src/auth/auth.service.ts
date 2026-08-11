@@ -486,6 +486,35 @@ export class AuthService {
    * the password here lets the web app hold security settings behind a
    * "confirm it's you" prompt without granting anything new server-side.
    */
+  /**
+   * Recent sign-in activity for the security page (v2.12).
+   *
+   * Read from the audit trail rather than a new table - LOGIN, LOGIN_FAILED
+   * and LOGOUT have been recorded there all along, and the point of an
+   * append-only trail is that it is the answer to this question. Always the
+   * caller's own rows: there is no parameter to widen it, so this cannot
+   * become a way to watch a colleague. Bounded at 50.
+   */
+  async loginHistory(actor: AuthUser) {
+    const rows = await this.prisma.client.auditLog.findMany({
+      where: {
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: { in: [AuditAction.LOGIN, AuditAction.LOGIN_FAILED, AuditAction.LOGOUT] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { id: true, action: true, createdAt: true, ipAddress: true, userAgent: true },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      at: row.createdAt.toISOString(),
+      ipAddress: row.ipAddress ?? null,
+      device: row.userAgent ?? null,
+    }));
+  }
+
   async confirmPassword(userId: string, password: string): Promise<void> {
     const user = await this.prisma.client.user.findUniqueOrThrow({ where: { id: userId } });
     if (!(await this.passwords.verify(user.passwordHash, password))) {
