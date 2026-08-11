@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { CustodyPanel } from '@/components/assets/custody-panel';
+import { DisposalPanel, type DisposalDto } from '@/components/assets/disposal-panel';
 import {
   HardwareTab,
   HealthTab,
@@ -89,6 +90,7 @@ interface AssetDetail {
   // v2.5 H4 payload — null/zero until discovery has reported this machine.
   hardwareProfile: HardwareProfileDto | null;
   osInfo: OsInfoDto | null;
+  disposal: DisposalDto | null;
   health: HealthDto | null;
   _count: { installedSoftware: number };
 }
@@ -316,6 +318,15 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
           status={data.status}
           holderName={holderName}
           holderId={data.assignedUser?.id ?? null}
+        />
+      ) : null}
+
+      {tab === 'overview' ? (
+        <DisposalPanel
+          assetId={id}
+          assetName={data.name}
+          status={data.status}
+          disposal={data.disposal}
         />
       ) : null}
 
