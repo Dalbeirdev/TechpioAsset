@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Radar } from 'lucide-react';
+import { Laptop, Radar } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { Tone } from '@/components/assets/discovery-tabs';
+import { AgentsTab } from '@/components/discovery/agents-tab';
 
 /**
  * v2.5 H5 — the discovery review queue. Exact serials auto-matched already;
@@ -56,6 +57,7 @@ export default function DiscoveryPage() {
   const canReconcile = can(PERMISSIONS.DISCOVERY_RECONCILE);
   const canIngest = can(PERMISSIONS.DISCOVERY_INGEST);
   const [state, setState] = useState<StateFilter>('ALL');
+  const [tab, setTab] = useState<'devices' | 'agents'>('devices');
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['discovery', state],
@@ -115,6 +117,43 @@ export default function DiscoveryPage() {
         ) : null}
       </header>
 
+      {/* Two jobs live on this page: triaging what has been discovered, and
+          managing the agents doing the discovering. */}
+      <div
+        role="tablist"
+        aria-label="Discovery sections"
+        className="flex gap-1 border-b border-[var(--color-border)]"
+      >
+        {(
+          [
+            ['devices', 'Devices'],
+            ['agents', 'Agents'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={
+              tab === key
+                ? 'border-b-2 border-[var(--color-brand)] px-3.5 py-2 text-sm font-semibold text-[var(--color-brand)]'
+                : 'border-b-2 border-transparent px-3.5 py-2 text-sm font-medium text-[var(--color-content-muted)] hover:text-[var(--color-content)]'
+            }
+          >
+            <span className="flex items-center gap-1.5">
+              {key === 'agents' ? <Laptop aria-hidden="true" className="size-3.5" /> : null}
+              {label}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {tab === 'agents' ? <AgentsTab /> : null}
+
+      {tab === 'devices' ? (
+      <>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by state">
         {STATES.map((key) => (
           <button
@@ -236,6 +275,8 @@ export default function DiscoveryPage() {
           </div>
         )}
       </Card>
+      </>
+      ) : null}
     </div>
   );
 }
