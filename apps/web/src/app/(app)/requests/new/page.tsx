@@ -8,7 +8,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { CalendarDays, FileText, Flag, Plus, Send, Tag, Trash2 } from 'lucide-react';
-import { PERMISSIONS } from '@techpioasset/domain';
+import { PERMISSIONS, ISSUE_CATEGORIES, findIssueCategory } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card } from '@/components/ui';
@@ -105,9 +105,24 @@ export default function NewRequestPage() {
   // useSearchParams needs a Suspense boundary during prerender.
   return (
     <Suspense fallback={null}>
-      <NewRequestForm />
+      <NewRequestKeyedForm />
     </Suspense>
   );
+}
+
+/**
+ * Keys the form by the chosen issue so picking one gives a FRESH form.
+ *
+ * react-hook-form reads defaultValues once, at mount. Navigating from the
+ * issue picker to ?issue=... is a client-side transition that reuses the same
+ * component instance, so without this the type and priority the catalogue
+ * chose were computed and then ignored - a hardware-damage report was filed
+ * as "Additional equipment".
+ */
+function NewRequestKeyedForm() {
+  const params = useSearchParams();
+  const issueKey = params.get('issue') ?? params.get('type') ?? 'blank';
+  return <NewRequestForm key={issueKey} />;
 }
 
 function NewRequestForm() {
@@ -117,9 +132,16 @@ function NewRequestForm() {
   // Quick actions and per-asset buttons land here with the intent pre-filled:
   // /requests/new?type=DAMAGE&about=AST-0201 opens a damage report about that
   // device instead of a blank form.
-  const prefillType = TYPES.some((t) => t.value === params.get('type'))
-    ? (params.get('type') as string)
-    : 'ADDITIONAL_EQUIPMENT';
+  // Arriving from "Report an issue" carries a catalogue key, which decides the
+  // request type and starting priority so the employee never has to know that
+  // a cracked screen is a REPAIR and a dropped laptop is a DAMAGE.
+  const issue = findIssueCategory(params.get('issue'));
+  const reportingIssue = params.get('report') === 'issue' || Boolean(issue);
+  const prefillType = issue
+    ? issue.requestType
+    : TYPES.some((t) => t.value === params.get('type'))
+      ? (params.get('type') as string)
+      : 'ADDITIONAL_EQUIPMENT';
   const prefillAbout = params.get('about')?.slice(0, 120) ?? '';
   // Money follows the standing rule: only finance roles enter estimated cost.
   // Everyone else describes the equipment; procurement prices it later. The
@@ -130,7 +152,7 @@ function NewRequestForm() {
     resolver: zodResolver(requestSchema),
     defaultValues: {
       type: prefillType,
-      priority: 'NORMAL',
+      priority: issue?.priority ?? 'NORMAL',
       businessReason: '',
       requiredBy: '',
       items: [
@@ -148,6 +170,7 @@ function NewRequestForm() {
         body: {
           type: values.type,
           priority: values.priority,
+          ...(issue ? { issueCategory: issue.key } : {}),
           businessReason: values.businessReason,
           ...(values.requiredBy ? { requiredBy: values.requiredBy } : {}),
           items: values.items.map((item) => ({
@@ -197,14 +220,44 @@ function NewRequestForm() {
           <FileText aria-hidden="true" className="size-6 text-[var(--color-brand)]" />
         </span>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">New Request</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {reportingIssue ? 'Report an issue' : 'New Request'}
+          </h1>
           <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-            Your request will be routed for approval automatically based on what you ask for and
-            its cost.
+            {issue
+              ? `${issue.label} — tell us what is happening and IT will pick it up.`
+              : reportingIssue
+                ? 'Pick what is wrong and IT will pick it up.'
+                : 'Your request will be routed for approval automatically based on what you ask for and its cost.'}
           </p>
         </div>
       </header>
 
+      {reportingIssue && !issue ? (
+        <Card className="mt-6 p-6">
+          <h2 className="text-sm font-semibold">What is wrong?</h2>
+          <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+            Pick the closest match. It decides who reviews it and how quickly — you can add the
+            details on the next screen.
+          </p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {ISSUE_CATEGORIES.map((category) => (
+              <Link
+                key={category.key}
+                href={`/requests/new?issue=${category.key}${
+                  prefillAbout ? `&about=${encodeURIComponent(prefillAbout)}` : ''
+                }`}
+                className="rounded-[var(--radius-card)] border border-[var(--color-border-strong)] p-3.5 transition hover:border-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)]"
+              >
+                <span className="block text-sm font-medium">{category.label}</span>
+                <span className="mt-0.5 block text-xs text-[var(--color-content-subtle)]">
+                  {category.hint}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : (
       <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <Form {...form}>
           <form
@@ -498,6 +551,7 @@ function NewRequestForm() {
           </Card>
         </aside>
       </div>
+      )}
     </div>
   );
 }

@@ -25,3 +25,4 @@ export * from './workflow-templates';
 export * from './budget';
 export * from './rfq';
 export * from './batch';
+export * from './issue-catalogue';

@@ -41,6 +41,10 @@ export const createRequestSchema = z.object({
   priority: requestPriorityEnum.default('NORMAL'),
   /** HR and similar roles raise requests for someone else; needs requests:create-on-behalf. */
   beneficiaryId: z.string().optional().nullable(),
+  /** v2.14 - the published issue-catalogue key when raised via "Report an
+   * issue". Validated as a plain string here and checked against the
+   * catalogue in the service, so contracts stay free of domain imports. */
+  issueCategory: z.string().trim().max(40).optional().nullable(),
   businessReason: z.string().trim().min(10, 'Explain why this is needed').max(2000),
   requiredBy: z.coerce.date().optional().nullable(),
   preferredSpec: z.string().trim().max(1000).optional().nullable(),

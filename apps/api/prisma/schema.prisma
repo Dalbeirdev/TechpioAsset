@@ -1742,6 +1742,10 @@ model AssetRequest {
   officeId      String?
   departmentId  String?
 
+  /// v2.14 - which entry of the published issue catalogue the employee picked,
+  /// when the request came from "Report an issue". Nullable because most
+  /// requests are not fault reports, and free-form ones never were.
+  issueCategory   String?
   businessReason  String
   requiredBy      DateTime?
   preferredSpec   String?
