@@ -57,6 +57,18 @@ IT Administrator).
 
 ### 2. Run once per laptop, elevated
 
+The portal serves the script itself, so nothing needs copying by hand — this
+single line downloads it and installs it, from any directory:
+
+```powershell
+iwr -useb https://piotask.com/downloads/TechpioAgent.ps1 -OutFile $env:TEMP\TechpioAgent.ps1; powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\TechpioAgent.ps1 -PortalUrl https://piotask.com/api/v1 -EnrolmentToken tae_your_token_here -Install
+```
+
+The `-ExecutionPolicy Bypass` matters: Windows' default policy refuses
+downloaded `.ps1` files, so running the script directly fails on a stock
+machine. If you already have the file locally (Intune, GPO, a USB stick),
+the direct form works too:
+
 ```powershell
 .\TechpioAgent.ps1 `
     -PortalUrl https://piotask.com/api/v1 `

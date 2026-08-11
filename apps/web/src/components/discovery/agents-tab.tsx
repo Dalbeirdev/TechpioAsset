@@ -101,12 +101,23 @@ export function AgentsTab() {
 
   const rows = agents.data ?? [];
   const active = rows.filter((r) => !r.revokedAt);
-  // The API base, not the page origin: in development the portal is served
-  // from a different port than the API, so a command built from the page URL
-  // quietly points at the wrong host — worse than offering no command at all.
+  // One paste-able line that works from any directory on a stock machine:
+  // fetch the script from this portal, then run it via -ExecutionPolicy
+  // Bypass — Windows' default policy refuses downloaded .ps1 files, and an
+  // installer command that dies with a red error on the first laptop is a
+  // command nobody runs on the second.
+  //
+  // Download uses the page origin (the portal serves the script); -PortalUrl
+  // is the API base, which in development is a different port — a command
+  // built from one URL for both quietly points at the wrong host.
+  const scriptUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/downloads/TechpioAgent.ps1`
+      : '/downloads/TechpioAgent.ps1';
   const installCommand =
-    `.\\TechpioAgent.ps1 -PortalUrl ${apiBaseUrl} ` +
-    `-EnrolmentToken ${newToken ?? '<your-token>'} -Install`;
+    `iwr -useb ${scriptUrl} -OutFile $env:TEMP\\TechpioAgent.ps1; ` +
+    `powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\\TechpioAgent.ps1 ` +
+    `-PortalUrl ${apiBaseUrl} -EnrolmentToken ${newToken ?? '<your-token>'} -Install`;
 
   return (
     <div className="grid gap-4">
@@ -190,7 +201,8 @@ export function AgentsTab() {
               </Button>
             </div>
             <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
-              The agent installs its own scheduled task, so it only needs running once per machine.
+              Downloads the agent from this portal and installs its scheduled task — one run per
+              machine, from any folder.
             </p>
           </div>
         </Card>
