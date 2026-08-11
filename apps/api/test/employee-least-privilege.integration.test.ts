@@ -149,6 +149,31 @@ describe('G3 — asset history is anonymised for the current holder', () => {
   });
 });
 
+describe('G11 — vendor is procurement information, not the holders', () => {
+  it('an employee never sees which supplier the asset came from', async () => {
+    const list = await api(app).get('/api/v1/assets?pageSize=100').set(auth(s.employee));
+    expect(list.status, JSON.stringify(list.body).slice(0, 200)).toBe(200);
+    // The audit found real vendor names ("Dell Technologies", "Apple Business")
+    // reaching employees through the list payload.
+    for (const asset of list.body.data) expect(asset.vendor).toBeUndefined();
+
+    // ...and a role that manages vendors still gets it, so the gate narrows
+    // the field rather than deleting it. Filtered by vendorId so the rows are
+    // guaranteed to have one - most seeded assets do not.
+    const vendor = await prisma.client.vendor.findFirst({
+      where: { companyId, assets: { some: {} } },
+      select: { id: true, name: true },
+    });
+    expect(vendor, 'fixture needs a vendor with assets').not.toBeNull();
+    const itAdmin = await api(app)
+      .get(`/api/v1/assets?pageSize=5&vendorId=${vendor!.id}`)
+      .set(auth(s.itAdmin));
+    expect(itAdmin.status, JSON.stringify(itAdmin.body).slice(0, 200)).toBe(200);
+    expect(itAdmin.body.data.length).toBeGreaterThan(0);
+    for (const asset of itAdmin.body.data) expect(asset.vendor?.name).toBe(vendor!.name);
+  });
+});
+
 describe('G4 — cost-centre picker rows are anonymous for employees', () => {
   it('returns code and name but neither owner nor notes', async () => {
     const res = await api(app).get('/api/v1/cost-centres').set(auth(s.employee));

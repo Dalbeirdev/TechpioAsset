@@ -105,6 +105,19 @@ export function canSeeCost(user: AuthUser): boolean {
   return user.permissions.includes('assets:cost:read');
 }
 
+/**
+ * True when the actor may see which supplier an asset came from (v2.12).
+ *
+ * Who sold us the laptop is procurement information, not something the person
+ * carrying it needs - the employee-portal audit found vendor names ("Dell
+ * Technologies", "Apple Business") reaching employees through the asset list.
+ * Gated on the same permission that governs the vendor records themselves, so
+ * the answer cannot drift from who may open /vendors.
+ */
+export function canSeeVendor(user: AuthUser): boolean {
+  return user.permissions.includes('vendors:read');
+}
+
 /** Removes monetary fields from a payload for actors without cost permission. */
 export function redactCost<T extends Record<string, unknown>>(
   user: AuthUser,

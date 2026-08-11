@@ -1,7 +1,9 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import type { AssetCondition, AssetStatus } from '@techpioasset/domain';
 import { apiFetchPage } from '@/lib/api-client';
@@ -24,12 +26,29 @@ interface AssetRow {
 }
 
 export default function MyAssetsPage() {
+  // useSearchParams needs a Suspense boundary during prerender.
+  return (
+    <Suspense fallback={null}>
+      <MyAssetsList />
+    </Suspense>
+  );
+}
+
+function MyAssetsList() {
   const { user } = useAuth();
+  // The header search sends OWN-scope users here with ?q=. The API already
+  // matches name/tag/serial/brand/model and is scoped to the caller, so the
+  // term simply rides along - no client-side filtering to drift out of step.
+  const params = useSearchParams();
+  const q = params.get('q')?.trim() ?? '';
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['my-assets', user?.id],
+    queryKey: ['my-assets', user?.id, q],
     enabled: Boolean(user),
-    queryFn: () => apiFetchPage<AssetRow>(`/assets?assignedUserId=${user!.id}&pageSize=100`),
+    queryFn: () =>
+      apiFetchPage<AssetRow>(
+        `/assets?assignedUserId=${user!.id}&pageSize=100${q ? `&q=${encodeURIComponent(q)}` : ''}`,
+      ),
   });
 
   return (
@@ -37,8 +56,13 @@ export default function MyAssetsPage() {
       <header>
         <h1 className="text-xl font-semibold tracking-tight">My assets</h1>
         <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-          Equipment currently issued to you.
+          {q ? `Your equipment matching “${q}”.` : 'Equipment currently issued to you.'}
         </p>
+        {q ? (
+          <Link href="/my-assets" className="mt-1 inline-block text-sm text-[var(--color-brand)]">
+            Clear search
+          </Link>
+        ) : null}
       </header>
 
       {isPending ? (
@@ -52,8 +76,12 @@ export default function MyAssetsPage() {
       ) : data.data.length === 0 ? (
         <Card>
           <EmptyState
-            title="Nothing assigned to you"
-            description="When IT or the office team issues you equipment, it will appear here."
+            title={q ? 'No equipment matches that search' : 'Nothing assigned to you'}
+            description={
+              q
+                ? 'Try a different asset name, tag or serial number.'
+                : 'When IT or the office team issues you equipment, it will appear here.'
+            }
           />
         </Card>
       ) : (
