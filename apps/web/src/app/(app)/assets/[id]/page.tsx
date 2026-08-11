@@ -27,6 +27,7 @@ import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { CustodyPanel } from '@/components/assets/custody-panel';
 import {
   HardwareTab,
   HealthTab,
@@ -307,6 +308,15 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
             </p>
           ) : null}
         </Card>
+      ) : null}
+
+      {tab === 'overview' ? (
+        <CustodyPanel
+          assetId={id}
+          status={data.status}
+          holderName={holderName}
+          holderId={data.assignedUser?.id ?? null}
+        />
       ) : null}
 
       {tab === 'lifecycle' ? <LifecycleTab data={data} /> : null}

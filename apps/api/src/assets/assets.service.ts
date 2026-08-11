@@ -7,6 +7,7 @@ import type {
   AuthUser,
   CreateAssetInput,
   PageQuery,
+  ReassignAssetInput,
   ReturnAssetInput,
   UpdateAssetInput,
 } from '@techpioasset/contracts';
@@ -106,6 +107,15 @@ export class AssetsService {
           email: true,
           profile: { select: { firstName: true, lastName: true, avatarKey: true } },
         },
+      },
+      // The open assignment only - one row, so the holder can confirm receipt
+      // from a list without opening each device. Bounded by `take`, and closed
+      // assignments (the device's whole history) never ride along.
+      assignments: {
+        where: { returnedAt: null },
+        orderBy: { assignedAt: 'desc' },
+        take: 1,
+        select: { id: true, acknowledgedAt: true, expectedReturnAt: true },
       },
     } satisfies Prisma.AssetSelect;
   }
@@ -777,6 +787,127 @@ export class AssetsService {
       entityId: id,
       previousValues: { status: asset.status, assignedUserId: asset.assignedUserId },
       newValues: { status: input.resultingStatus, conditionIn: input.conditionIn },
+    });
+
+    return this.findOne(actor, id);
+  }
+
+  /**
+   * Hand a device from its current holder straight to the next one (v2.15).
+   *
+   * The same two records a return and an assignment would write, in ONE
+   * transaction. Doing it as two API calls left a window where the asset
+   * belonged to nobody - and if the second call failed, a device that was
+   * meant to move had simply vanished from its owner instead.
+   *
+   * The intermediate RETURNED status is asserted exactly as the two-step path
+   * does, so an asset that may not be returned may not be reassigned either.
+   */
+  async reassign(actor: AuthUser, id: string, input: ReassignAssetInput) {
+    const asset = await this.loadForWrite(actor, id);
+
+    const open = await this.prisma.client.assetAssignment.findFirst({
+      where: { assetId: id, returnedAt: null },
+      orderBy: { assignedAt: 'desc' },
+    });
+    if (!open) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'This asset is not assigned to anyone. Assign it instead of reassigning it.',
+      );
+    }
+    if (open.userId === input.userId) {
+      throw new AppError('VALIDATION_FAILED', 'That person already holds this asset');
+    }
+
+    const recipient = await this.prisma.client.user.findFirst({
+      where: { id: input.userId, companyId: actor.companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!recipient) throw AppError.notFound('User', input.userId);
+
+    // Every hop is checked before anything is written. A handover is the same
+    // journey the two-call flow makes - back to the shelf, then out again - so
+    // it walks the same three transitions rather than teaching the state
+    // machine a shortcut that would let any returned asset skip availability.
+    assertTransition(assetStatusMachine, asset.status as AssetStatus, 'RETURNED');
+    assertTransition(assetStatusMachine, 'RETURNED', 'AVAILABLE');
+    assertTransition(assetStatusMachine, 'AVAILABLE', 'ASSIGNED');
+
+    const conditionOut = input.conditionOut ?? input.conditionIn;
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const now = new Date();
+
+      // 1. Close the outgoing holder's assignment with a real return record,
+      //    so the previous custody is as well documented as any other return.
+      await tx.assetAssignment.update({
+        where: { id: open.id },
+        data: { returnedAt: now, updatedById: actor.id },
+      });
+      await tx.assetReturn.create({
+        data: {
+          assignmentId: open.id,
+          returnedAt: now,
+          receivedById: actor.id,
+          conditionIn: input.conditionIn,
+          damageNotes: input.damageNotes ?? null,
+          resultingStatus: 'ASSIGNED',
+          notes: input.notes ?? null,
+          createdById: actor.id,
+        },
+      });
+
+      // 2. Open the incoming holder's assignment.
+      await tx.assetAssignment.create({
+        data: {
+          assetId: id,
+          userId: input.userId,
+          assignedById: actor.id,
+          assignedAt: now,
+          expectedReturnAt: input.expectedReturnAt ?? null,
+          conditionOut,
+          accessoriesIssued: input.accessoriesIssued ?? null,
+          notes: input.notes ?? null,
+          createdById: actor.id,
+        },
+      });
+
+      await tx.asset.update({
+        where: { id },
+        data: {
+          status: 'ASSIGNED',
+          condition: conditionOut,
+          assignedUserId: input.userId,
+          assignmentDate: now,
+          expectedReturnDate: input.expectedReturnAt ?? null,
+          updatedById: actor.id,
+          version: { increment: 1 },
+        },
+      });
+
+      await tx.assetConditionLog.create({
+        data: {
+          assetId: id,
+          previousCondition: asset.condition,
+          newCondition: conditionOut,
+          previousStatus: asset.status,
+          newStatus: 'ASSIGNED',
+          reason: 'Reassigned',
+          createdById: actor.id,
+        },
+      });
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.ASSET_TRANSFERRED,
+      entityType: 'Asset',
+      entityId: id,
+      previousValues: { assignedUserId: open.userId, status: asset.status },
+      newValues: { assignedUserId: input.userId, status: 'ASSIGNED', conditionIn: input.conditionIn },
+      reason: 'Reassigned directly to a new holder',
     });
 
     return this.findOne(actor, id);

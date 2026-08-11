@@ -24,6 +24,7 @@ import {
   type BulkChangeStatusInput,
   createAssetSchema,
   pageQuerySchema,
+  reassignAssetSchema,
   returnAssetSchema,
   setAssetPriceSchema,
   updateAssetSchema,
@@ -32,6 +33,7 @@ import {
   type AuthUser,
   type CreateAssetInput,
   type PageQuery,
+  type ReassignAssetInput,
   type ReturnAssetInput,
   type UpdateAssetInput,
 } from '@techpioasset/contracts';
@@ -241,6 +243,21 @@ export class AssetsController {
     @Body(zodBody(assignAssetSchema)) body: AssignAssetInput,
   ) {
     return this.assets.assign(actor, id, body);
+  }
+
+  @Post(':id/reassign')
+  @RequirePermissions(PERMISSIONS.ASSETS_ASSIGN, PERMISSIONS.ASSETS_RETURN)
+  @ApiOperation({
+    summary: 'Hand an asset straight from its current holder to another',
+    description:
+      'One transaction: the outgoing holder gets a real return record and the incoming one a new assignment, with no window where the asset belongs to nobody.',
+  })
+  reassign(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(reassignAssetSchema)) body: ReassignAssetInput,
+  ) {
+    return this.assets.reassign(actor, id, body);
   }
 
   @Post(':id/return')
