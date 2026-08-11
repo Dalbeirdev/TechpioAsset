@@ -24,6 +24,7 @@ import {
 import { PERMISSIONS } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
+import { z } from 'zod';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { ProcurementService } from './procurement.service.js';
 import { MatchService } from './match.service.js';
@@ -34,6 +35,10 @@ import { RfqService } from './rfq.service.js';
  * their own PR); above the Finance threshold the approver must also hold the
  * cost permission. Over-receipt is transactionally impossible.
  */
+/** Free-text reason on cancel/close actions: validated and length-bound
+ * rather than accepted raw (v2.12 audit). */
+const reasonSchema = z.object({ reason: z.string().trim().max(500).optional() }).strict();
+
 @ApiTags('procurement')
 @Controller('procurement')
 export class ProcurementController {
@@ -87,7 +92,7 @@ export class ProcurementController {
   cancelPr(
     @CurrentUser() actor: AuthUser,
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body(zodBody(reasonSchema)) body: { reason?: string },
   ) {
     return this.procurement.cancelPr(actor, id, body?.reason ?? null);
   }
@@ -196,7 +201,7 @@ export class ProcurementController {
   cancelRfq(
     @CurrentUser() actor: AuthUser,
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body(zodBody(reasonSchema)) body: { reason?: string },
   ) {
     return this.rfq.cancel(actor, id, body?.reason ?? null);
   }
@@ -226,7 +231,7 @@ export class ProcurementController {
   overrideMatch(
     @CurrentUser() actor: AuthUser,
     @Param('invoiceId') invoiceId: string,
-    @Body() body: { reason?: string },
+    @Body(zodBody(reasonSchema)) body: { reason?: string },
   ) {
     const reason = body?.reason?.trim();
     if (!reason || reason.length < 10) {
@@ -267,7 +272,7 @@ export class ProcurementController {
   cancelPo(
     @CurrentUser() actor: AuthUser,
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body(zodBody(reasonSchema)) body: { reason?: string },
   ) {
     return this.procurement.cancelPo(actor, id, body?.reason ?? null);
   }

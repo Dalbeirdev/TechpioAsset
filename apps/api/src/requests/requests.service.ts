@@ -191,6 +191,9 @@ export class RequestsService {
           },
         },
         approvals: {
+          // Capped like every other nested collection: a request's chain is
+          // short by design, but "short by design" is not a guarantee.
+          take: 50,
           orderBy: { stepOrder: 'asc' },
           select: {
             id: true,
@@ -214,7 +217,10 @@ export class RequestsService {
           // Internal notes are filtered out for the requester, who would
           // otherwise read the reviewers' private discussion of their request.
           where: this.canSeeInternalComments(actor) ? {} : { isInternal: false },
-          orderBy: { createdAt: 'asc' },
+          // Newest 100, then re-ordered oldest-first below for reading. A
+          // long-running request accumulates comments without bound.
+          take: 100,
+          orderBy: { createdAt: 'desc' },
           select: {
             id: true,
             body: true,
@@ -231,6 +237,7 @@ export class RequestsService {
         },
         attachments: {
           where: { deletedAt: null },
+          take: 50,
           orderBy: { createdAt: 'asc' },
           select: {
             id: true,
@@ -256,7 +263,13 @@ export class RequestsService {
         actorRoleKeys: actor.roles,
       }));
 
-    return { ...request, canDecide };
+    return {
+      ...request,
+      // Fetched newest-first so the cap keeps the RECENT comments; read
+      // oldest-first, which is how a conversation is followed.
+      comments: [...request.comments].reverse(),
+      canDecide,
+    };
   }
 
   private canSeeInternalComments(actor: AuthUser): boolean {
