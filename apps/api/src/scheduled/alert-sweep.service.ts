@@ -16,6 +16,7 @@ import { AssetHealthService } from '../asset-health/asset-health.service.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { TokenService } from '../auth/token.service.js';
 import { withSpan } from '../observability/tracing.js';
 
 /**
@@ -44,6 +45,7 @@ export class AlertSweepService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly maintenance: MaintenanceService,
     private readonly assetHealth: AssetHealthService,
+    private readonly tokens: TokenService,
   ) {}
 
   onModuleInit(): void {
@@ -63,6 +65,9 @@ export class AlertSweepService implements OnModuleInit {
       void this.runWorkOrderSweep();
       void this.runHealthSweep();
       void this.runDiscoveryStalenessSweep();
+      // Retention: delete refresh tokens that have been dead for over a week.
+      // Nothing ever removed them before, so the table only grew.
+      void this.tokens.purgeDeadTokens();
       });
     };
     this.timer = setInterval(daily, 24 * 60 * 60 * 1000);
