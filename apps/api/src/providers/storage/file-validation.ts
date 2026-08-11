@@ -97,3 +97,28 @@ export function validateUpload(input: {
   const sha256 = createHash('sha256').update(input.data).digest('hex');
   return { sha256, contentType: detectedMime };
 }
+
+/**
+ * Verifies that bytes really are a spreadsheet before a parser touches them
+ * (v2.12 audit).
+ *
+ * The asset import accepted whatever was posted and handed the buffer straight
+ * to the workbook parser, trusting the filename. Spreadsheets are not in the
+ * general upload allowlist (that governs documents and photos), so they get
+ * their own narrow check rather than a widened allowlist:
+ *   - .xlsx/.xlsm are ZIP containers  -> "PK\x03\x04"
+ *   - legacy .xls is an OLE2 compound -> D0 CF 11 E0 A1 B1 1A E1
+ * Anything else is refused before a single row is read.
+ */
+export function assertSpreadsheet(data: Buffer): void {
+  const zip = [0x50, 0x4b, 0x03, 0x04];
+  const ole2 = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+  const looksLike = (sig: number[]) =>
+    data.length >= sig.length && sig.every((byte, i) => data[i] === byte);
+
+  if (!looksLike(zip) && !looksLike(ole2)) {
+    throw new AppError('FILE_REJECTED', 'That file is not a spreadsheet', {
+      detail: 'Upload an .xlsx or .xls workbook.',
+    });
+  }
+}

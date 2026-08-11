@@ -38,6 +38,7 @@ import {
 import { PERMISSIONS, type AssetStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { AppError } from '../common/errors/app-error.js';
+import { assertSpreadsheet } from '../providers/storage/file-validation.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AssetsService } from './assets.service.js';
 import { AssetImportService } from './asset-import.service.js';
@@ -75,6 +76,9 @@ export class AssetsController {
     file: Express.Multer.File,
   ) {
     if (!file?.buffer) throw new AppError('FILE_REJECTED', 'No file was received');
+    // Verify the bytes are a workbook before the parser sees them - the
+    // filename is a claim, not evidence.
+    assertSpreadsheet(file.buffer);
     const rows = await this.imports.parseWorkbook(file.buffer);
     return this.imports.importRows(actor, rows);
   }

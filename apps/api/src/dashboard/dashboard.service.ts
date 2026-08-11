@@ -36,13 +36,19 @@ export class DashboardService {
     const db = this.prisma.client;
     const tiles: DashboardTile[] = [];
 
-    // Everyone: their own kit and their own requests.
+    // Everyone: their own kit and their own requests. Counted in parallel -
+    // these tiles do not depend on each other, and awaiting them in turn made
+    // the dashboard as slow as the sum of its parts.
+    const [myAssets, myOpenRequests] = await Promise.all([
+      db.asset.count({ where: { ...tenant, assignedUserId: actor.id, deletedAt: null } }),
+      db.assetRequest.count({
+        where: { ...tenant, requesterId: actor.id, status: { notIn: [...OPEN_REQUEST_STATUSES] } },
+      }),
+    ]);
     tiles.push({
       key: 'my-assets',
       label: 'My assets',
-      value: await db.asset.count({
-        where: { ...tenant, assignedUserId: actor.id, deletedAt: null },
-      }),
+      value: myAssets,
       href: '/my-assets',
       icon: 'Boxes',
       tone: 'info',
@@ -50,9 +56,7 @@ export class DashboardService {
     tiles.push({
       key: 'my-open-requests',
       label: 'My open requests',
-      value: await db.assetRequest.count({
-        where: { ...tenant, requesterId: actor.id, status: { notIn: [...OPEN_REQUEST_STATUSES] } },
-      }),
+      value: myOpenRequests,
       href: '/requests',
       icon: 'ClipboardList',
       tone: 'progress',

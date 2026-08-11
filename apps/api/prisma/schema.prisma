@@ -1108,6 +1108,9 @@ model Asset {
   @@index([companyId, lifecycleState, availabilityState])
   @@index([companyId, categoryId])
   @@index([companyId, assignedUserId])
+  /// v2.12 - the OWN-scope list sorts by createdAt; without the sort key in
+  /// the index every page load adds an explicit sort.
+  @@index([companyId, assignedUserId, createdAt])
   @@index([companyId, officeId])
   @@index([companyId, departmentId])
   @@index([companyId, warrantyEndDate])
@@ -1778,6 +1781,8 @@ model AssetRequest {
   @@unique([companyId, requestNumber])
   @@index([companyId, status])
   @@index([companyId, requesterId])
+  /// v2.12 - default list ordering.
+  @@index([companyId, createdAt])
   @@index([companyId, beneficiaryId])
   @@index([companyId, managerId])
   @@map("asset_requests")
@@ -2026,6 +2031,9 @@ model Notification {
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt])
+  /// v2.12 - the default (not unread-only) list filters on userId and sorts by
+  /// createdAt; readAt sitting between them stops the wider index serving it.
+  @@index([userId, createdAt])
   @@index([companyId, type])
   @@map("notifications")
 }
@@ -2078,6 +2086,9 @@ model Attachment {
 
   @@index([companyId, entityType, entityId])
   @@index([sha256])
+  /// v2.12 - request detail loads attachments through this FK on every open,
+  /// and Postgres does not index foreign keys for you.
+  @@index([assetRequestId, deletedAt])
   @@map("attachments")
 }
 

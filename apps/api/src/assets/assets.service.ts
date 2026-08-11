@@ -287,6 +287,14 @@ export class AssetsService {
 
     if (!asset) throw AppError.notFound('Asset', id);
 
+    // Counted, not measured: `assignments` is capped at 20 above, so deriving
+    // the total from its length reported a device assigned 30 times as 20.
+    // "This device has been assigned N times" is the one number an employee
+    // is shown about its past, so it has to be the real one.
+    const assignmentCount = await this.prisma.client.assetAssignment.count({
+      where: { assetId: id },
+    });
+
     // OWN-scope viewers (employees looking at their own device) get the
     // device's history without their colleagues' identities: their own
     // assignment rows stay named, everyone else's collapse to "assigned
@@ -298,7 +306,7 @@ export class AssetsService {
         ...asset,
         // Internal notes are written by IT for IT.
         notes: null,
-        assignmentCount: asset.assignments.length,
+        assignmentCount,
         assignments: asset.assignments.map((assignment) =>
           assignment.user?.id === actor.id
             ? assignment
@@ -312,7 +320,7 @@ export class AssetsService {
         ),
       };
     }
-    return { ...asset, assignmentCount: asset.assignments.length };
+    return { ...asset, assignmentCount };
   }
 
   /** v2.5 H4 — the discovered software inventory, paginated (Software tab). */

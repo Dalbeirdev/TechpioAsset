@@ -248,6 +248,9 @@ export class AuthController {
 
   @Post('verify-email')
   @Public()
+  // A token-guessing surface: without this it sat behind only the global
+  // 120/min.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(204)
   @ApiOperation({ summary: 'Confirm an email address' })
   async verifyEmail(
@@ -314,6 +317,9 @@ export class AuthController {
 
   @Post('mfa/confirm')
   @HttpCode(204)
+  // Six digits with a +/-1 period window is a small space; the global limit
+  // alone left room to walk it.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Confirm multi-factor enrolment with a code' })
   async confirmMfa(
     @CurrentUser() user: AuthUser,
@@ -324,6 +330,9 @@ export class AuthController {
 
   @Post('mfa/disable')
   @HttpCode(204)
+  // Removing the second factor is exactly what an attacker with a stolen
+  // session wants to brute-force.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Disable multi-factor authentication' })
   async disableMfa(
     @CurrentUser() user: AuthUser,
