@@ -8,6 +8,18 @@ import { PrismaService } from '../prisma/prisma.service.js';
 /** Devices shown on the security page. Bounded: see listSessions. */
 const MAX_LISTED_SESSIONS = 20;
 
+/**
+ * How long a dead refresh token is kept before it is deleted.
+ *
+ * A token that has expired or been revoked can never authenticate anyone, so
+ * the only reason to keep it is forensics - "was this family revoked for
+ * REUSE_DETECTED?" - and that question is asked within days, not months. The
+ * durable record of who signed in and when lives in the audit log, which this
+ * never touches. A week is long enough to investigate and short enough that
+ * the table stays a working set instead of a landfill.
+ */
+const DEAD_TOKEN_RETENTION_DAYS = 7;
+
 export interface AccessTokenClaims {
   sub: string;
   companyId: string;
@@ -267,5 +279,26 @@ export class TokenService {
       data: { revokedAt: new Date(), revokedReason: 'SIGNED_OUT_OTHERS' },
     });
     return result.count;
+  }
+
+  /**
+   * Deletes refresh tokens that have been dead for longer than the retention
+   * window (v2.12). A row is written on every login AND every rotation and
+   * previously nothing ever removed one, so the table only grew.
+   *
+   * Deliberately narrow: it touches ONLY rows that are already expired or
+   * revoked, and only after the retention window. A live session is never in
+   * scope, so this can never sign anybody out - which is what makes it safe to
+   * run unattended every night.
+   */
+  async purgeDeadTokens(retentionDays = DEAD_TOKEN_RETENTION_DAYS): Promise<number> {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const { count } = await this.prisma.client.refreshToken.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }],
+      },
+    });
+    if (count > 0) this.logger.log(`Purged ${count} refresh tokens dead for over ${retentionDays} days`);
+    return count;
   }
 }

@@ -109,6 +109,51 @@ describe('session management', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('the retention purge deletes only long-dead rows, never a live session', async () => {
+    const { TokenService } = await import('../src/auth/token.service.js');
+    const tokens = app.get(TokenService);
+    const userId = s.employee3.user.id;
+    const old = new Date(Date.now() - 30 * 86_400_000);
+    const future = new Date(Date.now() + 30 * 86_400_000);
+
+    // Three rows: dead-and-old (purgeable), dead-but-recent (kept for
+    // forensics), and a live session (must survive - deleting it would sign a
+    // real person out).
+    const mk = (suffix: string, data: Record<string, unknown>) =>
+      prisma.client.refreshToken.create({
+        data: {
+          userId,
+          tokenHash: `purge-test-${suffix}-${Date.now()}`,
+          familyId: `purge-fam-${suffix}-${Date.now()}`,
+          expiresAt: future,
+          ...data,
+        },
+        select: { id: true },
+      });
+
+    const deadOld = await mk('old', { revokedAt: old, revokedReason: 'LOGOUT' });
+    const deadRecent = await mk('recent', { revokedAt: new Date(), revokedReason: 'LOGOUT' });
+    const expiredOld = await mk('expired', { expiresAt: old });
+    const live = await mk('live', {});
+
+    await tokens.purgeDeadTokens();
+
+    const survivors = await prisma.client.refreshToken.findMany({
+      where: { id: { in: [deadOld.id, deadRecent.id, expiredOld.id, live.id] } },
+      select: { id: true },
+    });
+    const ids = new Set(survivors.map((r) => r.id));
+
+    expect(ids.has(deadOld.id)).toBe(false); // revoked long ago → gone
+    expect(ids.has(expiredOld.id)).toBe(false); // expired long ago → gone
+    expect(ids.has(deadRecent.id)).toBe(true); // within retention → kept
+    expect(ids.has(live.id)).toBe(true); // LIVE → never touched
+
+    await prisma.client.refreshToken.deleteMany({
+      where: { id: { in: [deadRecent.id, live.id] } },
+    });
+  });
+
   it('sessions endpoint is per-user — never another account', async () => {
     const list = await api(app).get('/api/v1/auth/sessions').set(auth(s.employee));
     expect(list.status).toBe(200);
