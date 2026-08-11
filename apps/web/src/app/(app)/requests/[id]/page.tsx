@@ -4,7 +4,7 @@ import { use, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, CircleDashed, CircleX, Clock, MinusCircle, Paperclip, Trash2 } from 'lucide-react';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
-import { PERMISSIONS, type RequestStatus } from '@techpioasset/domain';
+import { PERMISSIONS, findIssueCategory, type RequestStatus } from '@techpioasset/domain';
 import { apiFetch, apiBaseUrl, getAccessToken, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -34,6 +34,7 @@ interface RequestDetail {
   status: RequestStatus;
   priority: string;
   businessReason: string;
+  issueCategory: string | null;
   requiredBy: string | null;
   estimatedCost: string | null;
   currency: string | null;
@@ -181,7 +182,26 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
         <div className="grid gap-4">
           <Card className="p-5">
-            <h2 className="text-sm font-semibold">Business reason</h2>
+            {data.issueCategory ? (
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold">Reported issue</h2>
+                <p className="mt-1.5">
+                  <span
+                    className="rounded-full px-2.5 py-1 text-xs font-medium"
+                    style={{
+                      background: 'var(--tone-warning-bg)',
+                      color: 'var(--tone-warning-fg)',
+                    }}
+                  >
+                    {findIssueCategory(data.issueCategory)?.label ?? data.issueCategory}
+                  </span>
+                </p>
+              </div>
+            ) : null}
+
+            <h2 className="text-sm font-semibold">
+              {data.issueCategory ? 'What is happening' : 'Business reason'}
+            </h2>
             <p className="mt-2 text-sm text-[var(--color-content-muted)]">{data.businessReason}</p>
 
             <h2 className="mt-5 text-sm font-semibold">Items</h2>

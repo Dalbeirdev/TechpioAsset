@@ -137,7 +137,7 @@ const EMPLOYEE_QUICK_ACTIONS: {
     perm: PERMISSIONS.REQUESTS_CREATE,
   },
   {
-    href: '/requests/new?type=DAMAGE',
+    href: '/requests/new?report=issue',
     label: 'Report an issue',
     icon: <Wrench className="size-[18px]" />,
     tone: 'warning',

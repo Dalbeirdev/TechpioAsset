@@ -3,6 +3,7 @@ import { ApprovalDecision, AuditAction, Prisma, type RequestType } from '@prisma
 import type { AuthUser, CreateRequestInput, RequestListQuery } from '@techpioasset/contracts';
 import {
   assertTransition,
+  findIssueCategory,
   requestStatusMachine,
   PERMISSIONS,
   type RequestStatus,
@@ -44,6 +45,7 @@ export class RequestsService {
     status: true,
     priority: true,
     businessReason: true,
+    issueCategory: true,
     requiredBy: true,
     estimatedCost: true,
     currency: true,
@@ -338,6 +340,11 @@ export class RequestsService {
         officeId: input.officeId ?? beneficiaryProfile?.officeId ?? null,
         departmentId: input.departmentId ?? beneficiaryProfile?.departmentId ?? null,
         businessReason: input.businessReason,
+        // Only keys we actually publish are stored: an unknown one would make
+        // the issue reports quietly wrong rather than loudly rejected.
+        issueCategory: input.issueCategory
+          ? (findIssueCategory(input.issueCategory)?.key ?? null)
+          : null,
         requiredBy: input.requiredBy ?? null,
         preferredSpec: input.preferredSpec ?? null,
         isReplacement: input.isReplacement,

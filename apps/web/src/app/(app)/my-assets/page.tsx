@@ -129,7 +129,7 @@ function MyAssetsList() {
                   types an asset tag by hand. */}
               <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--color-border)] pt-3">
                 <Link
-                  href={`/requests/new?type=DAMAGE&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
+                  href={`/requests/new?report=issue&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
                   className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
                 >
                   Report issue
