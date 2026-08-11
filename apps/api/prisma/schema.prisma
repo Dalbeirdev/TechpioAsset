@@ -483,6 +483,7 @@ model Company {
 
   users                     User[]
   offices                   Office[]
+  deviceAgents              DeviceAgent[]
   departments               Department[]
   categories                Category[]
   assets                    Asset[]
@@ -3272,6 +3273,50 @@ model WebhookDelivery {
 }
 
 /// v2.6 A3 - the per-tenant SCIM bearer token (hash only; shown once).
+/// v2.13 - the enrolment secret an agent installer carries. Company-wide and
+/// rotatable: it can ONLY be exchanged for a device credential, never used to
+/// read or write anything, so a copy leaking off one laptop cannot read the
+/// estate. Only the SHA-256 hash is stored.
+model AgentEnrolmentToken {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  tokenHash   String
+  createdAt   DateTime  @default(now())
+  createdById String?
+  lastUsedAt  DateTime?
+
+  @@map("agent_enrolment_tokens")
+}
+
+/// v2.13 - one row per enrolled laptop. The credential is device-scoped: it may
+/// report THIS machine's inventory and nothing else, which is why an agent
+/// never needs an administrator's token.
+model DeviceAgent {
+  id        String @id @default(cuid())
+  companyId String
+
+  /// SHA-256 of the device credential handed back at enrolment.
+  tokenHash String @unique
+  /// Stable machine identity chosen at enrolment; reported inventory is pinned
+  /// to it, so a compromised agent cannot impersonate another laptop.
+  machineId String
+  hostname  String?
+  serialNumber String?
+  platform  String?
+  agentVersion String?
+
+  enrolledAt  DateTime  @default(now())
+  lastSeenAt  DateTime?
+  revokedAt   DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, machineId])
+  @@index([companyId, revokedAt])
+  @@map("device_agents")
+}
+
 model ScimToken {
   id        String @id @default(cuid())
   companyId String @unique

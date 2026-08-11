@@ -79,3 +79,48 @@ export const confirmMatchSchema = z.object({
   assetId: z.string().optional().nullable(),
 });
 export type ConfirmMatchInput = z.infer<typeof confirmMatchSchema>;
+
+/**
+ * Agent enrolment (v2.13). A laptop presents the company enrolment token once,
+ * identifies itself, and receives a device-scoped credential it uses forever
+ * after. `machineId` is the agent's stable local identity (a hardware UUID);
+ * it pins every later report to this one machine.
+ */
+export const agentEnrolSchema = z
+  .object({
+    machineId: z.string().trim().min(8).max(200),
+    hostname: z.string().trim().max(200).optional().nullable(),
+    serialNumber: z.string().trim().max(120).optional().nullable(),
+    platform: z.string().trim().max(60).optional().nullable(),
+    agentVersion: z.string().trim().max(40).optional().nullable(),
+  })
+  .strict();
+export type AgentEnrolInput = z.infer<typeof agentEnrolSchema>;
+
+/**
+ * What an enrolled agent reports about ITSELF. Note there is no device
+ * identity in the body: the server takes it from the credential, so an agent
+ * cannot file a report on another laptop's behalf.
+ */
+export const agentReportSchema = z
+  .object({
+    hostname: z.string().trim().max(200).optional().nullable(),
+    serialNumber: z.string().trim().max(120).optional().nullable(),
+    agentVersion: z.string().trim().max(40).optional().nullable(),
+    hardware: discoveredHardwareSchema.optional().nullable(),
+    os: discoveredOsSchema.optional().nullable(),
+    software: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(300),
+          version: z.string().max(120).optional().nullable(),
+          publisher: z.string().max(200).optional().nullable(),
+          installedAt: z.coerce.date().optional().nullable(),
+        }),
+      )
+      .max(5000)
+      .optional()
+      .nullable(),
+  })
+  .strict();
+export type AgentReportInput = z.infer<typeof agentReportSchema>;
