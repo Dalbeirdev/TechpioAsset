@@ -5,6 +5,9 @@ import { AppError } from '../common/errors/app-error.js';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
+/** Devices shown on the security page. Bounded: see listSessions. */
+const MAX_LISTED_SESSIONS = 20;
+
 export interface AccessTokenClaims {
   sub: string;
   companyId: string;
@@ -214,9 +217,17 @@ export class TokenService {
         )?.familyId
       : undefined;
 
+    // One row per family, newest first, BOUNDED. A refresh token row is written
+    // on every login and every rotation and lives until it expires, so this
+    // table grows with use: a single account in the test tenant had 3,252 live
+    // rows. `distinct` collapses the family in SQL (not in JS over thousands of
+    // rows) and `take` caps the response - a device list is something you scan,
+    // so twenty of them is a list and two hundred is a log file.
     const rows = await this.prisma.client.refreshToken.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      distinct: ['familyId'],
       orderBy: { issuedAt: 'desc' },
+      take: MAX_LISTED_SESSIONS,
       select: {
         familyId: true,
         issuedAt: true,
@@ -226,10 +237,7 @@ export class TokenService {
       },
     });
 
-    const byFamily = new Map<string, (typeof rows)[number]>();
-    for (const row of rows) if (!byFamily.has(row.familyId)) byFamily.set(row.familyId, row);
-
-    return [...byFamily.values()].map((row) => ({
+    return rows.map((row) => ({
       id: row.familyId,
       device: row.userAgent ?? null,
       ipAddress: row.ipAddress ?? null,
