@@ -74,6 +74,7 @@ export class RequestsService {
       // "My requests" narrows WITHIN the actor's scope, so it can never widen
       // what a restricted scope would already refuse to show.
       ...(query.mine ? { requesterId: actor.id } : {}),
+      ...(query.requesterId ? { requesterId: query.requesterId } : {}),
       ...(query.q
         ? {
             OR: [
