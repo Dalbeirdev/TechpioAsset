@@ -96,7 +96,10 @@ export default function AssetReceiptPage({ params }: { params: Promise<{ id: str
           [
             ['Asset tag', data.assetTag],
             ['Name', data.name],
-            ['Make / model', [data.brand, data.model].filter(Boolean).join(' ') || '—'],
+            [
+              'Make / model',
+              [...new Set([data.brand, data.model].filter(Boolean))].join(' ') || '—',
+            ],
             ['Serial number', data.serialNumber ?? '—'],
             ['Category', data.category?.name ?? '—'],
             ['Office', data.office?.name ?? '—'],

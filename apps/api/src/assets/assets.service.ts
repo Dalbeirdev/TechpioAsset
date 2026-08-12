@@ -351,8 +351,11 @@ export class AssetsService {
     if (actor.scope === 'OWN') {
       return {
         ...asset,
-        // Internal notes are written by IT for IT.
-        notes: null,
+        // Notes stay visible to the device's holder (owner decision,
+        // 2026-08-12): they carry the device's specs and known problems, and
+        // an OWN-scope viewer can only ever fetch their own asset. The flip
+        // side is deliberate too - remarks IT wants kept from the holder
+        // belong in maintenance records, not the asset's notes box.
         assignmentCount,
         assignments: asset.assignments.map((assignment) =>
           assignment.user?.id === actor.id
