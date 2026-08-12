@@ -35,6 +35,7 @@ interface ReceiptAsset {
     acknowledgedAt: string | null;
     expectedReturnAt: string | null;
     accessoriesIssued?: string | null;
+    assignedBy: { profile: { firstName: string; lastName: string } | null } | null;
     user: { email: string; profile: { firstName: string; lastName: string } | null } | null;
   }[];
 }
@@ -119,6 +120,12 @@ export default function AssetReceiptPage({ params }: { params: Promise<{ id: str
             {(
               [
                 ['Issued to', holderName],
+                [
+                  'Issued by',
+                  open.assignedBy?.profile
+                    ? `${open.assignedBy.profile.firstName} ${open.assignedBy.profile.lastName}`
+                    : '—',
+                ],
                 ['Issued on', new Date(open.assignedAt).toLocaleDateString()],
                 ['Condition at issue', label(open.conditionOut)],
                 ['Accessories', open.accessoriesIssued ?? 'None recorded'],

@@ -76,6 +76,7 @@ interface AssetDetail {
     id: string;
     assignedAt: string;
     returnedAt: string | null;
+    assignedBy: { profile: { firstName: string; lastName: string } | null } | null;
     user: { email: string; profile: { firstName: string; lastName: string } | null } | null;
     assetReturn: { conditionIn: AssetCondition; damageNotes: string | null } | null;
   }[];
@@ -318,6 +319,15 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                         · {holder.profile.employeeNumber}
                       </span>
                     ) : null}
+                    {(() => {
+                      const open = data.assignments.find((a) => !a.returnedAt);
+                      return open?.assignedBy?.profile ? (
+                        <span className="block text-xs text-[var(--color-content-subtle)]">
+                          issued by {open.assignedBy.profile.firstName}{' '}
+                          {open.assignedBy.profile.lastName}
+                        </span>
+                      ) : null;
+                    })()}
                   </>
                 ) : (
                   'Unassigned'
@@ -390,6 +400,9 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                     <span className="text-[var(--color-content-subtle)]">
                       {' '}
                       · {fmtDate(a.returnedAt ?? a.assignedAt)}
+                      {!a.returnedAt && a.assignedBy?.profile
+                        ? ` · issued by ${a.assignedBy.profile.firstName} ${a.assignedBy.profile.lastName}`
+                        : ''}
                     </span>
                     {a.assetReturn?.damageNotes ? (
                       <span className="block text-xs text-[var(--tone-warning-fg)]">
