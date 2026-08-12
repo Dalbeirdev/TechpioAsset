@@ -72,6 +72,10 @@ export const requestListQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((v) => v === 'true'),
+  /** A specific person's requests - the profile page's view. Narrows within
+   * the caller's scope, so an OWN-scope caller naming a colleague gets an
+   * empty page, never a wider one. */
+  requesterId: z.string().optional(),
   /** Only requests the caller raised - the "my requests" view. */
   mine: z
     .enum(['true', 'false'])

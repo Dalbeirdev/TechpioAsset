@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Send, AlertTriangle, Check, Copy, Download, Search, Settings2, UserPlus } from 'lucide-react';
@@ -1019,9 +1021,11 @@ function PeopleTable() {
                 {data.data.map((person) => (
                   <tr key={person.id} className="hover:bg-[var(--color-surface-sunken)]">
                     <td className="px-4 py-2.5 font-medium">
-                      {person.profile
-                        ? `${person.profile.firstName} ${person.profile.lastName}`
-                        : '—'}
+                      <Link href={`/people/${person.id}`} className="hover:underline">
+                        {person.profile
+                          ? `${person.profile.firstName} ${person.profile.lastName}`
+                          : person.email}
+                      </Link>
                     </td>
                     <td className="px-4 py-2.5 text-[var(--color-content-muted)]">
                       {person.email}
