@@ -28,11 +28,14 @@ export class AnthropicAiProvider extends AiDocumentProvider {
   private readonly client: Anthropic;
   private readonly model: string;
 
-  constructor(config: AppConfig) {
+  constructor(config: AppConfig, overrides?: { apiKey?: string; model?: string }) {
     super();
-    this.model = config.get('ANTHROPIC_MODEL');
-    // Validated at boot (env.schema): AI_PROVIDER=anthropic requires the key.
-    this.client = new Anthropic({ apiKey: config.get('ANTHROPIC_API_KEY') ?? '' });
+    // Overrides come from the operator console (v2.15); env remains the
+    // boot-time path and is validated in env.schema.
+    this.model = overrides?.model ?? config.get('ANTHROPIC_MODEL');
+    this.client = new Anthropic({
+      apiKey: overrides?.apiKey ?? config.get('ANTHROPIC_API_KEY') ?? '',
+    });
   }
 
   async extract(input: ExtractInput): Promise<ExtractionResult> {
