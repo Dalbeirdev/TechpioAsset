@@ -107,7 +107,9 @@ function MyAssetsList() {
                 {asset.brand || asset.model ? (
                   <div className="flex gap-1">
                     <dt className="sr-only">Model</dt>
-                    <dd>{[asset.brand, asset.model].filter(Boolean).join(' ')}</dd>
+                    <dd>
+                      {[...new Set([asset.brand, asset.model].filter(Boolean))].join(' ')}
+                    </dd>
                   </div>
                 ) : null}
                 {asset.serialNumber ? (

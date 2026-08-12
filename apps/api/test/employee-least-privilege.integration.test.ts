@@ -124,8 +124,10 @@ describe('G3 — asset history is anonymised for the current holder', () => {
 
     const body = res.body.data;
     expect(body.assignmentCount).toBeGreaterThanOrEqual(2);
-    // Internal notes never reach the holder.
-    expect(body.notes).toBeNull();
+    // The holder sees their own device's notes - specs and known problems
+    // live there (owner decision, 2026-08-12). What stays protected is other
+    // PEOPLE: the anonymisation below is unchanged.
+    expect(body).toHaveProperty('notes');
     const rows = body.assignments as { user: { id: string } | null }[];
     const namedUsers = rows.filter((r) => r.user !== null).map((r) => r.user!.id);
     // Every named row is the caller; every other holder is anonymous.
