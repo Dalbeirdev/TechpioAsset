@@ -259,6 +259,7 @@ export class AssetsService {
             conditionOut: true,
             acknowledgedAt: true,
             expectedReturnAt: true,
+            accessoriesIssued: true,
             user: {
               select: {
                 id: true,
