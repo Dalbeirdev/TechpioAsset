@@ -37,6 +37,12 @@ const mailSettingsSchema = z
   .strict();
 type MailSettingsInput = z.infer<typeof mailSettingsSchema>;
 
+/** Where to send the test. Gmail/Outlook inboxes judge deliverability; the
+ * operator's own address only proves the relay accepts mail at all. */
+const testMailSchema = z
+  .object({ to: z.string().trim().toLowerCase().email().max(254).optional() })
+  .strict();
+
 /**
  * v2.6 A4 — the platform plane. JWT-authenticated AND operator-designated
  * (PlatformGuard checks PLATFORM_ADMIN_EMAILS); no tenant permission opens
@@ -139,20 +145,25 @@ export class PlatformController {
   @Post('mail-settings/test')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Send a test email to yourself through the current settings',
-    description: 'delivered=false means mail is still simulated - nothing left this machine.',
+    summary: 'Send a test email through the current settings',
+    description:
+      'delivered=false means mail is still simulated - nothing left this machine. Defaults to the caller; pass "to" to test delivery to an external inbox.',
   })
-  async testMailSettings(@CurrentUser() actor: AuthUser) {
+  async testMailSettings(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(testMailSchema)) body: { to?: string },
+  ) {
+    const to = body.to ?? actor.email;
     try {
       const result = await this.mail.send({
-        to: actor.email,
+        to,
         subject: 'TechpioAsset SMTP test',
         text: 'SMTP is configured correctly - invitation and notification emails will be delivered.',
       });
-      return { delivered: !result.simulated, to: actor.email };
+      return { delivered: !result.simulated, to };
     } catch (error) {
       // A wrong host/credential should read as a clear answer, not a 500.
-      return { delivered: false, to: actor.email, error: (error as Error).message };
+      return { delivered: false, to, error: (error as Error).message };
     }
   }
 

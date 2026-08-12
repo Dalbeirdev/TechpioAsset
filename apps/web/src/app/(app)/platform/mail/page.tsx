@@ -5,16 +5,17 @@ import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Send } from 'lucide-react';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { useConfirm } from '@/providers/confirm-provider';
 import { Button, Card, ErrorState, Field, Input, Skeleton } from '@/components/ui';
 import { PasswordInput } from '@/components/ui/password-input';
 
 /**
- * Operator SMTP settings (v2.12). Mail setup used to require a server login
- * and an env edit; this page writes the same settings to the database, where
- * the mail router picks them up on the next send - no restart. The password
- * is stored encrypted and never comes back to the browser.
+ * Operator SMTP settings (v2.12, redesigned v2.15 to match the operator's
+ * other consoles). Provider presets fill in the server details so the
+ * operator only supplies what is theirs; the password is stored encrypted
+ * and never comes back to the browser. Settings apply on the next send.
  */
 
 interface MailSettings {
@@ -28,7 +29,44 @@ interface MailSettings {
   updatedAt?: string;
 }
 
+type Security = 'ssl' | 'starttls' | 'none';
+
+/** Server details per provider, so the operator only types credentials. */
+const PROVIDERS: { key: string; label: string; host?: string; port?: number; security?: Security; hint?: string }[] = [
+  { key: 'hostinger', label: 'Hostinger Email', host: 'smtp.hostinger.com', port: 465, security: 'ssl',
+    hint: 'Username is the full mailbox address (create it in hPanel → Emails); the from-address must be the same mailbox.' },
+  { key: 'titan', label: 'Titan Email (via Hostinger or direct)', host: 'smtp.titan.email', port: 465, security: 'ssl',
+    hint: 'Username is the full mailbox address; the from-address must match it.' },
+  { key: 'gmail', label: 'Gmail / Google Workspace', host: 'smtp.gmail.com', port: 587, security: 'starttls',
+    hint: 'Use an App Password (Google Account → Security → 2-Step Verification → App passwords), not the account password.' },
+  { key: 'm365', label: 'Microsoft 365 / Outlook', host: 'smtp.office365.com', port: 587, security: 'starttls',
+    hint: 'SMTP AUTH must be enabled for the mailbox in the Microsoft 365 admin center.' },
+  { key: 'postmark', label: 'Postmark', host: 'smtp.postmarkapp.com', port: 587, security: 'starttls',
+    hint: 'Username and password are both the Server API token.' },
+  { key: 'sendgrid', label: 'SendGrid', host: 'smtp.sendgrid.net', port: 587, security: 'starttls',
+    hint: 'Username is literally "apikey"; the password is your API key.' },
+  { key: 'brevo', label: 'Brevo (formerly Sendinblue)', host: 'smtp-relay.brevo.com', port: 587, security: 'starttls',
+    hint: 'SMTP & API → SMTP → generate a key. Verify the from-address under Senders & Domains.' },
+  { key: 'mailgun', label: 'Mailgun', host: 'smtp.mailgun.org', port: 587, security: 'starttls',
+    hint: 'Username is the full SMTP login shown under Sending → Domain settings.' },
+  { key: 'ses', label: 'Amazon SES', host: 'email-smtp.us-east-1.amazonaws.com', port: 587, security: 'starttls',
+    hint: 'Use SMTP credentials from the SES console (not IAM keys); adjust the host to your region.' },
+  { key: 'custom', label: 'Other / custom SMTP' },
+];
+
+/** "Name <addr>" ⇄ separate fields, so the sender edits like two inputs. */
+function splitFrom(v: string | undefined): { name: string; address: string } {
+  const m = /^(.*)<(.+)>\s*$/.exec(v ?? '');
+  if (m?.[1] !== undefined && m?.[2] !== undefined)
+    return { name: m[1].trim(), address: m[2].trim() };
+  return { name: '', address: (v ?? '').trim() };
+}
+
+const selectCls =
+  'h-10 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm';
+
 export default function PlatformMailPage() {
+  const { user } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -39,25 +77,44 @@ export default function PlatformMailPage() {
   });
 
   const [form, setForm] = useState<{
+    provider: string;
     host: string;
     port: string;
-    secure: boolean;
+    security: Security;
     username: string;
     password: string;
     fromAddress: string;
+    fromName: string;
   } | null>(null);
+  const [testTo, setTestTo] = useState<string | null>(null);
 
-  // Seed the form once from the server state; afterwards it is the editor's.
+  // Seed once from the server state; afterwards the form is the editor's.
   const current = settings.data;
+  const from = splitFrom(current?.fromAddress);
   const draft = form ?? {
-    host: current?.host ?? 'smtp-relay.brevo.com',
+    provider: PROVIDERS.find((p) => p.host && p.host === current?.host)?.key ?? 'custom',
+    host: current?.host ?? '',
     port: String(current?.port ?? 587),
-    secure: current?.secure ?? false,
+    security: (current?.secure ? 'ssl' : 'starttls') as Security,
     username: current?.username ?? '',
     password: '',
-    fromAddress: current?.fromAddress ?? 'TechpioAsset <no-reply@techpio.com>',
+    fromAddress: from.address,
+    fromName: from.name || 'TechpioAsset',
   };
   const set = (patch: Partial<typeof draft>) => setForm({ ...draft, ...patch });
+  const provider = PROVIDERS.find((p) => p.key === draft.provider);
+
+  const pickProvider = (key: string) => {
+    const p = PROVIDERS.find((x) => x.key === key);
+    set({
+      provider: key,
+      ...(p?.host ? { host: p.host, port: String(p.port), security: p.security } : {}),
+    });
+  };
+
+  const composedFrom = draft.fromName.trim()
+    ? `${draft.fromName.trim()} <${draft.fromAddress.trim()}>`
+    : draft.fromAddress.trim();
 
   const save = useMutation({
     mutationFn: () =>
@@ -66,13 +123,13 @@ export default function PlatformMailPage() {
         body: {
           host: draft.host.trim(),
           port: Number(draft.port) || 587,
-          secure: draft.secure,
+          secure: draft.security === 'ssl',
           username: draft.username.trim() || null,
           // Absent password = keep the stored one; only send what was typed.
           ...(draft.password !== '' || !current?.hasPassword
             ? { password: draft.password }
             : {}),
-          fromAddress: draft.fromAddress.trim(),
+          fromAddress: composedFrom,
         },
       }),
     onSuccess: () => {
@@ -85,17 +142,48 @@ export default function PlatformMailPage() {
   });
 
   const test = useMutation({
-    mutationFn: () =>
+    mutationFn: (to: string) =>
       apiFetch<{ delivered: boolean; to: string; error?: string }>('/platform/mail-settings/test', {
         method: 'POST',
-        body: {},
+        body: { to },
       }),
     onSuccess: (r) =>
       r.delivered
-        ? toast.success(`Test email sent to ${r.to} — check the inbox`)
-        : toast.error(r.error ? `Send failed: ${r.error}` : 'Mail is still simulated — save SMTP settings first'),
+        ? toast.success(`Test email sent to ${r.to} — check the inbox (and spam)`)
+        : toast.error(
+            r.error
+              ? `Send failed: ${r.error}`
+              : 'Mail is still simulated — save SMTP settings first',
+          ),
     onError: (e) =>
       toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Test failed'),
+  });
+
+  // Distinct from save: the save body OMITS an empty password to mean "keep
+  // the stored one", so clearing needs the explicit empty string the API
+  // treats as "remove the credential".
+  const removeStored = useMutation({
+    mutationFn: () =>
+      apiFetch<MailSettings>('/platform/mail-settings', {
+        method: 'PUT',
+        body: {
+          host: draft.host.trim(),
+          port: Number(draft.port) || 587,
+          secure: draft.security === 'ssl',
+          username: draft.username.trim() || null,
+          password: '',
+          fromAddress: composedFrom,
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Stored password removed');
+      setForm(null);
+      void queryClient.invalidateQueries({ queryKey: ['platform-mail'] });
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not remove',
+      ),
   });
 
   const clear = useMutation({
@@ -106,7 +194,9 @@ export default function PlatformMailPage() {
       void queryClient.invalidateQueries({ queryKey: ['platform-mail'] });
     },
     onError: (e) =>
-      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not remove'),
+      toast.error(
+        e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not remove',
+      ),
   });
 
   if (settings.isPending) return <Skeleton className="mx-auto h-80 max-w-2xl" />;
@@ -132,8 +222,8 @@ export default function PlatformMailPage() {
             <Mail aria-hidden="true" className="size-5 text-[var(--color-brand)]" /> Email (SMTP)
           </h1>
           <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-            Platform-wide delivery for invitations and notification emails. Saved settings apply
-            to the next email — no restart.
+            Platform-wide delivery for invitations and notification emails. Saved settings apply to
+            the next email — no restart.
           </p>
         </div>
         <Link href="/platform/tenants" className="text-sm text-[var(--color-brand)]">
@@ -141,7 +231,7 @@ export default function PlatformMailPage() {
         </Link>
       </header>
 
-      <Card className="grid gap-3 p-5">
+      <Card className="grid gap-4 p-5">
         <p className="text-sm">
           Status:{' '}
           <span
@@ -154,74 +244,219 @@ export default function PlatformMailPage() {
           </span>
         </p>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="SMTP host" htmlFor="mh">
-            <Input id="mh" value={draft.host} onChange={(e) => set({ host: e.target.value })} placeholder="smtp-relay.brevo.com" />
+        <Field label="Provider" htmlFor="mprov">
+          <select
+            id="mprov"
+            value={draft.provider}
+            onChange={(e) => pickProvider(e.target.value)}
+            className={selectCls}
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+            Picking one fills in the server details, so you only supply what is yours.
+          </p>
+        </Field>
+
+        <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+          <Field label="Host" htmlFor="mh">
+            <Input
+              id="mh"
+              value={draft.host}
+              onChange={(e) => set({ host: e.target.value, provider: 'custom' })}
+              placeholder="smtp.example.com"
+            />
           </Field>
           <Field label="Port" htmlFor="mp">
-            <Input id="mp" inputMode="numeric" value={draft.port} onChange={(e) => set({ port: e.target.value.replace(/\D/g, '') })} placeholder="587" />
+            <Input
+              id="mp"
+              inputMode="numeric"
+              value={draft.port}
+              onChange={(e) => set({ port: e.target.value.replace(/\D/g, '') })}
+              placeholder="587"
+            />
           </Field>
-          <Field label="Username / login" htmlFor="mu">
-            <Input id="mu" value={draft.username} onChange={(e) => set({ username: e.target.value })} placeholder="9a1b2c001@smtp-brevo.com" />
-          </Field>
-          <Field label={current?.hasPassword ? 'SMTP key (leave blank to keep current)' : 'SMTP key / password'} htmlFor="mk">
-            <PasswordInput id="mk" autoComplete="off" value={draft.password} onChange={(e) => set({ password: e.target.value })} placeholder={current?.hasPassword ? '••••••••  (stored)' : 'Paste the SMTP key'} />
-          </Field>
-          <div className="sm:col-span-2">
-            <Field label="From address" htmlFor="mf">
-              <Input id="mf" value={draft.fromAddress} onChange={(e) => set({ fromAddress: e.target.value })} placeholder="TechpioAsset <no-reply@techpio.com>" />
-            </Field>
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={draft.secure} onChange={(e) => set({ secure: e.target.checked })} className="size-4 rounded border-[var(--color-border-strong)]" />
-            Implicit TLS (port 465). Leave off for STARTTLS on 587.
-          </label>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            loading={save.isPending}
-            disabled={!draft.host.trim() || !draft.fromAddress.trim()}
-            onClick={() => save.mutate()}
+        <div className="max-w-xs">
+          <Field label="Security" htmlFor="msec">
+            <select
+              id="msec"
+              value={draft.security}
+              onChange={(e) => {
+                const security = e.target.value as Security;
+                // Convenience only: flip the port when it is still the other
+                // mode's default, never when the operator typed something else.
+                const port =
+                  security === 'ssl' && draft.port === '587'
+                    ? '465'
+                    : security !== 'ssl' && draft.port === '465'
+                      ? '587'
+                      : draft.port;
+                set({ security, port });
+              }}
+              className={selectCls}
+            >
+              <option value="ssl">SSL/TLS (465)</option>
+              <option value="starttls">STARTTLS (587)</option>
+              <option value="none">None (not recommended)</option>
+            </select>
+          </Field>
+        </div>
+
+        <Field label="Username" htmlFor="mu">
+          <Input
+            id="mu"
+            value={draft.username}
+            onChange={(e) => set({ username: e.target.value })}
+            placeholder="info@yourdomain.com"
+          />
+        </Field>
+
+        <div>
+          <Field
+            label={current?.hasPassword ? 'Password' : 'Password / SMTP key'}
+            htmlFor="mk"
           >
-            Save settings
-          </Button>
+            <PasswordInput
+              id="mk"
+              autoComplete="off"
+              value={draft.password}
+              onChange={(e) => set({ password: e.target.value })}
+              placeholder={current?.hasPassword ? 'Stored — leave blank to keep it' : 'Paste the password or SMTP key'}
+            />
+          </Field>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="text-xs text-[var(--color-content-subtle)]">
+              Encrypted before it is stored, and never sent back to this page.
+            </p>
+            {current?.hasPassword ? (
+              <button
+                type="button"
+                className="text-xs font-medium"
+                style={{ color: 'var(--tone-critical-fg)' }}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: 'Remove the stored password?',
+                    body: 'The server settings stay; only the credential is cleared. Sends will fail until a new one is saved (unless the server needs no authentication).',
+                    confirmLabel: 'Remove stored',
+                    destructive: true,
+                  });
+                  if (ok) removeStored.mutate();
+                }}
+              >
+                Remove stored
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {provider?.hint ? (
+          <p className="rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs text-[var(--color-content-muted)]">
+            {provider.hint}
+          </p>
+        ) : null}
+
+        <div className="border-t border-[var(--color-border)] pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+            Sender
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+            Who your emails come from. Most providers reject mail from a domain you have not
+            verified with them.
+          </p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <Field label="From address" htmlFor="mf">
+              <Input
+                id="mf"
+                value={draft.fromAddress}
+                onChange={(e) => set({ fromAddress: e.target.value })}
+                placeholder="no-reply@techpio.com"
+              />
+            </Field>
+            <Field label="From name" htmlFor="mfn">
+              <Input
+                id="mfn"
+                value={draft.fromName}
+                onChange={(e) => set({ fromName: e.target.value })}
+                placeholder="TechpioAsset"
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              loading={save.isPending}
+              disabled={!draft.host.trim() || !draft.fromAddress.trim()}
+              onClick={() => save.mutate()}
+            >
+              Save settings
+            </Button>
+            {current?.configured ? (
+              <Button
+                size="sm"
+                variant="danger"
+                loading={clear.isPending}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: 'Remove SMTP settings?',
+                    body: 'Email goes back to the server default — on this deployment that means simulated delivery, and invitations stop reaching inboxes.',
+                    confirmLabel: 'Remove',
+                    destructive: true,
+                  });
+                  if (ok) clear.mutate();
+                }}
+              >
+                Remove all
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="grid gap-3 p-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+            Send a test
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+            The only way to know these work. Uses the saved settings.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-64 flex-1">
+            <Field label="Send to" htmlFor="mt">
+              <Input
+                id="mt"
+                type="email"
+                value={testTo ?? user?.email ?? ''}
+                onChange={(e) => setTestTo(e.target.value)}
+              />
+            </Field>
+          </div>
           <Button
             size="sm"
             variant="secondary"
             loading={test.isPending}
-            disabled={!current?.configured}
-            onClick={() => test.mutate()}
+            disabled={!current?.configured || !(testTo ?? user?.email)}
+            onClick={() => test.mutate((testTo ?? user?.email)!)}
           >
-            <Send aria-hidden="true" className="mr-1 size-3.5" /> Send me a test email
+            <Send aria-hidden="true" className="mr-1 size-3.5" /> Send test email
           </Button>
-          {current?.configured ? (
-            <Button
-              size="sm"
-              variant="danger"
-              loading={clear.isPending}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: 'Remove SMTP settings?',
-                  body: 'Email goes back to the server default — on this deployment that means simulated delivery, and invitations stop reaching inboxes.',
-                  confirmLabel: 'Remove',
-                  destructive: true,
-                });
-                if (ok) clear.mutate();
-              }}
-            >
-              Remove
-            </Button>
-          ) : null}
         </div>
-
-        <p className="text-xs text-[var(--color-content-subtle)]">
-          For Brevo: sign up at brevo.com → SMTP &amp; API → SMTP → generate a key, and verify
-          your from-address under Senders &amp; Domains so mail lands in inboxes, not spam. The
-          key is stored encrypted and never shown again.
-        </p>
       </Card>
+
+      <p className="text-xs text-[var(--color-content-subtle)]">
+        Saved here, these take precedence over the server&apos;s environment configuration — no SSH,
+        no redeploy. The password is stored encrypted and never shown again.
+      </p>
     </div>
   );
 }
