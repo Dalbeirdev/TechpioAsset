@@ -276,7 +276,7 @@ function RequestsTable() {
                       <StatusBadge token={REQUEST_STATUS_TOKENS[row.status]} size="sm" />
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {row.estimatedCost
+                      {row.estimatedCost && Number(row.estimatedCost) > 0
                         ? `${row.currency ?? ''} ${Number(row.estimatedCost).toLocaleString()}`
                         : '—'}
                     </td>

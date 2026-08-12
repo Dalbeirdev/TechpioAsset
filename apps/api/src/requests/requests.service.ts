@@ -356,7 +356,14 @@ export class RequestsService {
         isReplacement: input.isReplacement,
         replacesAssetId: input.replacesAssetId ?? null,
         estimatedCost,
-        currency: input.currency ?? 'USD',
+        currency:
+          input.currency ??
+          (
+            await this.prisma.client.company.findUniqueOrThrow({
+              where: { id: actor.companyId },
+              select: { baseCurrency: true },
+            })
+          ).baseCurrency,
         notes: input.notes ?? null,
         createdById: actor.id,
         items: {
