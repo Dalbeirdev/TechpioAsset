@@ -177,7 +177,9 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
             {new Date(data.createdAt).toLocaleDateString()}
           </p>
         </div>
-        {data.estimatedCost ? (
+        {/* "0" is a truthy STRING - without the numeric check this block
+            proudly announced "USD 0" on every estimate-less request. */}
+        {data.estimatedCost && Number(data.estimatedCost) > 0 ? (
           <div className="text-right">
             <p className="text-xs text-[var(--color-content-subtle)]">Estimate</p>
             <p className="text-lg font-semibold tabular-nums">

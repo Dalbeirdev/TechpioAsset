@@ -130,7 +130,7 @@ export default function RequestPrintPage({ params }: { params: Promise<{ id: str
             {/* The API omits estimatedCost for callers without cost read; a
                 column of blanks would imply redaction, so it only renders
                 when at least one item carries a figure. */}
-            {data.items.some((i) => i.estimatedCost) ? (
+            {data.items.some((i) => Number(i.estimatedCost) > 0) ? (
               <th className="py-1 pr-2 text-right">Est. cost</th>
             ) : null}
             <th className="py-1">Fulfilled with</th>
@@ -146,9 +146,9 @@ export default function RequestPrintPage({ params }: { params: Promise<{ id: str
                 ) : null}
               </td>
               <td className="py-1.5 pr-2">{item.quantity}</td>
-              {data.items.some((i) => i.estimatedCost) ? (
+              {data.items.some((i) => Number(i.estimatedCost) > 0) ? (
                 <td className="py-1.5 pr-2 text-right">
-                  {item.estimatedCost ? `${data.currency ?? ''} ${item.estimatedCost}` : '—'}
+                  {Number(item.estimatedCost) > 0 ? `${data.currency ?? ''} ${item.estimatedCost}` : '—'}
                 </td>
               ) : null}
               <td className="py-1.5">
