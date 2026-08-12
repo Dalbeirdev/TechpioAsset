@@ -177,23 +177,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Empty on first render on purpose: it matches the server's HTML, and it is
-  // the "default hide" the menu is meant to start from. What the user has
-  // opened before is restored after mount, below.
-  const [openGroups, setOpenGroups] = useState<string[]>([]);
+  // Explicit user choices per group, layered over the default. The default for
+  // a group is "open if it holds the current page" - but a default only: the
+  // old model OR'd the two, so the group holding the current page IGNORED its
+  // own collapse button (reported as "sometimes the click does not work" -
+  // "sometimes" being exactly "when you are inside that group").
+  //
+  // Empty on first render on purpose: it matches the server's HTML; stored
+  // choices are restored after mount, below.
+  const [navOverrides, setNavOverrides] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(OPEN_GROUPS_KEY);
-      if (stored) setOpenGroups(JSON.parse(stored) as string[]);
+      if (!stored) return;
+      const parsed: unknown = JSON.parse(stored);
+      // The previous format was an array of open keys; carry it forward.
+      if (Array.isArray(parsed)) {
+        setNavOverrides(Object.fromEntries(parsed.map((k: string) => [k, true])));
+      } else if (parsed && typeof parsed === 'object') {
+        setNavOverrides(parsed as Record<string, boolean>);
+      }
     } catch {
       // A corrupt or unavailable localStorage is not worth breaking a menu over.
     }
   }, []);
 
-  const toggleGroup = (key: string) => {
-    setOpenGroups((prev) => {
-      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+  const setGroupOpen = (key: string, open: boolean) => {
+    setNavOverrides((prev) => {
+      const next = { ...prev, [key]: open };
       try {
         window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
       } catch {
@@ -202,6 +214,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return next;
     });
   };
+
+  // Navigating INTO a group re-reveals it even if it was collapsed earlier -
+  // auto-reveal wins on navigation, the click wins in place.
+  useEffect(() => {
+    setNavOverrides((prev) => {
+      const holding = NAV_GROUPS.find((g) => g.items.some((i) => isActive(pathname, i.href)));
+      if (!holding || prev[holding.key] !== false) return prev;
+      const next = { ...prev };
+      delete next[holding.key];
+      try {
+        window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
+      } catch {
+        /* best effort */
+      }
+      return next;
+    });
+  }, [pathname]);
 
   useEffect(() => {
     if (status === 'anonymous') router.replace('/login');
@@ -276,13 +305,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         // click through the menu would close the menu around you and there
         // would be nothing on screen saying where you are.
         const holdsCurrentPage = group.items.some((i) => isActive(pathname, i.href));
-        const open = openGroups.includes(group.key) || holdsCurrentPage;
+        const open = navOverrides[group.key] ?? holdsCurrentPage;
         const panelId = `nav-group-${group.key}`;
         return (
           <div key={group.key} className="mt-1">
             <button
               type="button"
-              onClick={() => toggleGroup(group.key)}
+              onClick={() => setGroupOpen(group.key, !open)}
               aria-expanded={open}
               aria-controls={panelId}
               className={cn(
