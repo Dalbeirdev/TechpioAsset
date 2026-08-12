@@ -317,7 +317,7 @@ export class DiscoveryService {
     }
 
     // Classify: exact serial → MATCHED (1) or CONFLICT (2+); hostname == asset
-    // name → PROPOSED; otherwise UNMATCHED.
+    // name OR asset tag → PROPOSED; otherwise UNMATCHED.
     let matchState: DiscoveryMatchState = 'UNMATCHED';
     let assetId: string | null = null;
     if (serial) {
@@ -341,8 +341,18 @@ export class DiscoveryService {
       }
     }
     if (matchState === 'UNMATCHED' && hostname) {
+      // Tag as well as name: fleets routinely use the machine name as the
+      // asset tag (this company's entire register does), and a matcher blind
+      // to tags sends every laptop to the manual queue for no reason.
       const byName = await tx.asset.findMany({
-        where: { companyId, deletedAt: null, name: { equals: hostname, mode: 'insensitive' } },
+        where: {
+          companyId,
+          deletedAt: null,
+          OR: [
+            { name: { equals: hostname, mode: 'insensitive' } },
+            { assetTag: { equals: hostname, mode: 'insensitive' } },
+          ],
+        },
         select: { id: true },
         take: 2,
       });

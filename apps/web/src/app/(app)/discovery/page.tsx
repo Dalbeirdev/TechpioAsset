@@ -85,11 +85,24 @@ export default function DiscoveryPage() {
       ),
   });
 
+  // Device currently being hand-linked to an asset (UNMATCHED rows).
+  const [linking, setLinking] = useState<string | null>(null);
+
   const review = useMutation({
-    mutationFn: (input: { id: string; verb: 'confirm' | 'ignore' }) =>
-      apiFetch(`/discovery/devices/${input.id}/${input.verb}`, { method: 'POST', body: {} }),
+    mutationFn: (input: { id: string; verb: 'confirm' | 'ignore'; assetId?: string }) =>
+      apiFetch(`/discovery/devices/${input.id}/${input.verb}`, {
+        method: 'POST',
+        body: input.assetId ? { assetId: input.assetId } : {},
+      }),
     onSuccess: (_, input) => {
-      toast.success(input.verb === 'confirm' ? 'Match confirmed and data applied.' : 'Device ignored.');
+      toast.success(
+        input.verb === 'ignore'
+          ? 'Device ignored.'
+          : input.assetId
+            ? 'Device linked and data applied.'
+            : 'Match confirmed and data applied.',
+      );
+      setLinking(null);
       void refresh();
     },
     onError: (caught) =>
@@ -254,6 +267,14 @@ export default function DiscoveryPage() {
                                 Confirm
                               </Button>
                             ) : null}
+                            {row.matchState === 'UNMATCHED' ? (
+                              <Button
+                                size="sm"
+                                onClick={() => setLinking(linking === row.id ? null : row.id)}
+                              >
+                                Link…
+                              </Button>
+                            ) : null}
                             {parkable ? (
                               <Button
                                 size="sm"
@@ -272,11 +293,90 @@ export default function DiscoveryPage() {
                 })}
               </tbody>
             </table>
+            {linking ? (
+              <AssetLinkPicker
+                key={linking}
+                onPick={(assetId) => review.mutate({ id: linking, verb: 'confirm', assetId })}
+                onCancel={() => setLinking(null)}
+                busy={review.isPending}
+              />
+            ) : null}
           </div>
         )}
       </Card>
       </>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Hand-link an UNMATCHED device to an existing asset (v2.15).
+ *
+ * The API always allowed confirm-with-assetId; the UI never offered it, so a
+ * device whose serial and hostname matched nothing - a placeholder serial in
+ * the register, a renamed machine - could only be ignored. Search is the same
+ * assets query the list uses, so scope and tenancy come for free.
+ */
+function AssetLinkPicker({
+  onPick,
+  onCancel,
+  busy,
+}: {
+  onPick: (assetId: string) => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  const [q, setQ] = useState('');
+  const results = useQuery({
+    queryKey: ['link-picker', q],
+    enabled: q.trim().length >= 2,
+    queryFn: () =>
+      apiFetchPage<{ id: string; assetTag: string; name: string; serialNumber: string | null }>(
+        `/assets?pageSize=8&q=${encodeURIComponent(q.trim())}`,
+      ),
+  });
+
+  return (
+    <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-4">
+      <p className="text-sm font-medium">Link this device to an asset</p>
+      <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+        Search by tag, name or serial. Linking applies the device&apos;s reported hardware to the
+        chosen asset.
+      </p>
+      <input
+        autoFocus
+        aria-label="Search assets to link"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="SARABJIT-W11, Dell Latitude, serial…"
+        className="mt-2 h-9 w-full max-w-md rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-3 text-sm"
+      />
+      <div className="mt-2 grid gap-1">
+        {results.data?.data.map((asset) => (
+          <button
+            key={asset.id}
+            type="button"
+            disabled={busy}
+            onClick={() => onPick(asset.id)}
+            className="flex items-center justify-between rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-left text-sm hover:border-[var(--color-brand)]"
+          >
+            <span>
+              <span className="font-medium">{asset.assetTag}</span>
+              <span className="ml-2 text-[var(--color-content-muted)]">{asset.name}</span>
+            </span>
+            <span className="font-mono text-xs text-[var(--color-content-subtle)]">
+              {asset.serialNumber ?? 'no serial'}
+            </span>
+          </button>
+        ))}
+        {q.trim().length >= 2 && results.data?.data.length === 0 ? (
+          <p className="text-xs text-[var(--color-content-subtle)]">Nothing matches that search.</p>
+        ) : null}
+      </div>
+      <Button size="sm" variant="secondary" className="mt-2" onClick={onCancel} disabled={busy}>
+        Cancel
+      </Button>
     </div>
   );
 }

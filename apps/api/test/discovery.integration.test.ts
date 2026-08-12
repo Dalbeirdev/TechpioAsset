@@ -185,6 +185,46 @@ describe('reconciliation', () => {
     }
   });
 
+  it('a hostname matching the asset TAG is proposed too (v2.15)', async () => {
+    // The whole fleet register uses machine names as asset tags; a matcher
+    // blind to tags sent every real laptop to the manual queue.
+    const tag = `XTAG-${run}`;
+    const created = await api(app)
+      .post('/api/v1/assets')
+      .set(auth(s.itAdmin))
+      .send({
+        assetTag: tag,
+        name: 'Some human-friendly name',
+        categoryId: categoryId,
+        serialNumber: `XTAGSN-${run}`,
+        status: 'AVAILABLE',
+      });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+
+    const res = await api(app)
+      .post(`${base}/ingest`)
+      .set(auth(s.itAdmin))
+      .send({
+        devices: [
+          {
+            externalId: `agent-${run}-tag`,
+            hostname: tag.toLowerCase(),
+            // A serial the register does not know - like a placeholder row.
+            serialNumber: `REAL-BIOS-${run}`,
+          },
+        ],
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ proposed: 1 });
+
+    const queue = await api(app).get(`${base}/devices?state=PROPOSED`).set(auth(s.itAdmin));
+    const item = queue.body.data.find(
+      (d: { externalId: string }) => d.externalId === `agent-${run}-tag`,
+    );
+    expect(item).toBeDefined();
+    expect(item.asset.id).toBe(created.body.data.id);
+  });
+
   it('a hostname coincidence is only PROPOSED; confirming applies the payload', async () => {
     const res = await api(app)
       .post(`${base}/ingest`)
