@@ -26,7 +26,9 @@ import {
   pageQuerySchema,
   disposeAssetSchema,
   reassignAssetSchema,
+  receiveTransferSchema,
   returnAssetSchema,
+  transferAssetSchema,
   setAssetPriceSchema,
   updateAssetSchema,
   type AssetListQuery,
@@ -36,7 +38,9 @@ import {
   type PageQuery,
   type DisposeAssetInput,
   type ReassignAssetInput,
+  type ReceiveTransferInput,
   type ReturnAssetInput,
+  type TransferAssetInput,
   type UpdateAssetInput,
 } from '@techpioasset/contracts';
 import { PERMISSIONS, type AssetStatus } from '@techpioasset/domain';
@@ -275,6 +279,35 @@ export class AssetsController {
     @Body(zodBody(disposeAssetSchema)) body: DisposeAssetInput,
   ) {
     return this.assets.dispose(actor, id, body);
+  }
+
+  @Post(':id/transfer')
+  @RequirePermissions(PERMISSIONS.ASSETS_TRANSFER)
+  @ApiOperation({
+    summary: 'Send an asset to another office',
+    description:
+      'The asset goes IN_TRANSIT and stays attributed to the origin office until the destination confirms arrival.',
+  })
+  transfer(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(transferAssetSchema)) body: TransferAssetInput,
+  ) {
+    return this.assets.transfer(actor, id, body);
+  }
+
+  @Post(':id/transfer/receive')
+  @RequirePermissions(PERMISSIONS.ASSETS_TRANSFER)
+  @ApiOperation({
+    summary: 'Confirm an in-transit asset arrived',
+    description: 'Closes the open transfer and moves the asset to the destination office.',
+  })
+  receiveTransfer(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(receiveTransferSchema)) body: ReceiveTransferInput,
+  ) {
+    return this.assets.receiveTransfer(actor, id, body);
   }
 
   @Post(':id/return')

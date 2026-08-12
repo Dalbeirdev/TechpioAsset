@@ -564,6 +564,7 @@ model User {
   transfersFrom            AssetTransfer[]            @relation("TransferFromUser")
   transfersTo              AssetTransfer[]            @relation("TransferToUser")
   transfersApproved        AssetTransfer[]            @relation("TransferApprovedBy")
+  transfersReceived        AssetTransfer[]            @relation("TransferReceivedBy")
   requestsRaised           AssetRequest[]             @relation("RequestRequester")
   requestsOnBehalf         AssetRequest[]             @relation("RequestBeneficiary")
   requestsManaged          AssetRequest[]             @relation("RequestManager")
@@ -1288,6 +1289,11 @@ model AssetTransfer {
   condition     AssetCondition?
   notes         String?
 
+  // v2.15 - a transfer is open (the asset is IN_TRANSIT) until someone at the
+  // destination confirms arrival. receivedAt IS NULL is the open marker.
+  receivedAt   DateTime?
+  receivedById String?
+
   createdAt   DateTime @default(now())
   createdById String?
 
@@ -1295,6 +1301,7 @@ model AssetTransfer {
   fromUser       User?       @relation("TransferFromUser", fields: [fromUserId], references: [id], onDelete: SetNull)
   toUser         User?       @relation("TransferToUser", fields: [toUserId], references: [id], onDelete: SetNull)
   approvedBy     User?       @relation("TransferApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  receivedBy     User?       @relation("TransferReceivedBy", fields: [receivedById], references: [id], onDelete: SetNull)
   fromDepartment Department? @relation("TransferFromDepartment", fields: [fromDepartmentId], references: [id], onDelete: SetNull)
   toDepartment   Department? @relation("TransferToDepartment", fields: [toDepartmentId], references: [id], onDelete: SetNull)
   fromRoom       Room?       @relation("TransferFromRoom", fields: [fromRoomId], references: [id], onDelete: SetNull)
@@ -1352,6 +1359,9 @@ model MaintenanceRecord {
   downtimeHours Decimal? @db.Decimal(8, 2)
 
   warrantyId             String?
+  // v2.15 - the DAMAGE/REPAIR request this work order was raised from, so the
+  // ticket and the repair reference each other instead of coexisting blindly.
+  requestId              String?  @unique
   // v2.5 work-order extensions: who does the work, by when, escalated once.
   technicianId String?
   slaDueAt     DateTime?
@@ -1371,6 +1381,7 @@ model MaintenanceRecord {
   vendor      Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   requestedBy User?        @relation("MaintenanceRequester", fields: [requestedById], references: [id], onDelete: SetNull)
   warranty    Warranty?    @relation(fields: [warrantyId], references: [id], onDelete: SetNull)
+  request     AssetRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
   attachments Attachment[]
 
   @@index([assetId, status])
@@ -1785,6 +1796,7 @@ model AssetRequest {
   approvals   RequestApproval[]
   comments    RequestComment[]
   attachments Attachment[]
+  workOrder   MaintenanceRecord?
 
   @@unique([companyId, requestNumber])
   @@index([companyId, status])

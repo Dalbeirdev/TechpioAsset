@@ -122,6 +122,27 @@ export const returnAssetSchema = z.object({
 });
 export type ReturnAssetInput = z.infer<typeof returnAssetSchema>;
 
+/**
+ * Sends an asset to another office (v2.15 Phase 2d). The asset goes IN_TRANSIT
+ * and stays attributed to the origin office until the destination confirms
+ * arrival - a laptop in a courier van is not "at" either site, and pretending
+ * it has already arrived hides exactly the window where kit goes missing.
+ */
+export const transferAssetSchema = z.object({
+  toOfficeId: z.string().min(1),
+  reason: z.string().trim().max(500).optional().nullable(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+});
+export type TransferAssetInput = z.infer<typeof transferAssetSchema>;
+
+/** Destination confirms the asset arrived. */
+export const receiveTransferSchema = z.object({
+  /** Where it lands: on the shelf or in the store room. */
+  resultingStatus: z.enum(['AVAILABLE', 'IN_STORAGE']).default('AVAILABLE'),
+  notes: z.string().trim().max(2000).optional().nullable(),
+});
+export type ReceiveTransferInput = z.infer<typeof receiveTransferSchema>;
+
 export const DISPOSAL_METHODS = [
   'SOLD',
   'SCRAPPED',
