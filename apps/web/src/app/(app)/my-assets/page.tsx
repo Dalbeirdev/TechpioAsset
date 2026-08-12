@@ -23,8 +23,6 @@ interface AssetRow {
   condition: AssetCondition;
   assignmentDate: string | null;
   warrantyEndDate: string | null;
-  /** Device specs and known problems; the API includes it for OWN scope. */
-  notes?: string | null;
   office: { name: string } | null;
   category: { name: string } | null;
   /** The open assignment, if any - at most one row. */
@@ -147,13 +145,14 @@ function MyAssetsList() {
                 ) : null}
               </dl>
 
-              {/* The device's record - specs, known problems - same text the
-                  administrator reads. Edit stays an admin permission. */}
-              {asset.notes ? (
-                <p className="mt-3 whitespace-pre-wrap border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-content-subtle)]">
-                  {asset.notes}
-                </p>
-              ) : null}
+              {/* The full device record - Overview, Lifecycle, Hardware, OS,
+                  Software, Health - lives on the tabbed detail page. */}
+              <Link
+                href={`/assets/${asset.id}`}
+                className="mt-3 inline-block text-xs font-medium text-[var(--color-brand)]"
+              >
+                View device details →
+              </Link>
 
               <div className="mt-3">
                 <StatusBadge token={CONDITION_TOKENS[asset.condition]} size="sm" />
