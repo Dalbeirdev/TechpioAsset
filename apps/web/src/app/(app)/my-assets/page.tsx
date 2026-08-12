@@ -26,7 +26,12 @@ interface AssetRow {
   office: { name: string } | null;
   category: { name: string } | null;
   /** The open assignment, if any - at most one row. */
-  assignments: { id: string; acknowledgedAt: string | null; expectedReturnAt: string | null }[];
+  assignments: {
+    id: string;
+    acknowledgedAt: string | null;
+    expectedReturnAt: string | null;
+    assignedBy: { profile: { firstName: string; lastName: string } | null } | null;
+  }[];
 }
 
 export default function MyAssetsPage() {
@@ -134,7 +139,12 @@ function MyAssetsList() {
                 {asset.assignmentDate ? (
                   <div className="flex gap-1">
                     <dt>Issued:</dt>
-                    <dd>{new Date(asset.assignmentDate).toLocaleDateString()}</dd>
+                    <dd>
+                      {new Date(asset.assignmentDate).toLocaleDateString()}
+                      {asset.assignments[0]?.assignedBy?.profile
+                        ? ` by ${asset.assignments[0].assignedBy.profile.firstName} ${asset.assignments[0].assignedBy.profile.lastName}`
+                        : ''}
+                    </dd>
                   </div>
                 ) : null}
                 {asset.warrantyEndDate ? (

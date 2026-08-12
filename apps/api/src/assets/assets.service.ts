@@ -122,7 +122,15 @@ export class AssetsService {
         where: { returnedAt: null },
         orderBy: { assignedAt: 'desc' },
         take: 1,
-        select: { id: true, acknowledgedAt: true, expectedReturnAt: true },
+        select: {
+          id: true,
+          acknowledgedAt: true,
+          expectedReturnAt: true,
+          // Who handed the device over - accountability the holder should see.
+          assignedBy: {
+            select: { id: true, profile: { select: { firstName: true, lastName: true } } },
+          },
+        },
       },
     } satisfies Prisma.AssetSelect;
   }
@@ -260,6 +268,9 @@ export class AssetsService {
             acknowledgedAt: true,
             expectedReturnAt: true,
             accessoriesIssued: true,
+            assignedBy: {
+              select: { id: true, profile: { select: { firstName: true, lastName: true } } },
+            },
             user: {
               select: {
                 id: true,
@@ -363,6 +374,7 @@ export class AssetsService {
             : {
                 ...assignment,
                 user: null,
+                assignedBy: null,
                 assetReturn: assignment.assetReturn
                   ? { ...assignment.assetReturn, damageNotes: null }
                   : null,
