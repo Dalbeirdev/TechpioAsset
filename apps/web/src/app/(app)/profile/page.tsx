@@ -8,6 +8,7 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch, apiBaseUrl, getAccessToken, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
+import { AuthAvatar } from '@/components/auth-avatar';
 import { Card, Skeleton } from '@/components/ui';
 
 /**
@@ -446,12 +447,17 @@ function AvatarField({
   return (
     <div className="flex items-center gap-3">
       {present ? (
-        // eslint-disable-next-line @next/next/no-img-element -- private, streamed from the API
-        <img
-          src={`${apiBaseUrl}/users/me/avatar?v=${stamp}`}
+        <AuthAvatar
+          enabled
+          version={stamp}
           alt="Your profile photo"
           className="size-14 rounded-full object-cover"
-        />
+        >
+          <div
+            aria-hidden="true"
+            className="grid size-14 place-items-center rounded-full bg-[var(--color-surface-sunken)]"
+          />
+        </AuthAvatar>
       ) : (
         <div
           aria-hidden="true"
