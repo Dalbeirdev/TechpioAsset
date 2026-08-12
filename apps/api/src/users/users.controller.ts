@@ -191,6 +191,17 @@ export class UsersController {
     return this.users.invite(actor, body);
   }
 
+  // Declared before ':id/resend-invite' so the static path wins the match.
+  @Post('invite-all-pending')
+  @ApiOperation({
+    summary: 'Send the invitation email to every account still Invited',
+    description:
+      'The post-import onboarding move. Every pending person gets a fresh link; links they already held are invalidated.',
+  })
+  inviteAllPending(@CurrentUser() actor: AuthUser) {
+    return this.users.inviteAllPending(actor);
+  }
+
   // Same OR rule as invite - authorization lives in the service.
   @Post(':id/resend-invite')
   @ApiOperation({

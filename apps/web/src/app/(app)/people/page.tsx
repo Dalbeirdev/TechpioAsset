@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, Copy, Download, Search, Settings2, UserPlus } from 'lucide-react';
+import { Send, AlertTriangle, Check, Copy, Download, Search, Settings2, UserPlus } from 'lucide-react';
 import { PERMISSIONS, SYSTEM_ROLES, findSodConflicts } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
@@ -798,6 +798,23 @@ function PeopleTable() {
   const [managing, setManaging] = useState<UserRow | null>(null);
   const [inviting, setInviting] = useState(false);
   const canInvite = can(PERMISSIONS.USERS_MANAGE) || can(PERMISSIONS.EMPLOYEES_CREATE);
+  const queryClient = useQueryClient();
+  const confirmDialog = useConfirm();
+  const inviteAll = useMutation({
+    mutationFn: () =>
+      apiFetch<{ pending: number; sent: number; failed: string[] }>('/users/invite-all-pending', {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: (r) => {
+      if (r.pending === 0) toast.success('Nobody is pending - every account is already active.');
+      else if (r.failed.length === 0) toast.success(`Invitations sent to ${r.sent} people.`);
+      else toast.error(`Sent ${r.sent}, failed for: ${r.failed.join(', ')}`);
+      void queryClient.invalidateQueries({ queryKey: ['people'] });
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not send invitations'),
+  });
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -928,6 +945,23 @@ function PeopleTable() {
           <Download aria-hidden="true" className="size-4" />
           Export
         </button>
+        {canInvite ? (
+          <Button
+            variant="secondary"
+            loading={inviteAll.isPending}
+            onClick={async () => {
+              const ok = await confirmDialog({
+                title: 'Send invitations to everyone pending?',
+                body: 'Every account still in the Invited state gets the invitation email with a fresh link. Links they already received stop working - only the newest link counts.',
+                confirmLabel: 'Send to all',
+              });
+              if (ok) inviteAll.mutate();
+            }}
+          >
+            <Send aria-hidden="true" className="mr-1.5 size-4" />
+            Invite all pending
+          </Button>
+        ) : null}
         {canInvite ? (
           <Button onClick={() => setInviting(true)}>
             <UserPlus aria-hidden="true" className="mr-1.5 size-4" />

@@ -573,6 +573,47 @@ export class UsersService {
     return { id: target.id, email: target.email, inviteUrl };
   }
 
+  /**
+   * Send (or re-send) the invitation to every account still in the Invited
+   * state (v2.15) - the onboarding move after a bulk import, instead of
+   * fifty-one clicks. Each person gets a fresh link; any link they already
+   * held is invalidated, exactly like a single resend.
+   */
+  async inviteAllPending(actor: AuthUser) {
+    this.assertMayInvite(actor);
+
+    const pending = await this.prisma.client.user.findMany({
+      where: { companyId: actor.companyId, deletedAt: null, status: 'INVITED' },
+      select: { id: true, email: true, profile: { select: { firstName: true } } },
+      orderBy: { email: 'asc' },
+      take: 500,
+    });
+
+    let sent = 0;
+    const failed: string[] = [];
+    for (const target of pending) {
+      try {
+        await this.sendInviteLink(target.id, target.email, target.profile?.firstName ?? 'Hello');
+        sent += 1;
+      } catch {
+        // sendInviteLink already treats mail failure as best-effort; reaching
+        // here means the token itself could not be issued.
+        failed.push(target.email);
+      }
+    }
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: actor.id,
+      newValues: { note: 'Bulk invitation send', pending: pending.length, sent, failed },
+    });
+
+    return { pending: pending.length, sent, failed };
+  }
+
   /** Issue a fresh invite token (killing any outstanding one) and email the link, best effort. */
   private async sendInviteLink(userId: string, email: string, firstName: string) {
     const token = await this.auth.issueInviteToken(userId);
