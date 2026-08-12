@@ -11,7 +11,6 @@ import {
   ClipboardList,
   Eye,
   FileBarChart,
-  Layers,
   Package,
   Plus,
   ShieldAlert,
@@ -88,33 +87,132 @@ const SCOPE_LABELS: Record<string, string> = {
   OWN: 'Only your own records',
 };
 
-/** One KPI tile — icon, big number, label, and a real sub-line (no fake trends). */
+/**
+ * KPI tile v2 - a tone accent bar on the left edge carries the state, the
+ * number carries the story. Hover lifts, focus rings; the accent doubles as
+ * the tile's identity for scanning a row of six.
+ */
 function Kpi({
   icon,
   tone,
   value,
   label,
   sub,
+  href,
 }: {
   icon: ReactNode;
   tone: string;
   value: number;
   label: string;
   sub: string;
+  href?: string;
 }) {
-  return (
-    <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-[18px] shadow-sm transition duration-200 hover:-translate-y-[3px] hover:shadow-md">
+  const body = (
+    <div
+      className="group relative h-full overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4 pl-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
+    >
       <span
-        className="grid size-10 place-items-center rounded-[11px]"
-        style={{ color: `var(--tone-${tone}-fg)`, background: `var(--tone-${tone}-bg)` }}
-      >
-        {icon}
-      </span>
-      <div className="mt-4 text-[26px] font-bold leading-none tracking-tight tabular-nums">
-        {value.toLocaleString()}
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ background: `var(--tone-${tone}-solid)` }}
+      />
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[27px] font-bold leading-none tracking-tight tabular-nums">
+          {value.toLocaleString()}
+        </div>
+        <span
+          className="grid size-8 shrink-0 place-items-center rounded-lg transition group-hover:scale-110"
+          style={{ color: `var(--tone-${tone}-fg)`, background: `var(--tone-${tone}-bg)` }}
+        >
+          {icon}
+        </span>
       </div>
-      <div className="mt-2 text-[13px] font-medium text-[var(--color-content-muted)]">{label}</div>
+      <div className="mt-2.5 text-[13px] font-semibold">{label}</div>
       <div className="mt-0.5 text-xs text-[var(--color-content-subtle)]">{sub}</div>
+    </div>
+  );
+  return href ? (
+    <Link href={href} className="block h-full">
+      {body}
+    </Link>
+  ) : (
+    body
+  );
+}
+
+/**
+ * The fleet in one line - a segmented composition bar. Status colors do the
+ * status job; identity is never color alone: segments wide enough carry their
+ * own percentage, and the legend beneath names every state with its count.
+ * 2px surface gaps keep neighbouring fills honest.
+ */
+function FleetBar({
+  segments,
+  total,
+}: {
+  segments: { key: string; label: string; count: number; tone: string }[];
+  total: number;
+}) {
+  const visible = segments.filter((seg) => seg.count > 0);
+  if (total === 0 || visible.length === 0) return null;
+  return (
+    <div>
+      <div
+        className="flex h-9 w-full overflow-hidden rounded-lg"
+        role="img"
+        aria-label={visible.map((seg) => `${seg.label} ${seg.count}`).join(', ')}
+      >
+        {visible.map((seg, i) => {
+          const pctOf = (seg.count / total) * 100;
+          return (
+            <div
+              key={seg.key}
+              title={`${seg.label}: ${seg.count} (${Math.round(pctOf)}%)`}
+              className="relative flex items-center justify-center transition-[flex-grow] duration-500"
+              style={{
+                flexGrow: seg.count,
+                flexBasis: 0,
+                background: `var(--tone-${seg.tone}-solid)`,
+                marginLeft: i === 0 ? 0 : 2,
+              }}
+            >
+              {pctOf >= 8 ? (
+                <span className="px-1 text-[11px] font-bold tabular-nums text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.45)]">
+                  {Math.round(pctOf)}%
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+        {visible.map((seg) => (
+          <span key={seg.key} className="inline-flex items-center gap-1.5 text-xs">
+            <span
+              aria-hidden="true"
+              className="size-2.5 rounded-[3px]"
+              style={{ background: `var(--tone-${seg.tone}-solid)` }}
+            />
+            <span className="text-[var(--color-content-muted)]">{seg.label}</span>
+            <span className="font-semibold tabular-nums">{seg.count.toLocaleString()}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Section heading with a kicker - the bento grid's typographic voice. */
+function SectionHead({ kicker, title, action }: { kicker: string; title: string; action?: ReactNode }) {
+  return (
+    <div className="mb-3 flex items-end justify-between gap-3">
+      <div>
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-[var(--color-brand)]">
+          {kicker}
+        </span>
+        <h2 className="mt-0.5 text-[16px] font-bold tracking-tight">{title}</h2>
+      </div>
+      {action}
     </div>
   );
 }
@@ -407,141 +505,143 @@ export default function DashboardPage() {
   // For an OWN-scope user (e.g. Employee) the fetched assets ARE their own kit.
   const myEquipment = assets.slice(0, 8);
 
+  const today = new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  const fleetSegments = [
+    { key: 'available', label: 'Available', count: available, tone: 'success' },
+    { key: 'assigned', label: 'Assigned', count: assigned, tone: 'progress' },
+    { key: 'repair', label: 'Under repair', count: underRepair, tone: 'warning' },
+    { key: 'critical', label: 'Damaged / lost', count: critical, tone: 'critical' },
+    { key: 'retired', label: 'Retired', count: retired, tone: 'neutral' },
+  ];
+
+  // The action center: everything asking for a decision, one card, ranked by
+  // severity - recommendations first, then the specific devices behind them.
   return (
-    <div className="grid gap-5">
-      {/* Header — role & scope aware */}
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-[var(--color-content-subtle)]">
-            Overview
-          </span>
-          <h1 className="mt-1 text-[24px] font-bold tracking-tight">
-            {user?.firstName ? `Welcome back, ${user.firstName}` : 'Asset command center'}
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {roleLabel ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-brand)]/10 px-2.5 py-1 text-xs font-semibold text-[var(--color-brand)]">
-                <Users className="size-3.5" />
-                {roleLabel}
-              </span>
+    <div className="grid gap-6">
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section
+        className="relative overflow-hidden rounded-3xl border border-[var(--color-border)] p-6 sm:p-7"
+        style={{
+          background:
+            'linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 14%, var(--color-surface-raised)) 0%, var(--color-surface-raised) 55%)',
+        }}
+      >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full opacity-25 blur-3xl"
+          style={{ background: 'var(--color-brand)' }}
+        />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-[var(--color-brand)]">
+              {today}
+            </span>
+            <h1 className="mt-1 text-[26px] font-bold tracking-tight sm:text-[30px]">
+              {user?.firstName ? `Welcome back, ${user.firstName}` : 'Asset command center'}
+            </h1>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              {roleLabel ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-brand)] px-2.5 py-1 text-xs font-semibold text-[var(--color-brand-contrast)]">
+                  <Users className="size-3.5" />
+                  {roleLabel}
+                </span>
+              ) : null}
+              {scopeLabel ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)]/70 px-2.5 py-1 text-xs font-medium text-[var(--color-content-muted)] backdrop-blur">
+                  <ShieldCheck className="size-3.5" />
+                  {scopeLabel}
+                </span>
+              ) : null}
+              {isReadOnly ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--tone-warning-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--tone-warning-fg)]">
+                  <Eye className="size-3.5" /> Read-only
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex items-center gap-5">
+            {isFleetViewer ? (
+              <div className="hidden text-right sm:block">
+                <div className="text-[30px] font-bold leading-none tabular-nums">
+                  {total.toLocaleString()}
+                </div>
+                <div className="mt-1 text-xs font-medium text-[var(--color-content-muted)]">
+                  assets · {operational}% operational
+                </div>
+              </div>
             ) : null}
-            {scopeLabel ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-2.5 py-1 text-xs font-medium text-[var(--color-content-muted)]">
-                <ShieldCheck className="size-3.5" />
-                {scopeLabel}
-              </span>
+            {!isReadOnly && can(PERMISSIONS.ASSETS_CREATE) ? (
+              <Link
+                href="/assets/new"
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-brand)] px-4 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+              >
+                <Plus className="size-4" /> Add asset
+              </Link>
             ) : null}
           </div>
-          <p className="mt-2 text-sm text-[var(--color-content-muted)]">
-            {isFleetViewer
-              ? `${total.toLocaleString()} asset${total === 1 ? '' : 's'} in view · ${critical + underRepair} need attention.`
-              : 'Here’s what’s assigned to you and where you can help.'}
-          </p>
         </div>
-        {isReadOnly ? (
-          <span className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--tone-warning-bg)] px-3.5 text-sm font-semibold text-[var(--tone-warning-fg)]">
-            <Eye className="size-4" /> Read-only
-          </span>
-        ) : can(PERMISSIONS.ASSETS_CREATE) ? (
-          <Link
-            href="/assets/new"
-            className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-[var(--color-brand-hover)] hover:shadow-md"
-          >
-            <Plus className="size-4" /> Add asset
-          </Link>
-        ) : null}
-      </header>
 
-      {/* v2.2 Workstream F — role-based "what needs me now" tiles (server-scoped). */}
+        {isFleetViewer ? (
+          <div className="relative mt-6">
+            <FleetBar segments={fleetSegments} total={assets.length} />
+          </div>
+        ) : (
+          <p className="relative mt-3 max-w-xl text-sm text-[var(--color-content-muted)]">
+            Here&apos;s what&apos;s assigned to you and where you can help. Confirm equipment you
+            have received, and raise a ticket the moment something misbehaves.
+          </p>
+        )}
+      </section>
+
+      {/* Role-based "what needs me now" tiles (server-scoped). */}
       <section aria-label="For you">
         <RoleTiles />
       </section>
 
       {isFleetViewer ? (
         <>
-          {/* Fleet KPIs */}
-          <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
-            <Kpi
-              icon={<Boxes className="size-[21px]" />}
-              tone="info"
-              value={total}
-              label="Total assets"
-              sub={`${byOffice.length} office${byOffice.length === 1 ? '' : 's'}`}
-            />
-            <Kpi
-              icon={<CheckCircle2 className="size-[21px]" />}
-              tone="success"
-              value={available}
-              label="Available"
-              sub={`${pct(available)}% of fleet`}
-            />
-            <Kpi
-              icon={<Users className="size-[21px]" />}
-              tone="progress"
-              value={assigned}
-              label="Assigned"
-              sub={`${pct(assigned)}% of fleet`}
-            />
-            <Kpi
-              icon={<Wrench className="size-[21px]" />}
-              tone="warning"
-              value={underRepair}
-              label="Under repair"
-              sub="in service"
-            />
-            <Kpi
-              icon={<ShieldAlert className="size-[21px]" />}
-              tone="danger"
-              value={w30}
-              label="Warranty expiring"
-              sub="within 30 days"
-            />
-            <Kpi
-              icon={<AlertTriangle className="size-[21px]" />}
-              tone="critical"
-              value={critical}
-              label="Critical alerts"
-              sub="damaged / lost / stolen"
-            />
+          {/* ── KPI band ─────────────────────────────────────────────────── */}
+          <section aria-label="Key metrics" className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <Kpi icon={<Boxes className="size-[18px]" />} tone="info" value={total} label="Total assets" sub={`${byOffice.length} office${byOffice.length === 1 ? '' : 's'}`} href="/assets" />
+            <Kpi icon={<CheckCircle2 className="size-[18px]" />} tone="success" value={available} label="Available" sub={`${pct(available)}% of fleet`} href="/assets?status=AVAILABLE" />
+            <Kpi icon={<Users className="size-[18px]" />} tone="progress" value={assigned} label="Assigned" sub={`${pct(assigned)}% of fleet`} href="/assets?status=ASSIGNED" />
+            <Kpi icon={<Wrench className="size-[18px]" />} tone="warning" value={underRepair} label="Under repair" sub="in service" href="/maintenance" />
+            <Kpi icon={<ShieldAlert className="size-[18px]" />} tone="danger" value={w30} label="Warranty expiring" sub="within 30 days" href="/reports" />
+            <Kpi icon={<AlertTriangle className="size-[18px]" />} tone="critical" value={critical} label="Critical" sub="damaged / lost / stolen" href="/assets" />
           </section>
 
-          {/* Total spend — Finance / Super Admin only */}
+          {/* ── Spend (Finance only) ─────────────────────────────────────── */}
           {canSeeSpend && spend.data && spend.data.rows.length > 0 ? (
             <Card className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-[15px] font-semibold">Total spend</h3>
-                  <p className="text-xs text-[var(--color-content-subtle)]">
-                    Purchase cost on record, by equipment category
-                  </p>
-                  <p className="mt-2 text-[28px] font-bold tracking-tight tabular-nums">
-                    {spend.data.rows
-                      .reduce((sum, r) => sum + r.total, 0)
-                      .toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </p>
-                </div>
+              <SectionHead kicker="Finance" title="Total spend on record" />
+              <div className="flex flex-wrap items-start justify-between gap-6">
+                <p className="text-[32px] font-bold tracking-tight tabular-nums">
+                  {spend.data.rows
+                    .reduce((sum, r) => sum + r.total, 0)
+                    .toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
                 <div className="grid min-w-[260px] flex-1 gap-1.5 sm:max-w-md">
                   {spend.data.rows.slice(0, 5).map((r) => {
-                    const grand = spend.data.rows.reduce((s, x) => s + x.total, 0) || 1;
+                    const grand = spend.data.rows.reduce((acc, x) => acc + x.total, 0) || 1;
                     const pctOf = Math.round((r.total / grand) * 100);
                     return (
                       <div key={r.name} className="grid grid-cols-[1fr_auto] items-center gap-x-3">
                         <div className="flex items-center justify-between text-[13px]">
                           <span className="text-[var(--color-content-muted)]">
                             {r.name}{' '}
-                            <span className="text-xs text-[var(--color-content-subtle)]">
-                              · {r.count}
-                            </span>
+                            <span className="text-xs text-[var(--color-content-subtle)]">· {r.count}</span>
                           </span>
                           <span className="font-semibold tabular-nums">
                             {r.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </span>
                         </div>
                         <div className="col-span-2 h-1.5 rounded-full bg-[var(--color-surface-sunken)]">
-                          <div
-                            className="h-full rounded-full bg-[var(--color-brand)]"
-                            style={{ width: `${pctOf}%` }}
-                          />
+                          <div className="h-full rounded-full bg-[var(--color-brand)]" style={{ width: `${pctOf}%` }} />
                         </div>
                       </div>
                     );
@@ -551,91 +651,55 @@ export default function DashboardPage() {
             </Card>
           ) : null}
 
-          {/* Charts row A */}
+          {/* ── Bento: growth + composition ──────────────────────────────── */}
           <section className="grid gap-4 lg:grid-cols-3">
-            <Card className="p-5 lg:col-span-1">
-              <div className="mb-4 flex items-start justify-between">
-                <div>
-                  <h3 className="text-[15px] font-semibold">Asset distribution</h3>
-                  <p className="text-xs text-[var(--color-content-subtle)]">By category</p>
-                </div>
-              </div>
-              {byCategory.length === 0 ? (
-                <EmptyState title="No assets" description="Nothing to chart yet." />
-              ) : (
-                <div className="flex items-center gap-5">
-                  <DonutChart
-                    data={byCategory}
-                    centerValue={total.toLocaleString()}
-                    centerLabel="assets"
-                  />
-                  <Legend
-                    items={byCategory.map((s) => ({
-                      name: s.name,
-                      value: s.value.toLocaleString(),
-                      fill: s.fill,
-                    }))}
-                  />
-                </div>
-              )}
-            </Card>
-
             <Card className="p-5 lg:col-span-2">
-              <div className="mb-4 flex items-start justify-between">
-                <div>
-                  <h3 className="text-[15px] font-semibold">Asset growth</h3>
-                  <p className="text-xs text-[var(--color-content-subtle)]">
-                    Cumulative devices by purchase date
-                  </p>
-                </div>
-              </div>
+              <SectionHead kicker="Trajectory" title="Fleet growth" />
               {growth.length === 0 ? (
                 <EmptyState title="No purchase dates" description="Growth needs dated purchases." />
               ) : (
                 <GrowthArea data={growth} />
               )}
             </Card>
+            <Card className="p-5">
+              <SectionHead kicker="Composition" title="By category" />
+              {byCategory.length === 0 ? (
+                <EmptyState title="No assets" description="Nothing to chart yet." />
+              ) : (
+                <div className="flex items-center gap-5">
+                  <DonutChart data={byCategory} centerValue={total.toLocaleString()} centerLabel="assets" />
+                  <Legend
+                    items={byCategory.map((c) => ({ name: c.name, value: c.value.toLocaleString(), fill: c.fill }))}
+                  />
+                </div>
+              )}
+            </Card>
           </section>
 
-          {/* Charts row B */}
+          {/* ── Bento: health + offices + status ─────────────────────────── */}
           <section className="grid gap-4 lg:grid-cols-3">
             <Card className="p-5">
-              <div className="mb-2">
-                <h3 className="text-[15px] font-semibold">Fleet health</h3>
-                <p className="text-xs text-[var(--color-content-subtle)]">Assets in service</p>
-              </div>
+              <SectionHead kicker="Health" title="Fleet in service" />
               <Gauge
                 percent={operational}
                 label={`Operational · ${assets.length - underRepair - critical - retired} devices`}
               />
             </Card>
-
             <Card className="p-5">
-              <div className="mb-4">
-                <h3 className="text-[15px] font-semibold">Office allocation</h3>
-                <p className="text-xs text-[var(--color-content-subtle)]">Where assets live</p>
-              </div>
+              <SectionHead kicker="Locations" title="Office allocation" />
               {byOffice.length === 0 ? (
                 <EmptyState title="No offices" description="No allocation to show." />
               ) : (
                 <div className="flex items-center gap-5">
                   <AllocationPie data={byOffice} />
                   <Legend
-                    items={byOffice.map((s) => ({
-                      name: s.name,
-                      pct: `${pct(s.value)}%`,
-                      fill: s.fill,
-                    }))}
+                    items={byOffice.map((o) => ({ name: o.name, pct: `${pct(o.value)}%`, fill: o.fill }))}
                   />
                 </div>
               )}
             </Card>
-
             <Card className="p-5">
-              <div className="mb-2">
-                <h3 className="text-[15px] font-semibold">Assets by status</h3>
-                <p className="text-xs text-[var(--color-content-subtle)]">Lifecycle state</p>
-              </div>
+              <SectionHead kicker="Lifecycle" title="Assets by status" />
               {statusData.length === 0 ? (
                 <EmptyState title="No assets" description="Nothing to chart." />
               ) : (
@@ -644,171 +708,161 @@ export default function DashboardPage() {
             </Card>
           </section>
 
-          {/* Warranty timeline */}
-          <Card className="p-5">
-            <div className="mb-1 flex items-start justify-between">
-              <div>
-                <h3 className="text-[15px] font-semibold">Warranty expiry timeline</h3>
-                <p className="text-xs text-[var(--color-content-subtle)]">
-                  Coverage ending in the next 90 days — plan renewals ahead
-                </p>
+          {/* ── Action center + quick actions ────────────────────────────── */}
+          <section className="grid gap-4 lg:grid-cols-3">
+            <Card className="p-5 lg:col-span-2">
+              <SectionHead
+                kicker="Action center"
+                title="What needs a decision"
+                action={
+                  <Link href="/assets" className="text-[13px] font-semibold text-[var(--color-brand)]">
+                    All assets <ArrowRight className="inline size-3.5" />
+                  </Link>
+                }
+              />
+              {recs.length === 0 && needsAttention.length === 0 ? (
+                <EmptyState title="All clear" description="Nothing needs a decision right now." />
+              ) : (
+                <div className="grid gap-2.5">
+                  {recs.map((r) => (
+                    <Link
+                      key={r.title}
+                      href={r.href}
+                      className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3.5 transition hover:-translate-y-px hover:border-[var(--color-border-strong)]"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="mt-1 size-2.5 shrink-0 rounded-full"
+                        style={{ background: `var(--tone-${r.tone}-solid)` }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[13.5px] font-semibold">{r.title}</span>
+                        <span className="mt-0.5 block text-[13px] leading-snug text-[var(--color-content-muted)]">
+                          {r.body}
+                        </span>
+                        <span className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-[var(--color-brand)]">
+                          {r.cta} <ArrowRight className="size-3.5" />
+                        </span>
+                      </span>
+                    </Link>
+                  ))}
+                  {needsAttention.length > 0 ? (
+                    <div className="mt-1 grid gap-1 border-t border-[var(--color-border)] pt-3">
+                      {needsAttention.map((a) => (
+                        <Link
+                          key={a.id}
+                          href={`/assets/${a.id}`}
+                          className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 transition hover:bg-[var(--color-surface-sunken)]"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-[13.5px] font-medium">{a.name}</span>
+                            <span className="text-xs text-[var(--color-content-subtle)]">{a.assetTag}</span>
+                          </span>
+                          <StatusBadge token={ASSET_STATUS_TOKENS[a.status]} size="sm" />
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </Card>
+
+            {quickActions.length > 0 ? (
+              <Card className="p-5">
+                <SectionHead kicker="Shortcuts" title="Quick actions" />
+                <div className="grid gap-2">
+                  {quickActions.map((a) => (
+                    <Link
+                      key={a.href}
+                      href={a.href}
+                      className="group flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 text-[13.5px] font-semibold transition hover:-translate-y-0.5 hover:border-[var(--color-brand)] hover:bg-[var(--color-surface)] hover:shadow-sm"
+                    >
+                      <span
+                        className="grid size-9 place-items-center rounded-[10px] transition group-hover:scale-110"
+                        style={{ color: `var(--tone-${a.tone}-fg)`, background: `var(--tone-${a.tone}-bg)` }}
+                      >
+                        {a.icon}
+                      </span>
+                      {a.label}
+                      <ArrowRight className="ml-auto size-4 text-[var(--color-content-subtle)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-brand)]" />
+                    </Link>
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+          </section>
+
+          {/* ── Warranty band ────────────────────────────────────────────── */}
+          <section className="grid gap-4 lg:grid-cols-3">
+            <Card className="p-5 lg:col-span-2">
+              <SectionHead
+                kicker="Coverage"
+                title="Warranty expiry timeline"
+                action={
+                  <Link href="/reports" className="text-[13px] font-semibold text-[var(--color-brand)]">
+                    Renewal report
+                  </Link>
+                }
+              />
+              <WarrantyTimeline
+                buckets={[
+                  { count: w30, label: 'Expiring ≤ 30 days', when: `by ${inMonths(1)}`, color: 'var(--tone-critical-solid)' },
+                  { count: w60, label: '31 – 60 days', when: `by ${inMonths(2)}`, color: 'var(--tone-warning-solid)' },
+                  { count: w90, label: '61 – 90 days', when: `by ${inMonths(3)}`, color: 'var(--color-brand)' },
+                  { count: covered, label: 'Covered / no expiry', when: 'healthy', color: 'var(--tone-success-solid)' },
+                ]}
+              />
+            </Card>
+            <Card className="p-0">
+              <div className="border-b border-[var(--color-border)] px-5 py-3.5">
+                <span className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-[var(--color-brand)]">
+                  Next 30 days
+                </span>
+                <h2 className="mt-0.5 text-[16px] font-bold tracking-tight">Expiring warranties</h2>
               </div>
-              <Link href="/reports" className="text-[13px] font-semibold text-[var(--color-brand)]">
-                Renewal report
-              </Link>
-            </div>
-            <WarrantyTimeline
-              buckets={[
-                {
-                  count: w30,
-                  label: 'Expiring ≤ 30 days',
-                  when: `by ${inMonths(1)}`,
-                  color: 'var(--tone-critical-solid)',
-                },
-                {
-                  count: w60,
-                  label: '31 – 60 days',
-                  when: `by ${inMonths(2)}`,
-                  color: 'var(--tone-warning-solid)',
-                },
-                {
-                  count: w90,
-                  label: '61 – 90 days',
-                  when: `by ${inMonths(3)}`,
-                  color: 'var(--color-brand)',
-                },
-                {
-                  count: covered,
-                  label: 'Covered / no expiry',
-                  when: 'healthy',
-                  color: 'var(--tone-success-solid)',
-                },
-              ]}
-            />
-          </Card>
+              {expiringSoon.length === 0 ? (
+                <EmptyState title="Nothing imminent" description="No warranties end in the next 30 days." />
+              ) : (
+                <ul className="divide-y divide-[var(--color-border)]">
+                  {expiringSoon.map((a) => (
+                    <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                      <div className="min-w-0">
+                        <Link href={`/assets/${a.id}`} className="truncate text-[13.5px] font-medium hover:underline">
+                          {a.name}
+                        </Link>
+                        <p className="text-xs text-[var(--color-content-subtle)]">{a.assetTag}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-[var(--tone-warning-bg)] px-2 py-0.5 text-xs font-semibold tabular-nums text-[var(--tone-warning-fg)]">
+                        {Math.ceil((new Date(a.warrantyEndDate as string).getTime() - now) / DAY)}d
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </section>
         </>
       ) : (
-        /* OWN scope (e.g. Employee) — a lean "my equipment" view. */
-        <Card className="p-0">
-          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
-            <div>
-              <h3 className="text-[15px] font-semibold">My equipment</h3>
-              <p className="text-xs text-[var(--color-content-subtle)]">Assets issued to you</p>
-            </div>
-            <Package className="size-4 text-[var(--color-content-subtle)]" />
-          </div>
-          {myEquipment.length === 0 ? (
-            <EmptyState title="No assets yet" description="Equipment issued to you will appear here." />
-          ) : (
-            <ul className="divide-y divide-[var(--color-border)]">
-              {myEquipment.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                  <div className="min-w-0">
-                    <Link
-                      href={`/assets/${a.id}`}
-                      className="truncate text-[13.5px] font-medium hover:underline"
-                    >
-                      {a.name}
-                    </Link>
-                    <p className="text-xs text-[var(--color-content-subtle)]">{a.assetTag}</p>
-                  </div>
-                  <StatusBadge token={ASSET_STATUS_TOKENS[a.status]} size="sm" />
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      )}
-
-      {/* Action widgets — Recommendations & Needs-attention are fleet-only; Quick
-          actions (already permission-filtered) show for everyone. */}
-      <section className="grid gap-4 lg:grid-cols-3">
-        {isFleetViewer ? (
-          <Card className="p-5">
-            <div className="mb-4 flex items-start justify-between">
+        /* ── OWN scope (employee) ─────────────────────────────────────────── */
+        <section className="grid gap-4 lg:grid-cols-3">
+          <Card className="p-0 lg:col-span-2">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3.5">
               <div>
-                <h3 className="text-[15px] font-semibold">Recommendations</h3>
-                <p className="text-xs text-[var(--color-content-subtle)]">From your live inventory</p>
+                <span className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-[var(--color-brand)]">
+                  Your kit
+                </span>
+                <h2 className="mt-0.5 text-[16px] font-bold tracking-tight">My equipment</h2>
               </div>
+              <Package className="size-4 text-[var(--color-content-subtle)]" />
             </div>
-            {recs.length === 0 ? (
-              <EmptyState title="All clear" description="No actions recommended right now." />
-            ) : (
-              <div className="grid gap-2.5">
-                {recs.map((r) => (
-                  <Link
-                    key={r.title}
-                    href={r.href}
-                    className="block rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 transition hover:-translate-y-px hover:border-[var(--color-border-strong)]"
-                  >
-                    <span
-                      className="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                      style={{
-                        color: `var(--tone-${r.tone}-fg)`,
-                        background: `var(--tone-${r.tone}-bg)`,
-                      }}
-                    >
-                      {r.title}
-                    </span>
-                    <p className="mt-2 text-[13.5px] leading-snug">{r.body}</p>
-                    <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-[var(--color-brand)]">
-                      {r.cta} <ArrowRight className="size-3.5" />
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Card>
-        ) : null}
-
-        {/* Quick actions — permission-filtered */}
-        {quickActions.length > 0 ? (
-          <Card className="p-5">
-            <h3 className="mb-4 text-[15px] font-semibold">Quick actions</h3>
-            <div className="grid grid-cols-2 gap-2.5">
-              {quickActions.map((a) => (
-                <Link
-                  key={a.href}
-                  href={a.href}
-                  className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 text-[13.5px] font-semibold transition hover:-translate-y-0.5 hover:border-[var(--color-brand)] hover:bg-[var(--color-surface)] hover:shadow-sm"
-                >
-                  <span
-                    className="grid size-9 place-items-center rounded-[9px]"
-                    style={{
-                      color: `var(--tone-${a.tone}-fg)`,
-                      background: `var(--tone-${a.tone}-bg)`,
-                    }}
-                  >
-                    {a.icon}
-                  </span>
-                  {a.label}
-                </Link>
-              ))}
-            </div>
-          </Card>
-        ) : null}
-
-        {/* Attention list — fleet-only */}
-        {isFleetViewer ? (
-          <Card className="p-0">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
-              <div>
-                <h3 className="text-[15px] font-semibold">Needs attention</h3>
-                <p className="text-xs text-[var(--color-content-subtle)]">Repair, damaged, lost</p>
-              </div>
-              <Layers className="size-4 text-[var(--color-content-subtle)]" />
-            </div>
-            {needsAttention.length === 0 ? (
-              <EmptyState title="All clear" description="No assets need attention." />
+            {myEquipment.length === 0 ? (
+              <EmptyState title="No assets yet" description="Equipment issued to you will appear here." />
             ) : (
               <ul className="divide-y divide-[var(--color-border)]">
-                {needsAttention.map((a) => (
+                {myEquipment.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3">
                     <div className="min-w-0">
-                      <Link
-                        href={`/assets/${a.id}`}
-                        className="truncate text-[13.5px] font-medium hover:underline"
-                      >
+                      <Link href={`/assets/${a.id}`} className="truncate text-[13.5px] font-medium hover:underline">
                         {a.name}
                       </Link>
                       <p className="text-xs text-[var(--color-content-subtle)]">{a.assetTag}</p>
@@ -819,36 +873,32 @@ export default function DashboardPage() {
               </ul>
             )}
           </Card>
-        ) : null}
-      </section>
 
-      {/* Warranty list — fleet-only, real and actionable */}
-      {isFleetViewer && expiringSoon.length > 0 ? (
-        <Card className="p-0">
-          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
-            <h3 className="text-[15px] font-semibold">Warranties expiring within 30 days</h3>
-            <span className="text-xs text-[var(--color-content-subtle)]">{expiringSoon.length}</span>
-          </div>
-          <ul className="divide-y divide-[var(--color-border)]">
-            {expiringSoon.map((a) => (
-              <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                <div className="min-w-0">
+          {quickActions.length > 0 ? (
+            <Card className="p-5">
+              <SectionHead kicker="Shortcuts" title="Quick actions" />
+              <div className="grid gap-2">
+                {quickActions.map((a) => (
                   <Link
-                    href={`/assets/${a.id}`}
-                    className="truncate text-[13.5px] font-medium hover:underline"
+                    key={a.href}
+                    href={a.href}
+                    className="group flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 text-[13.5px] font-semibold transition hover:-translate-y-0.5 hover:border-[var(--color-brand)] hover:bg-[var(--color-surface)] hover:shadow-sm"
                   >
-                    {a.name}
+                    <span
+                      className="grid size-9 place-items-center rounded-[10px] transition group-hover:scale-110"
+                      style={{ color: `var(--tone-${a.tone}-fg)`, background: `var(--tone-${a.tone}-bg)` }}
+                    >
+                      {a.icon}
+                    </span>
+                    {a.label}
+                    <ArrowRight className="ml-auto size-4 text-[var(--color-content-subtle)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-brand)]" />
                   </Link>
-                  <p className="text-xs text-[var(--color-content-subtle)]">{a.assetTag}</p>
-                </div>
-                <span className="shrink-0 text-xs font-medium tabular-nums text-[var(--tone-warning-fg)]">
-                  {Math.ceil((new Date(a.warrantyEndDate as string).getTime() - now) / DAY)} days
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
+                ))}
+              </div>
+            </Card>
+          ) : null}
+        </section>
+      )}
     </div>
   );
 }
