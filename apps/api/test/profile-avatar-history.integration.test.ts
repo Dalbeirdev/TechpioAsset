@@ -43,8 +43,22 @@ describe('profile photo', () => {
     const firstKey = up.body.data.avatarKey as string;
     expect(firstKey).toContain('avatars/');
 
-    const get = await api(app).get('/api/v1/users/me/avatar').set(auth(s.employee));
+    const get = await api(app)
+      .get('/api/v1/users/me/avatar')
+      .set(auth(s.employee))
+      .buffer(true)
+      .parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
     expect(get.status).toBe(200);
+    // The BYTES, not an envelope: this endpoint once returned the serialised
+    // StreamableFile object as JSON - status 200, every avatar a broken image.
+    // A status check alone is exactly the test that let it ship.
+    expect(get.headers['content-type']).not.toContain('application/json');
+    const body = get.body as Buffer;
+    expect(body.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
 
     // Replacing swaps the key (and the old object is cleaned up).
     const again = await api(app)

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { AuthUser } from '@techpioasset/contracts';
 import { useAuth } from '@/providers/auth-provider';
+import { AuthAvatar } from '@/components/auth-avatar';
 import { cn } from '@/lib/cn';
 
 /** Initials fallback when no photo is set (spec section 2). */
@@ -75,14 +76,16 @@ export function ProfileMenu() {
         onClick={() => setOpen((v) => !v)}
         className="grid size-9 place-items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] text-sm font-semibold hover:bg-[var(--color-surface-sunken)]"
       >
-        {user.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={user.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
-        ) : initials(user) === '?' ? (
-          <UserCircle2 aria-hidden="true" className="size-5" />
-        ) : (
-          <span aria-hidden="true">{initials(user)}</span>
-        )}
+        <AuthAvatar
+          enabled={Boolean(user.avatarUrl)}
+          className="size-9 rounded-full object-cover"
+        >
+          {initials(user) === '?' ? (
+            <UserCircle2 aria-hidden="true" className="size-5" />
+          ) : (
+            <span aria-hidden="true">{initials(user)}</span>
+          )}
+        </AuthAvatar>
       </button>
 
       {open ? (

@@ -1,4 +1,4 @@
-import {
+import { StreamableFile,
   Injectable,
   type CallHandler,
   type ExecutionContext,
@@ -39,6 +39,14 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
         // A handler that manages the response itself (a redirect, a stream) has
         // already sent headers; never try to envelope over it.
         if (response.headersSent) {
+          return payload;
+        }
+        // A StreamableFile IS the response body - Nest streams it after the
+        // interceptor chain. Enveloping it serialises the stream OBJECT as
+        // JSON, which is exactly how every avatar rendered as a broken image:
+        // GET /users/me/avatar returned {"data":{"options":{...}}} instead of
+        // image bytes. Found by reading the actual response on production.
+        if (payload instanceof StreamableFile) {
           return payload;
         }
         const disposition = response.getHeader?.('content-disposition');
