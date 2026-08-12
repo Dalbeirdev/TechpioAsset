@@ -175,6 +175,33 @@ export class WorkflowService {
       return approval;
     }
 
+    // Deadlock breaker (v2.15). A role step whose role has NO members can be
+    // decided by nobody - found in production, where the default workflow's
+    // first step targeted a Manager role with zero holders and two requests
+    // sat undecidable with nobody notified. When (and only when) the approver
+    // set is provably empty, a user-manager may decide: they could grant
+    // themselves the role anyway, so this removes ceremony, not a control.
+    // The requester-must-not-approve rule still applies above all.
+    if (
+      approval.approverRoleId &&
+      !approval.approverId &&
+      input.actorId !== approval.request.requester.id
+    ) {
+      const holderCount = await this.prisma.client.userRole.count({
+        where: { roleId: approval.approverRoleId },
+      });
+      if (holderCount === 0) {
+        const actorIsUserManager = await this.prisma.client.userRole.findFirst({
+          where: {
+            userId: input.actorId,
+            role: { permissions: { some: { permission: { key: 'users:manage' } } } },
+          },
+          select: { userId: true },
+        });
+        if (actorIsUserManager) return approval;
+      }
+    }
+
     // v2.2 Workstream D — delegated: the actor may act for anyone who has an
     // active delegation to them. SoD is preserved because canApproveStep rejects
     // `actorId === requesterId`, so a delegate can never approve the delegator's
