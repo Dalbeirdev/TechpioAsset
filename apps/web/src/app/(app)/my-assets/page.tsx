@@ -23,6 +23,9 @@ interface AssetRow {
   condition: AssetCondition;
   assignmentDate: string | null;
   warrantyEndDate: string | null;
+  /** Device specs and known problems; the API includes it for OWN scope. */
+  notes?: string | null;
+  office: { name: string } | null;
   category: { name: string } | null;
   /** The open assignment, if any - at most one row. */
   assignments: { id: string; acknowledgedAt: string | null; expectedReturnAt: string | null }[];
@@ -118,13 +121,39 @@ function MyAssetsList() {
                     <dd className="font-mono">{asset.serialNumber}</dd>
                   </div>
                 ) : null}
+                {asset.category ? (
+                  <div className="flex gap-1">
+                    <dt>Category:</dt>
+                    <dd>{asset.category.name}</dd>
+                  </div>
+                ) : null}
+                {asset.office ? (
+                  <div className="flex gap-1">
+                    <dt>Office:</dt>
+                    <dd>{asset.office.name}</dd>
+                  </div>
+                ) : null}
                 {asset.assignmentDate ? (
                   <div className="flex gap-1">
                     <dt>Issued:</dt>
                     <dd>{new Date(asset.assignmentDate).toLocaleDateString()}</dd>
                   </div>
                 ) : null}
+                {asset.warrantyEndDate ? (
+                  <div className="flex gap-1">
+                    <dt>Warranty ends:</dt>
+                    <dd>{new Date(asset.warrantyEndDate).toLocaleDateString()}</dd>
+                  </div>
+                ) : null}
               </dl>
+
+              {/* The device's record - specs, known problems - same text the
+                  administrator reads. Edit stays an admin permission. */}
+              {asset.notes ? (
+                <p className="mt-3 whitespace-pre-wrap border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-content-subtle)]">
+                  {asset.notes}
+                </p>
+              ) : null}
 
               <div className="mt-3">
                 <StatusBadge token={CONDITION_TOKENS[asset.condition]} size="sm" />
