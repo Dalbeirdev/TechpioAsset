@@ -3229,6 +3229,22 @@ enum WebhookDeliveryStatus {
 /// v2.12 - platform-wide SMTP settings, editable from the operator console so
 /// mail setup never requires a server login. Singleton row (id "default").
 /// The password is AES-256-GCM encrypted - an SMTP key is a credential.
+/// v2.15 - the AI provider, editable from the operator console like SMTP.
+/// One row ('default'); the key is encrypted with the same scheme as MFA
+/// secrets and never returned to a client.
+model AiSettings {
+  id              String  @id @default("default")
+  provider        String  @default("mock")
+  endpoint        String?
+  model           String?
+  apiKeyEncrypted String?
+
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("ai_settings")
+}
+
 model MailSettings {
   id                String  @id @default("default")
   host              String

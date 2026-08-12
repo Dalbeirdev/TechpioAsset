@@ -8,6 +8,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { MfaService } from '../auth/mfa.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RoutingMailProvider } from '../providers/mail/routing-mail.provider.js';
+import { RoutingAiProvider } from '../providers/ai/routing-ai.provider.js';
 import { PlatformGuard } from './platform.guard.js';
 import { PlatformService, type CreateTenantInput } from './platform.service.js';
 
@@ -37,6 +38,20 @@ const mailSettingsSchema = z
   .strict();
 type MailSettingsInput = z.infer<typeof mailSettingsSchema>;
 
+/** AI provider settings: key optional on update = keep the stored one. */
+const aiSettingsSchema = z
+  .object({
+    provider: z.enum(['mock', 'azure', 'anthropic']),
+    endpoint: z.string().trim().url().max(300).optional().nullable(),
+    model: z.string().trim().max(100).optional().nullable(),
+    apiKey: z.string().max(500).optional(),
+  })
+  .strict()
+  .refine((v) => v.provider !== 'azure' || Boolean(v.endpoint), {
+    message: 'Azure Document Intelligence needs its endpoint URL',
+  });
+type AiSettingsInput = z.infer<typeof aiSettingsSchema>;
+
 /** Where to send the test. Gmail/Outlook inboxes judge deliverability; the
  * operator's own address only proves the relay accepts mail at all. */
 const testMailSchema = z
@@ -58,6 +73,7 @@ export class PlatformController {
     private readonly prisma: PrismaService,
     private readonly mfa: MfaService,
     private readonly mail: RoutingMailProvider,
+    private readonly ai: RoutingAiProvider,
   ) {}
 
   // ── mail settings (v2.12) ─────────────────────────────────────────────────
@@ -164,6 +180,114 @@ export class PlatformController {
     } catch (error) {
       // A wrong host/credential should read as a clear answer, not a 500.
       return { delivered: false, to, error: (error as Error).message };
+    }
+  }
+
+  // ── AI provider (v2.15) ───────────────────────────────────────────────────
+  // Same story as mail: the provider is platform infrastructure, editable
+  // here so AI setup never needs a server login. The key is stored encrypted
+  // and NEVER returned.
+
+  @Get('ai-settings')
+  @ApiOperation({ summary: 'The AI provider configuration' })
+  async aiSettings() {
+    const row = await this.prisma.client.aiSettings.findUnique({ where: { id: 'default' } });
+    const effective = await this.ai.effective();
+    return {
+      configured: row !== null,
+      provider: row?.provider ?? null,
+      endpoint: row?.endpoint ?? null,
+      model: row?.model ?? null,
+      hasKey: Boolean(row?.apiKeyEncrypted),
+      effective,
+      updatedAt: row?.updatedAt ?? null,
+    };
+  }
+
+  @Put('ai-settings')
+  @ApiOperation({
+    summary: 'Set the AI provider',
+    description: 'Takes effect on the next extraction, no restart. Omit apiKey to keep the stored one.',
+  })
+  async setAiSettings(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(aiSettingsSchema)) body: AiSettingsInput,
+  ) {
+    const existing = await this.prisma.client.aiSettings.findUnique({
+      where: { id: 'default' },
+      select: { apiKeyEncrypted: true },
+    });
+    if (body.provider !== 'mock' && body.apiKey === undefined && !existing?.apiKeyEncrypted) {
+      throw new AppError('VALIDATION_FAILED', 'Provide the API key for this provider');
+    }
+    const apiKeyEncrypted =
+      body.apiKey === undefined
+        ? (existing?.apiKeyEncrypted ?? null)
+        : body.apiKey === ''
+          ? null
+          : this.mfa.encryptSecret(body.apiKey);
+
+    await this.prisma.client.aiSettings.upsert({
+      where: { id: 'default' },
+      update: {
+        provider: body.provider,
+        endpoint: body.endpoint ?? null,
+        model: body.model ?? null,
+        apiKeyEncrypted,
+        updatedById: actor.id,
+      },
+      create: {
+        id: 'default',
+        provider: body.provider,
+        endpoint: body.endpoint ?? null,
+        model: body.model ?? null,
+        apiKeyEncrypted,
+        updatedById: actor.id,
+      },
+    });
+    this.ai.bustCache();
+    return this.aiSettings();
+  }
+
+  @Delete('ai-settings')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove AI settings (falls back to env config or simulated extraction)' })
+  async clearAiSettings(): Promise<void> {
+    await this.prisma.client.aiSettings.deleteMany({ where: { id: 'default' } });
+    this.ai.bustCache();
+  }
+
+  @Post('ai-settings/test')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Verify the configured AI credentials',
+    description: 'A cheap authenticated call to the provider; ok=false carries the reason.',
+  })
+  async testAiSettings() {
+    const row = await this.prisma.client.aiSettings.findUnique({ where: { id: 'default' } });
+    if (!row || row.provider === 'mock') {
+      return { ok: true, provider: 'mock', detail: 'Simulated - no external service involved' };
+    }
+    const apiKey = this.mfa.decryptSecret(row.apiKeyEncrypted);
+    if (!apiKey) return { ok: false, provider: row.provider, detail: 'No API key stored' };
+    try {
+      if (row.provider === 'anthropic') {
+        const res = await fetch('https://api.anthropic.com/v1/models', {
+          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        });
+        return res.ok
+          ? { ok: true, provider: 'anthropic', detail: 'Key accepted by Anthropic' }
+          : { ok: false, provider: 'anthropic', detail: `Anthropic answered ${res.status}` };
+      }
+      const res = await fetch(
+        `${(row.endpoint ?? '').replace(/\/$/, '')}/documentintelligence/documentModels?api-version=2024-11-30`,
+        { headers: { 'Ocp-Apim-Subscription-Key': apiKey } },
+      );
+      return res.ok
+        ? { ok: true, provider: 'azure', detail: 'Endpoint and key accepted by Azure' }
+        : { ok: false, provider: 'azure', detail: `Azure answered ${res.status}` };
+    } catch (error) {
+      return { ok: false, provider: row.provider, detail: (error as Error).message };
     }
   }
 

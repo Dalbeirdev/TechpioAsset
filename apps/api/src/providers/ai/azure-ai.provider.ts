@@ -23,10 +23,10 @@ export class AzureAiProvider extends AiDocumentProvider {
   private readonly endpoint: string;
   private readonly apiKey: string;
 
-  constructor(config: AppConfig) {
+  constructor(config: AppConfig, overrides?: { endpoint?: string; apiKey?: string }) {
     super();
-    this.endpoint = config.get('AZURE_DOC_INTELLIGENCE_ENDPOINT') ?? '';
-    this.apiKey = config.get('AZURE_DOC_INTELLIGENCE_KEY') ?? '';
+    this.endpoint = overrides?.endpoint ?? config.get('AZURE_DOC_INTELLIGENCE_ENDPOINT') ?? '';
+    this.apiKey = overrides?.apiKey ?? config.get('AZURE_DOC_INTELLIGENCE_KEY') ?? '';
   }
 
   async extract(_input: ExtractInput): Promise<ExtractionResult> {

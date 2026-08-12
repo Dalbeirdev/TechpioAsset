@@ -149,3 +149,67 @@ describe('suspension', () => {
     expect(res.status).toBe(409);
   });
 });
+
+describe('AI provider settings (v2.15)', () => {
+  it('saves, routes, verifies and clears - key never returned', async () => {
+    // Explicit operator choice of simulation.
+    const put = await api(app)
+      .put('/api/v1/platform/ai-settings')
+      .set(auth(s.superAdmin))
+      .send({ provider: 'mock' });
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    expect(put.body.data.configured).toBe(true);
+    expect(put.body.data.effective.provider).toBe('mock');
+
+    // A real provider requires a key on first save.
+    const noKey = await api(app)
+      .put('/api/v1/platform/ai-settings')
+      .set(auth(s.superAdmin))
+      .send({ provider: 'anthropic' });
+    expect(noKey.status).toBe(422);
+
+    const withKey = await api(app)
+      .put('/api/v1/platform/ai-settings')
+      .set(auth(s.superAdmin))
+      .send({ provider: 'anthropic', apiKey: 'sk-test-not-a-real-key' });
+    expect(withKey.status).toBe(200);
+    expect(withKey.body.data.hasKey).toBe(true);
+    // The key itself never comes back.
+    expect(JSON.stringify(withKey.body)).not.toContain('sk-test-not-a-real-key');
+
+    // Azure needs its endpoint.
+    const azureNoEndpoint = await api(app)
+      .put('/api/v1/platform/ai-settings')
+      .set(auth(s.superAdmin))
+      .send({ provider: 'azure', apiKey: 'x' });
+    expect(azureNoEndpoint.status).toBe(422);
+
+    // Mock verifies as simulated without touching any network.
+    await api(app)
+      .put('/api/v1/platform/ai-settings')
+      .set(auth(s.superAdmin))
+      .send({ provider: 'mock' });
+    const test = await api(app)
+      .post('/api/v1/platform/ai-settings/test')
+      .set(auth(s.superAdmin))
+      .send({});
+    expect(test.status).toBe(200);
+    expect(test.body.data.ok).toBe(true);
+    expect(test.body.data.provider).toBe('mock');
+
+    // Tenant power alone cannot reach any of it.
+    const denied = await api(app)
+      .get('/api/v1/platform/ai-settings')
+      .set(auth(s.itAdmin));
+    expect(denied.status).toBe(403);
+
+    // Clear restores the environment default.
+    const del = await api(app)
+      .delete('/api/v1/platform/ai-settings')
+      .set(auth(s.superAdmin));
+    expect(del.status).toBe(204);
+    const after = await api(app).get('/api/v1/platform/ai-settings').set(auth(s.superAdmin));
+    expect(after.body.data.configured).toBe(false);
+    expect(after.body.data.effective.source).toBe('environment');
+  });
+});

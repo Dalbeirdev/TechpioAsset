@@ -1,28 +1,17 @@
 import { Global, Module } from '@nestjs/common';
-import { AppConfig } from '../../config/config.module.js';
 import { AiDocumentProvider } from './ai-document.provider.js';
-import { MockAiProvider } from './mock-ai.provider.js';
-import { AzureAiProvider } from './azure-ai.provider.js';
-import { AnthropicAiProvider } from './anthropic-ai.provider.js';
+import { RoutingAiProvider } from './routing-ai.provider.js';
 
 @Global()
 @Module({
   providers: [
-    {
-      provide: AiDocumentProvider,
-      useFactory: (config: AppConfig): AiDocumentProvider => {
-        switch (config.get('AI_PROVIDER')) {
-          case 'anthropic':
-            return new AnthropicAiProvider(config);
-          case 'azure':
-            return new AzureAiProvider(config);
-          default:
-            return new MockAiProvider();
-        }
-      },
-      inject: [AppConfig],
-    },
+    RoutingAiProvider,
+    // Call sites depend on the abstract class; since v2.15 the concrete
+    // behaviour is decided per-extraction by the router (DB settings first,
+    // env second, mock last), because the provider is now editable from the
+    // operator console and must take effect without a restart.
+    { provide: AiDocumentProvider, useExisting: RoutingAiProvider },
   ],
-  exports: [AiDocumentProvider],
+  exports: [AiDocumentProvider, RoutingAiProvider],
 })
 export class AiModule {}

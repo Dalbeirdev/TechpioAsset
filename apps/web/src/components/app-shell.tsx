@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import {
+import { Sparkles,
   Building2,
   ChevronRight,
   Boxes,
@@ -161,6 +161,7 @@ const NAV_GROUPS: NavGroup[] = [
       },
       // Operator console - platform plane, not tenant administration.
       { href: '/platform/mail', label: 'Email (SMTP)', Icon: Mail, platformOnly: true },
+      { href: '/platform/ai', label: 'AI provider', Icon: Sparkles, platformOnly: true },
       { href: '/platform/tenants', label: 'Tenants', Icon: Boxes, platformOnly: true },
     ],
   },
