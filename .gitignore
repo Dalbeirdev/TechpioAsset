@@ -47,3 +47,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Real staff names/emails extracted from HR sheets - never committed.
+apps/api/scripts/import-real-data.json
