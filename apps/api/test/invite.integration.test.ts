@@ -225,3 +225,36 @@ describe('inviting a user', () => {
     }
   });
 });
+
+describe('POST /users/invite-all-pending (v2.15)', () => {
+  it('sends to every Invited account and reports the counts', async () => {
+    // Two fresh pending accounts, so the sweep has known work.
+    const mk = async (email: string) => {
+      const res = await api(app)
+        .post('/api/v1/users/invite')
+        .set(auth(s.superAdmin))
+        .send({ email, firstName: 'Bulk', lastName: 'Pending' });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+    };
+    const suffix = Date.now();
+    await mk(`bulk-a-${suffix}@techpioasset.test`);
+    await mk(`bulk-b-${suffix}@techpioasset.test`);
+
+    const res = await api(app)
+      .post('/api/v1/users/invite-all-pending')
+      .set(auth(s.superAdmin))
+      .send({});
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.data.pending).toBeGreaterThanOrEqual(2);
+    expect(res.body.data.sent).toBe(res.body.data.pending);
+    expect(res.body.data.failed).toEqual([]);
+  });
+
+  it('is refused without an inviting permission', async () => {
+    const res = await api(app)
+      .post('/api/v1/users/invite-all-pending')
+      .set(auth(s.employee))
+      .send({});
+    expect(res.status).toBe(403);
+  });
+});
