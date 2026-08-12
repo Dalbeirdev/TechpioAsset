@@ -451,17 +451,17 @@ function AvatarField({
           enabled
           version={stamp}
           alt="Your profile photo"
-          className="size-14 rounded-full object-cover"
+          className="size-24 rounded-full object-cover ring-2 ring-[var(--color-border)] ring-offset-2 ring-offset-[var(--color-surface)]"
         >
           <div
             aria-hidden="true"
-            className="grid size-14 place-items-center rounded-full bg-[var(--color-surface-sunken)]"
+            className="grid size-24 place-items-center rounded-full bg-[var(--color-surface-sunken)]"
           />
         </AuthAvatar>
       ) : (
         <div
           aria-hidden="true"
-          className="grid size-14 place-items-center rounded-full bg-[var(--color-brand)] text-lg font-semibold text-[var(--color-brand-contrast)]"
+          className="grid size-24 place-items-center rounded-full bg-[var(--color-brand)] text-2xl font-semibold text-[var(--color-brand-contrast)]"
         >
           {initials}
         </div>
