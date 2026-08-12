@@ -78,6 +78,7 @@ export function ProfileMenu() {
       >
         <AuthAvatar
           enabled={Boolean(user.avatarUrl)}
+          version={user.avatarUrl ?? ''}
           className="size-9 rounded-full object-cover"
         >
           {initials(user) === '?' ? (
