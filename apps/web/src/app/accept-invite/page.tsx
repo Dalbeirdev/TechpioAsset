@@ -7,7 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Boxes, ShieldCheck } from 'lucide-react';
 import { ApiError, apiFetch } from '@/lib/api-client';
 import { Button, Card } from '@/components/ui';
-import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 
 /**
  * Where an invitation link lands (v2.12). Public by necessity - the person
@@ -85,18 +85,19 @@ function AcceptInviteForm() {
                 At least 12 characters. You are the only person who will ever know it.
               </p>
             </div>
-            <Input
+            <PasswordInput
               aria-label="New password"
-              type="password"
               autoFocus
               autoComplete="new-password"
               placeholder="New password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <Input
+            <p className="text-xs text-[var(--color-content-subtle)]">
+              At least 12 characters, with an uppercase letter, a lowercase letter and a digit.
+            </p>
+            <PasswordInput
               aria-label="Repeat new password"
-              type="password"
               autoComplete="new-password"
               placeholder="Repeat password"
               value={passwordAgain}
