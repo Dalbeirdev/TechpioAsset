@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Mail, Send } from 'lucide-react';
+import { Info, Lock, Mail, Save as SaveIcon, Send, Trash2 } from 'lucide-react';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -216,53 +216,67 @@ export default function PlatformMailPage() {
 
   return (
     <div className="mx-auto grid max-w-2xl gap-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-            <Mail aria-hidden="true" className="size-5 text-[var(--color-brand)]" /> Email (SMTP)
-          </h1>
-          <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-            Platform-wide delivery for invitations and notification emails. Saved settings apply to
-            the next email — no restart.
-          </p>
+      <header className="flex items-start gap-4">
+        <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[var(--color-brand)] text-white shadow-sm">
+          <Mail aria-hidden="true" className="size-6" />
         </div>
-        <Link href="/platform/tenants" className="text-sm text-[var(--color-brand)]">
-          Tenants →
-        </Link>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Email (SMTP)</h1>
+          <p className="mt-0.5 text-sm text-[var(--color-content-muted)]">
+            Platform-wide delivery for invitations and notification emails.
+            <br />
+            Saved settings apply to the next email — no restart.
+          </p>
+          <Link
+            href="/platform/tenants"
+            className="mt-1 inline-block text-sm font-medium text-[var(--color-brand)]"
+          >
+            Tenants →
+          </Link>
+        </div>
       </header>
 
       <Card className="grid gap-4 p-5">
-        <p className="text-sm">
-          Status:{' '}
-          <span
-            className="font-semibold"
-            style={current?.configured ? undefined : { color: 'var(--tone-warning-fg)' }}
-          >
-            {current?.configured
-              ? `Configured (${current.host})`
-              : 'Not configured — email is simulated'}
+        <p className="flex items-center gap-2 text-sm">
+          <span>
+            Status:{' '}
+            <span
+              className="font-semibold"
+              style={current?.configured ? undefined : { color: 'var(--tone-warning-fg)' }}
+            >
+              {current?.configured
+                ? `Configured (${current.host})`
+                : 'Not configured — email is simulated'}
+            </span>
           </span>
+          {current?.configured ? (
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+              style={{ background: 'var(--tone-success-bg)', color: 'var(--tone-success-fg)' }}
+            >
+              Active
+            </span>
+          ) : null}
         </p>
 
-        <Field label="Provider" htmlFor="mprov">
-          <select
-            id="mprov"
-            value={draft.provider}
-            onChange={(e) => pickProvider(e.target.value)}
-            className={selectCls}
-          >
-            {PROVIDERS.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
-            Picking one fills in the server details, so you only supply what is yours.
-          </p>
-        </Field>
-
-        <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+        <div className="grid gap-3 sm:grid-cols-[2fr_2fr_6rem]">
+          <Field label="Provider" htmlFor="mprov">
+            <select
+              id="mprov"
+              value={draft.provider}
+              onChange={(e) => pickProvider(e.target.value)}
+              className={selectCls}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+              Picking one fills in the server details, so you only supply what is yours.
+            </p>
+          </Field>
           <Field label="Host" htmlFor="mh">
             <Input
               id="mh"
@@ -282,7 +296,7 @@ export default function PlatformMailPage() {
           </Field>
         </div>
 
-        <div className="max-w-xs">
+        <div className="grid gap-3 sm:grid-cols-[2fr_3fr]">
           <Field label="Security" htmlFor="msec">
             <select
               id="msec"
@@ -306,16 +320,15 @@ export default function PlatformMailPage() {
               <option value="none">None (not recommended)</option>
             </select>
           </Field>
+          <Field label="Username" htmlFor="mu">
+            <Input
+              id="mu"
+              value={draft.username}
+              onChange={(e) => set({ username: e.target.value })}
+              placeholder="info@yourdomain.com"
+            />
+          </Field>
         </div>
-
-        <Field label="Username" htmlFor="mu">
-          <Input
-            id="mu"
-            value={draft.username}
-            onChange={(e) => set({ username: e.target.value })}
-            placeholder="info@yourdomain.com"
-          />
-        </Field>
 
         <div>
           <Field
@@ -356,8 +369,9 @@ export default function PlatformMailPage() {
         </div>
 
         {provider?.hint ? (
-          <p className="rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs text-[var(--color-content-muted)]">
-            {provider.hint}
+          <p className="flex items-start gap-2 rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-3 py-2.5 text-xs text-[var(--color-content-muted)]">
+            <Info aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-[var(--color-brand)]" />
+            <span>{provider.hint}</span>
           </p>
         ) : null}
 
@@ -397,7 +411,7 @@ export default function PlatformMailPage() {
               disabled={!draft.host.trim() || !draft.fromAddress.trim()}
               onClick={() => save.mutate()}
             >
-              Save settings
+              <SaveIcon aria-hidden="true" className="mr-1 size-3.5" /> Save settings
             </Button>
             {current?.configured ? (
               <Button
@@ -414,7 +428,7 @@ export default function PlatformMailPage() {
                   if (ok) clear.mutate();
                 }}
               >
-                Remove all
+                <Trash2 aria-hidden="true" className="mr-1 size-3.5" /> Remove all
               </Button>
             ) : null}
           </div>
@@ -453,9 +467,12 @@ export default function PlatformMailPage() {
         </div>
       </Card>
 
-      <p className="text-xs text-[var(--color-content-subtle)]">
-        Saved here, these take precedence over the server&apos;s environment configuration — no SSH,
-        no redeploy. The password is stored encrypted and never shown again.
+      <p className="flex items-start gap-2 rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] px-3 py-2.5 text-xs text-[var(--color-content-subtle)]">
+        <Lock aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-[var(--color-brand)]" />
+        <span>
+          Saved here, these take precedence over the server&apos;s environment configuration — no
+          SSH, no redeploy. The password is stored encrypted and never shown again.
+        </span>
       </p>
     </div>
   );
