@@ -31,6 +31,44 @@ export class OrgService {
     return this.config.get('CACHE_TTL_SECONDS');
   }
 
+  /** The company's own settings - readable and writable by settings managers. */
+  async companySettings(actor: AuthUser) {
+    return this.prisma.client.company.findUniqueOrThrow({
+      where: { id: actor.companyId },
+      select: { name: true, legalName: true, baseCurrency: true, timezone: true, locale: true },
+    });
+  }
+
+  async updateCompanySettings(
+    actor: AuthUser,
+    input: { name?: string; baseCurrency?: string; timezone?: string },
+  ) {
+    const before = await this.companySettings(actor);
+    const after = await this.prisma.client.company.update({
+      where: { id: actor.companyId },
+      data: {
+        ...(input.name ? { name: input.name } : {}),
+        ...(input.baseCurrency ? { baseCurrency: input.baseCurrency } : {}),
+        ...(input.timezone ? { timezone: input.timezone } : {}),
+      },
+      select: { name: true, legalName: true, baseCurrency: true, timezone: true, locale: true },
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Company',
+      entityId: actor.companyId,
+      previousValues: {
+        name: before.name,
+        baseCurrency: before.baseCurrency,
+        timezone: before.timezone,
+      },
+      newValues: { name: after.name, baseCurrency: after.baseCurrency, timezone: after.timezone },
+    });
+    return after;
+  }
+
   offices(actor: AuthUser) {
     return this.cache.wrap(`offices:${actor.companyId}`, this.ttl, () => this.loadOffices(actor));
   }

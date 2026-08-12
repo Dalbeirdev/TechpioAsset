@@ -153,6 +153,12 @@ const NAV_GROUPS: NavGroup[] = [
         permission: PERMISSIONS.INTEGRATIONS_MANAGE,
       },
       { href: '/settings/ai', label: 'AI settings', Icon: Cpu, permission: PERMISSIONS.AI_CONFIGURE },
+      {
+        href: '/settings/organisation',
+        label: 'Organisation',
+        Icon: Building2,
+        permission: PERMISSIONS.SETTINGS_MANAGE,
+      },
       // Operator console - platform plane, not tenant administration.
       { href: '/platform/mail', label: 'Email (SMTP)', Icon: Mail, platformOnly: true },
       { href: '/platform/tenants', label: 'Tenants', Icon: Boxes, platformOnly: true },
