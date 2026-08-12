@@ -5,10 +5,11 @@ import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { History, KeyRound, Lock, Monitor, ShieldCheck, ShieldOff } from 'lucide-react';
 import type { SessionInfo } from '@techpioasset/contracts';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, Skeleton } from '@/components/ui';
+import { PasswordInput } from '@/components/ui/password-input';
 
 /**
  * The page the profile's "Security settings" button pointed at for two
@@ -111,7 +112,12 @@ export default function SecuritySettingsPage() {
       setNewPassword('');
       setNewPasswordAgain('');
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not change password'),
+    onError: (e) =>
+      toast.error(
+        e instanceof ApiError
+          ? (e.problem.errors?.[0]?.message ?? e.problem.detail ?? e.problem.title)
+          : 'Could not change password',
+      ),
   });
 
   if (!user) return <Skeleton className="mx-auto h-96 max-w-2xl" />;
@@ -138,9 +144,8 @@ export default function SecuritySettingsPage() {
               if (gatePassword) gate.mutate();
             }}
           >
-            <input
+            <PasswordInput
               aria-label="Your password"
-              type="password"
               autoFocus
               autoComplete="current-password"
               value={gatePassword}
@@ -242,9 +247,8 @@ export default function SecuritySettingsPage() {
               enough to remove it.
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <input
+              <PasswordInput
                 aria-label="Current password"
-                type="password"
                 value={disablePassword}
                 onChange={(e) => setDisablePassword(e.target.value)}
                 placeholder="Password"
@@ -277,30 +281,30 @@ export default function SecuritySettingsPage() {
           <KeyRound aria-hidden="true" className="size-4 text-[var(--color-brand)]" /> Change password
         </h2>
         <div className="mt-3 grid max-w-sm gap-2">
-          <input
+          <PasswordInput
             aria-label="Current password"
-            type="password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             placeholder="Current password"
             className={inputCls}
           />
-          <input
+          <PasswordInput
             aria-label="New password"
-            type="password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="New password"
             className={inputCls}
           />
-          <input
+          <PasswordInput
             aria-label="Repeat new password"
-            type="password"
             value={newPasswordAgain}
             onChange={(e) => setNewPasswordAgain(e.target.value)}
             placeholder="New password again"
             className={inputCls}
           />
+          <p className="text-xs text-[var(--color-content-subtle)]">
+            At least 12 characters, with an uppercase letter, a lowercase letter and a digit.
+          </p>
           {newPasswordAgain.length > 0 && !passwordsMatch ? (
             <p className="text-xs" style={{ color: 'var(--tone-critical-fg)' }}>
               The two passwords do not match.

@@ -10,6 +10,7 @@ import { ApiError, apiFetch, apiBaseUrl } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card } from '@/components/ui';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import {
   Form,
   FormControl,
@@ -124,8 +125,7 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input
-                        type="password"
+                      <PasswordInput
                         autoComplete="current-password"
                         disabled={needsMfa}
                         {...field}

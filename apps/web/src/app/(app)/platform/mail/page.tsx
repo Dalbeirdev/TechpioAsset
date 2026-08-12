@@ -8,6 +8,7 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
 import { useConfirm } from '@/providers/confirm-provider';
 import { Button, Card, ErrorState, Field, Input, Skeleton } from '@/components/ui';
+import { PasswordInput } from '@/components/ui/password-input';
 
 /**
  * Operator SMTP settings (v2.12). Mail setup used to require a server login
@@ -164,7 +165,7 @@ export default function PlatformMailPage() {
             <Input id="mu" value={draft.username} onChange={(e) => set({ username: e.target.value })} placeholder="9a1b2c001@smtp-brevo.com" />
           </Field>
           <Field label={current?.hasPassword ? 'SMTP key (leave blank to keep current)' : 'SMTP key / password'} htmlFor="mk">
-            <Input id="mk" type="password" autoComplete="off" value={draft.password} onChange={(e) => set({ password: e.target.value })} placeholder={current?.hasPassword ? '••••••••  (stored)' : 'Paste the SMTP key'} />
+            <PasswordInput id="mk" autoComplete="off" value={draft.password} onChange={(e) => set({ password: e.target.value })} placeholder={current?.hasPassword ? '••••••••  (stored)' : 'Paste the SMTP key'} />
           </Field>
           <div className="sm:col-span-2">
             <Field label="From address" htmlFor="mf">
