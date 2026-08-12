@@ -126,7 +126,16 @@ export class UsersController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const avatar = await this.users.getAvatar(actor);
-    res.set({ 'Cache-Control': 'private, max-age=300' });
+    // The stored object keeps its original bytes; tell the browser what they
+    // are so its image pipeline (colour management included) runs properly,
+    // rather than sniffing an octet-stream.
+    const head = avatar.data.subarray(0, 8);
+    const contentType = head.subarray(0, 2).equals(Buffer.from([0xff, 0xd8]))
+      ? 'image/jpeg'
+      : head.equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        ? 'image/png'
+        : 'application/octet-stream';
+    res.set({ 'Cache-Control': 'private, max-age=300', 'Content-Type': contentType });
     return new StreamableFile(avatar.data);
   }
 
