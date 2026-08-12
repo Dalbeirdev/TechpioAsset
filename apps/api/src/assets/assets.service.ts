@@ -74,6 +74,10 @@ export class AssetsService {
     const showVendor = canSeeVendor(actor);
     return {
       id: true,
+      // The list carries notes for OWN-scope viewers only: a holder lists a
+      // handful of their own devices and reads specs off the card, while an
+      // administrator's 1,700-row list stays lean - they have the detail page.
+      ...(actor.scope === 'OWN' ? { notes: true } : {}),
       assetTag: true,
       name: true,
       description: true,
