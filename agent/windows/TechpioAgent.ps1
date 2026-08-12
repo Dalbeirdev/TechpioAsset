@@ -356,17 +356,36 @@ function Send-Inventory {
 # ── scheduled task ───────────────────────────────────────────────────────────
 
 function Install-Task {
-    $self = $MyInvocation.MyCommand.Path
-    if (-not $self) { $self = $PSCommandPath }
+    # $MyInvocation.MyCommand inside a function is the FUNCTION's info, which
+    # has no .Path - under StrictMode that read is the crash a real install
+    # died on. $PSCommandPath is the script-level automatic variable and is
+    # correct in both Windows PowerShell 5.1 and PowerShell 7.
+    $self = $PSCommandPath
+
+    # The install one-liner downloads the script to %TEMP%, which temp
+    # cleanup empties and the SYSTEM account may not read at all. The task
+    # must outlive both, so the agent copies itself next to its state file
+    # and schedules THAT copy.
+    if (-not (Test-Path $script:StateDir)) {
+        New-Item -ItemType Directory -Path $script:StateDir -Force | Out-Null
+    }
+    $home_ = Join-Path $script:StateDir 'TechpioAgent.ps1'
+    if ($self -ne $home_) {
+        Copy-Item -Path $self -Destination $home_ -Force
+        $self = $home_
+    }
+
     $args = "-NoProfile -ExecutionPolicy Bypass -File `"$self`" -PortalUrl `"$PortalUrl`""
     $action  = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $args
     # Daily, plus at start-up so a laptop that was off overnight still reports.
-    $daily   = New-ScheduledTaskTrigger -Daily -At 12pm
+    # The +/-30min jitter belongs to the TRIGGER - RandomDelay is not a
+    # parameter of New-ScheduledTaskSettingsSet, and PowerShell 5.1 says so
+    # only at run time, on a real machine, during a real install.
+    $daily   = New-ScheduledTaskTrigger -Daily -At 12pm -RandomDelay (New-TimeSpan -Minutes 30)
     $startup = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable `
-                    -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries `
-                    -RandomDelay (New-TimeSpan -Minutes 30)
+                    -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
 
     Register-ScheduledTask -TaskName $script:TaskName -Action $action `
         -Trigger @($daily, $startup) -Principal $principal -Settings $settings -Force | Out-Null
