@@ -507,6 +507,38 @@ export class RequestsService {
       recipients.push(...holders.map((h) => h.userId));
     }
 
+    // An approval nobody will ever see is a stalled request wearing a clean
+    // status. When the step resolves to zero recipients (a role with no
+    // members, a requester without a manager), the user-managers are told
+    // instead - they are the ones who can assign the role or set the manager.
+    if (recipients.length === 0) {
+      const managers = await this.prisma.client.userRole.findMany({
+        where: {
+          role: {
+            companyId,
+            permissions: { some: { permission: { key: 'users:manage' } } },
+          },
+          user: { deletedAt: null, status: 'ACTIVE' },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+        take: 20,
+      });
+      await this.notifications.notifyMany(
+        managers.map((m) => m.userId).filter((uid) => uid !== approval.request.requesterId),
+        {
+          companyId,
+          type: 'APPROVAL_REQUIRED',
+          title: `Request ${requestNumber} has no approver`,
+          body: `${approval.stepName} routes to a role nobody holds. Assign the role under People, or decide the request yourself.`,
+          linkPath: `/requests/${requestId}`,
+          entityType: 'AssetRequest',
+          entityId: requestId,
+        },
+      );
+      return;
+    }
+
     await this.notifications.notifyMany(recipients, {
       companyId,
       type: 'APPROVAL_REQUIRED',
