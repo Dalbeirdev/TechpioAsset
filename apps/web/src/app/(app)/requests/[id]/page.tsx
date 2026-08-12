@@ -1,8 +1,9 @@
 'use client';
 
 import { use, useState } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, CircleDashed, CircleX, Clock, MinusCircle, Paperclip, Trash2 } from 'lucide-react';
+import { Printer, Check, CircleDashed, CircleX, Clock, MinusCircle, Paperclip, Trash2 } from 'lucide-react';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
 import { PERMISSIONS, findIssueCategory, type RequestStatus } from '@techpioasset/domain';
 import { apiFetch, apiBaseUrl, getAccessToken, ApiError } from '@/lib/api-client';
@@ -162,6 +163,13 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-semibold tracking-tight">{data.requestNumber}</h1>
             <StatusBadge token={REQUEST_STATUS_TOKENS[data.status]} size="sm" />
+            <Link
+              href={`/requests/${id}/print`}
+              className="print-hidden inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2.5 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
+            >
+              <Printer aria-hidden="true" className="size-3.5" />
+              PDF
+            </Link>
           </div>
           <p className="mt-1 text-sm text-[var(--color-content-muted)]">
             Raised by {personName(data.requester)}

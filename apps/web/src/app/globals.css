@@ -217,3 +217,21 @@
     transform-origin: center;
   }
 }
+
+/* Print (v2.15): any page becomes a clean document. The shell's chrome -
+   sidebar, top bar, action buttons marked print-hidden - disappears, and the
+   content column takes the full sheet. The print pages under /print and
+   /receipt rely on this; it also makes every ordinary page print sensibly. */
+@media print {
+  header,
+  aside,
+  .print-hidden {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}

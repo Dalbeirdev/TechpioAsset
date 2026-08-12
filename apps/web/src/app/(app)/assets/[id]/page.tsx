@@ -4,7 +4,7 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, Pencil } from 'lucide-react';
+import { Printer, Lock, Pencil } from 'lucide-react';
 import {
   ASSET_STATUS_TOKENS,
   CONDITION_TOKENS,
@@ -220,10 +220,22 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
               showIcon={false}
             />
           ) : null}
+          {/* Printable handover receipt - the print CSS strips the app chrome,
+              so the browser's Save as PDF is the PDF engine. Offered whenever a
+              holder exists; an employee can only ever reach their own device. */}
+          {data.assignedUser ? (
+            <Link
+              href={`/assets/${id}/receipt`}
+              className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+            >
+              <Printer aria-hidden="true" className="size-4" />
+              Receipt
+            </Link>
+          ) : null}
           {can(PERMISSIONS.ASSETS_UPDATE) ? (
             <Link
               href={`/assets/${id}/edit`}
-              className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+              className={`${data.assignedUser ? '' : 'ml-auto '}inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]`}
             >
               <Pencil aria-hidden="true" className="size-4" />
               Edit
