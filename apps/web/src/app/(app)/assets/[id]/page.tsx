@@ -4,7 +4,7 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Printer, Lock, Pencil } from 'lucide-react';
+import { TicketPlus, ChevronDown, Printer, Lock, Pencil } from 'lucide-react';
 import {
   ASSET_STATUS_TOKENS,
   CONDITION_TOKENS,
@@ -220,13 +220,20 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
               showIcon={false}
             />
           ) : null}
+          {/* Everything a holder needs to ask for, one menu: the issue
+              catalogue for problems, request types for equipment. Each entry
+              lands on /requests/new pre-filled with this device, so nobody
+              types an asset tag by hand. */}
+          {user && data.assignedUser?.id === user.id ? (
+            <CreateTicketMenu assetTag={data.assetTag} assetName={data.name} />
+          ) : null}
           {/* Printable handover receipt - the print CSS strips the app chrome,
               so the browser's Save as PDF is the PDF engine. Offered whenever a
               holder exists; an employee can only ever reach their own device. */}
           {data.assignedUser ? (
             <Link
               href={`/assets/${id}/receipt`}
-              className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+              className={`${user && data.assignedUser?.id === user.id ? '' : 'ml-auto '}inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]`}
             >
               <Printer aria-hidden="true" className="size-4" />
               Receipt
@@ -668,5 +675,68 @@ function AssetQrCard({ assetTag, qrToken }: { assetTag: string; qrToken: string 
         <Skeleton className="mt-3 h-44 w-44" />
       )}
     </Card>
+  );
+}
+
+/**
+ * The holder's ticket menu (v2.15). Five doors into /requests/new, each
+ * pre-filled with this device: problems route through the issue catalogue so
+ * the right type and priority are chosen for them; equipment needs go straight
+ * to the matching request type.
+ */
+function CreateTicketMenu({ assetTag, assetName }: { assetTag: string; assetName: string }) {
+  const [open, setOpen] = useState(false);
+  const about = encodeURIComponent(`${assetTag} ${assetName}`);
+  const items: [string, string][] = [
+    [`/requests/new?report=issue&about=${about}`, 'Report a problem'],
+    [`/requests/new?issue=SOFTWARE&about=${about}`, 'System / software update'],
+    [`/requests/new?type=ADDITIONAL_EQUIPMENT&about=${about}`, 'Accessories (mouse, headphones…)'],
+    [`/requests/new?type=REPLACEMENT&about=${about}`, 'Request replacement'],
+    [`/requests/new?type=UPGRADE&about=${about}`, 'Request upgrade'],
+  ];
+  return (
+    <div className="relative ml-auto">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-3 text-sm font-medium text-white hover:opacity-90"
+      >
+        <TicketPlus aria-hidden="true" className="size-4" />
+        Create ticket
+        <ChevronDown aria-hidden="true" className="size-3.5" />
+      </button>
+      {open ? (
+        <>
+          {/* Click-away layer under the menu. */}
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            className="fixed inset-0 z-10 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            role="menu"
+            className="absolute right-0 z-20 mt-1 w-64 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] py-1 shadow-lg"
+          >
+            {items.map(([href, label]) => (
+              // No onClick-close: hiding the menu re-renders and can unmount
+              // the link before Next follows it, eating the navigation. The
+              // route change closes the menu by unmounting the whole page.
+              <Link
+                key={href}
+                role="menuitem"
+                href={href}
+                className="block px-3 py-2 text-sm hover:bg-[var(--color-surface-sunken)]"
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
