@@ -235,3 +235,63 @@
     background: #fff !important;
   }
 }
+
+/* ── Marketing site (pioassets.com homepage) ──────────────────────────────
+   Scroll reveals, the hero lifecycle scene, and dashboard flourishes. All of
+   it is decorative: the global prefers-reduced-motion block above collapses
+   every animation to its end state, and .mkt-reveal is forced visible below
+   so no content can hide behind a disabled animation. */
+@keyframes mktReveal {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+.mkt-reveal { opacity: 0; }
+.mkt-reveal.is-visible { animation: mktReveal 0.6s ease-out forwards; }
+
+@keyframes mktScan {
+  0%, 12% { transform: translateY(0); opacity: 0.9; }
+  46% { transform: translateY(54px); opacity: 0.9; }
+  54% { opacity: 0; }
+  100% { transform: translateY(0); opacity: 0; }
+}
+.mkt-scanline { animation: mktScan 6s ease-in-out infinite; }
+
+@keyframes mktPop {
+  0% { opacity: 0; transform: scale(0.9) translateY(8px); }
+  100% { opacity: 1; transform: none; }
+}
+.mkt-pop { opacity: 0; animation: mktPop 0.5s ease-out forwards; }
+
+/* Looping hero story: each actor gets a visibility window inside one 14s
+   cycle, so scan -> register -> warranty -> alert -> sync reads as a story. */
+@keyframes mktCycleA { 0%, 8% { opacity: 0; transform: translateY(8px); } 14%, 92% { opacity: 1; transform: none; } 98%, 100% { opacity: 0; } }
+@keyframes mktCycleB { 0%, 22% { opacity: 0; transform: translateY(8px); } 30%, 92% { opacity: 1; transform: none; } 98%, 100% { opacity: 0; } }
+@keyframes mktCycleC { 0%, 44% { opacity: 0; transform: translateY(8px); } 52%, 92% { opacity: 1; transform: none; } 98%, 100% { opacity: 0; } }
+@keyframes mktCycleD { 0%, 64% { opacity: 0; transform: translateY(8px); } 72%, 92% { opacity: 1; transform: none; } 98%, 100% { opacity: 0; } }
+.mkt-cycle-a { animation: mktCycleA 14s ease-in-out infinite; }
+.mkt-cycle-b { animation: mktCycleB 14s ease-in-out infinite; }
+.mkt-cycle-c { animation: mktCycleC 14s ease-in-out infinite; }
+.mkt-cycle-d { animation: mktCycleD 14s ease-in-out infinite; }
+
+@keyframes mktDash { to { stroke-dashoffset: 0; } }
+.mkt-flow {
+  stroke-dasharray: 6 6;
+  animation: mktFlowMove 1.4s linear infinite;
+}
+@keyframes mktFlowMove { to { stroke-dashoffset: -24; } }
+
+@keyframes mktRing {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand) 45%, transparent); }
+  100% { box-shadow: 0 0 0 12px transparent; }
+}
+.mkt-ring { animation: mktRing 2.4s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt-reveal,
+  .mkt-pop,
+  .mkt-cycle-a,
+  .mkt-cycle-b,
+  .mkt-cycle-c,
+  .mkt-cycle-d { opacity: 1 !important; transform: none !important; }
+  .mkt-scanline { opacity: 0 !important; }
+}
