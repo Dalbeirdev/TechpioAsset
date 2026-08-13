@@ -44,7 +44,7 @@ export function ProductShowcase() {
         </span>
       </div>
 
-      <div className="grid md:grid-cols-[180px_1fr]">
+      <div className="grid grid-cols-1 md:grid-cols-[180px_1fr]">
         {/* sidebar */}
         <aside className="hidden border-r border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 text-xs md:block" aria-hidden="true">
           <div className="flex items-center gap-2 px-2 py-1.5 font-semibold">
@@ -58,7 +58,7 @@ export function ProductShowcase() {
         </aside>
 
         {/* main pane */}
-        <div className="p-4 sm:p-5">
+        <div className="min-w-0 p-4 sm:p-5">
           {/* search / filter row */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex h-8 flex-1 basis-48 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-2.5 text-xs text-[var(--color-content-subtle)]">
@@ -79,7 +79,7 @@ export function ProductShowcase() {
             <ShowKpi label="Maintenance open" value="34" sub="12 due this week" warn />
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* status composition */}
             <div className="rounded-2xl border border-[var(--color-border)] p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
@@ -102,7 +102,7 @@ export function ProductShowcase() {
               <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                 Assets by department
               </p>
-              <ul className="mt-2 grid gap-2">
+              <ul className="mt-2 grid grid-cols-1 gap-2">
                 {DEPARTMENTS.map((d) => (
                   <li key={d.name} className="grid grid-cols-[88px_1fr_40px] items-center gap-2 text-xs">
                     <span className="truncate text-[var(--color-content-muted)]">{d.name}</span>
@@ -116,12 +116,12 @@ export function ProductShowcase() {
             </div>
 
             {/* alerts + activity */}
-            <div className="grid gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="rounded-2xl border border-[var(--color-border)] p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                   Needs attention
                 </p>
-                <ul className="mt-2.5 grid gap-2 text-xs">
+                <ul className="mt-2.5 grid grid-cols-1 gap-2 text-xs">
                   <AlertRow icon={<ShieldAlert className="size-3.5 text-[var(--tone-warning-fg)]" />} text="43 warranties expire within 90 days" pill="Review" />
                   <AlertRow icon={<Wrench className="size-3.5 text-[var(--tone-warning-fg)]" />} text="12 maintenance jobs due this week" pill="Schedule" />
                   <AlertRow icon={<AlertTriangle className="size-3.5 text-[var(--tone-critical-fg)]" />} text="3 assets unaccounted for at stock-take" pill="Investigate" critical />
@@ -131,7 +131,7 @@ export function ProductShowcase() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                   Recent activity
                 </p>
-                <ul className="mt-2.5 grid gap-1.5 text-xs text-[var(--color-content-muted)]">
+                <ul className="mt-2.5 grid grid-cols-1 gap-1.5 text-xs text-[var(--color-content-muted)]">
                   {[
                     'MacBook Pro 14″ assigned to Alex M. — receipt confirmed',
                     'Dell Latitude 5540 warranty synced from vendor',
@@ -201,7 +201,7 @@ export function AnalyticsShowcase() {
   let offset = 0;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 lg:col-span-2">
         <div className="flex items-baseline justify-between">
           <p className="text-sm font-semibold">IT spend by month</p>

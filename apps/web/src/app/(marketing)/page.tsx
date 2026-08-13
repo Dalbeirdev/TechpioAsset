@@ -483,7 +483,7 @@ export default function HomePage() {
 
       {/* DEMO FORM */}
       <section id="demo" className="scroll-mt-24 border-t border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
-        <div className="mx-auto grid max-w-6xl items-start gap-10 px-5 py-20 md:grid-cols-[0.85fr_1.15fr]">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-5 py-20 md:grid-cols-[0.85fr_1.15fr]">
           <div className="md:sticky md:top-24">
             <SectionHead
               kicker="Get started"
@@ -512,7 +512,7 @@ export default function HomePage() {
       {/* FINAL CTA */}
       <section className="mx-auto max-w-6xl px-5 py-20">
         <div
-          className="grid overflow-hidden rounded-3xl shadow-xl md:grid-cols-[1.3fr_0.7fr]"
+          className="grid grid-cols-1 overflow-hidden rounded-3xl shadow-xl md:grid-cols-[1.3fr_0.7fr]"
           style={{ background: 'linear-gradient(130deg, #2563eb, #1d4ed8 55%, #1e3a8a)' }}
         >
           <div className="px-8 py-12 sm:px-10">
