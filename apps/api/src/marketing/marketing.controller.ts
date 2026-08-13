@@ -48,8 +48,8 @@ export class MarketingController {
       `Email:      ${body.email}`,
       `Company:    ${body.company}`,
       `Phone:      ${body.phone || '-'}`,
-      `Assets:     ${LABELS[body.assetCount]}`,
-      `Interest:   ${LABELS[body.interest]}`,
+      `Assets:     ${body.assetCount ? LABELS[body.assetCount] : '-'}`,
+      `Interest:   ${body.interest ? LABELS[body.interest] : '-'}`,
       '',
       body.message || '(no message)',
     ];
@@ -57,7 +57,9 @@ export class MarketingController {
       await this.mail.send({
         to: SALES_INBOX,
         replyTo: body.email,
-        subject: `Demo request - ${body.company} (${LABELS[body.assetCount]} assets)`,
+        subject: body.assetCount
+          ? `Demo request - ${body.company} (${LABELS[body.assetCount]} assets)`
+          : `Website enquiry - ${body.company}`,
         text: lines.join('\n'),
       });
     } catch (error) {

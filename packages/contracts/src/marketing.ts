@@ -21,8 +21,10 @@ export const demoRequestSchema = z.object({
   email: z.string().trim().email('Enter a valid business email').max(200),
   company: z.string().trim().min(2, 'Enter your company name').max(160),
   phone: z.string().trim().max(40).optional().or(z.literal('')),
-  assetCount: z.enum(DEMO_ASSET_COUNTS),
-  interest: z.enum(DEMO_INTERESTS),
+  /** Optional so the About page's compact contact form shares this endpoint
+   * without inventing values the visitor never chose. */
+  assetCount: z.enum(DEMO_ASSET_COUNTS).optional(),
+  interest: z.enum(DEMO_INTERESTS).optional(),
   message: z.string().trim().max(2000).optional().or(z.literal('')),
   /** Honeypot - must remain empty. */
   website: z.literal('').optional(),
