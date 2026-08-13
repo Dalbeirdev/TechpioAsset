@@ -51,6 +51,7 @@ import { assertSpreadsheet } from '../providers/storage/file-validation.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AssetsService } from './assets.service.js';
 import { AssetImportService } from './asset-import.service.js';
+import { LenovoWarrantyService } from './lenovo-warranty.service.js';
 import { AssetHealthService } from '../asset-health/asset-health.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuditAction } from '@prisma/client';
@@ -63,6 +64,7 @@ export class AssetsController {
     private readonly imports: AssetImportService,
     private readonly health: AssetHealthService,
     private readonly audit: AuditService,
+    private readonly lenovoWarranty: LenovoWarrantyService,
   ) {}
 
   @Post('import')
@@ -196,6 +198,19 @@ export class AssetsController {
     @Body(zodBody(updateAssetSchema)) body: UpdateAssetInput,
   ) {
     return this.assets.update(actor, id, body);
+  }
+
+  @Post(':id/warranty-refresh')
+  @RequirePermissions(PERMISSIONS.ASSETS_UPDATE)
+  @ApiOperation({
+    summary: 'Fetch and record the warranty dates from the manufacturer (Lenovo)',
+    description:
+      'Looks the serial up at Lenovo and records the returned coverage dates ' +
+      'with an audit entry. Available for Lenovo devices; other makers refuse ' +
+      'with an explanation.',
+  })
+  refreshWarranty(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.lenovoWarranty.refreshAsset(actor, id);
   }
 
   @Post(':id/warranty-extract')
