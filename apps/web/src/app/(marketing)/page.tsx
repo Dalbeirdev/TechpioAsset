@@ -15,7 +15,7 @@ import {
 import { AssetMascotHero, AssetMascotWave } from '@/components/marketing/asset-mascot';
 
 export const metadata: Metadata = {
-  title: 'TechpioAsset — IT asset management for growing teams',
+  title: 'PioAssets — IT asset management for growing teams',
   description:
     'Track every laptop, licence, and asset from purchase to retirement. Assignments, approvals, maintenance, reports, and mobile scanning in one place.',
 };
@@ -120,7 +120,7 @@ export default function HomePage() {
               Every asset, <span className="text-[var(--color-brand)]">accounted for.</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-[var(--color-content-muted)]">
-              TechpioAsset tracks every laptop, licence, and piece of equipment from purchase to
+              PioAssets tracks every laptop, licence, and piece of equipment from purchase to
               retirement — who has it, what it cost, and when it needs attention. One source of truth
               for IT, finance, and operations.
             </p>

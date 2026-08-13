@@ -28,7 +28,7 @@ export function MarketingHeader() {
           <span className="grid size-8 place-items-center rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-contrast)]">
             <Boxes aria-hidden="true" className="size-5" />
           </span>
-          TechpioAsset
+          PioAssets
         </Link>
 
         <nav aria-label="Primary" className="ml-4 hidden items-center gap-1 md:flex">

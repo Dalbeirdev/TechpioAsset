@@ -1,5 +1,5 @@
 /**
- * TechpioAsset brand mascot — a friendly monitor character, drawn as inline SVG
+ * PioAssets brand mascot — a friendly monitor character, drawn as inline SVG
  * so it themes with the page and stays crisp at any size. Idle motion comes from
  * the `mascot-*` classes in globals.css and is frozen under reduced-motion.
  *
@@ -11,7 +11,7 @@
 /** Full hero scene: mascot on a glowing pedestal with floating app cards. */
 export function AssetMascotHero() {
   return (
-    <svg viewBox="0 0 540 470" className="h-auto w-full overflow-visible" role="img" aria-label="TechpioAsset mascot inspecting equipment">
+    <svg viewBox="0 0 540 470" className="h-auto w-full overflow-visible" role="img" aria-label="PioAssets mascot inspecting equipment">
       <defs>
         <radialGradient id="m-halo" cx="50%" cy="42%" r="60%">
           <stop offset="0%" stopColor="var(--color-brand)" stopOpacity="0.18" />
@@ -152,7 +152,7 @@ export function AssetMascotHero() {
 /** Compact waving mascot for the closing call-to-action band (on brand blue). */
 export function AssetMascotWave() {
   return (
-    <svg viewBox="0 0 260 210" className="h-auto w-[78%] max-w-[280px] overflow-visible" role="img" aria-label="TechpioAsset mascot waving hello">
+    <svg viewBox="0 0 260 210" className="h-auto w-[78%] max-w-[280px] overflow-visible" role="img" aria-label="PioAssets mascot waving hello">
       <defs>
         <linearGradient id="mw-screen" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#5CC6F5" />

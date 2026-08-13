@@ -3,9 +3,9 @@ import Link from 'next/link';
 import { ArrowRight, Compass, HeartHandshake, ShieldCheck, Target } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'About — TechpioAsset',
+  title: 'About — PioAssets',
   description:
-    'Why TechpioAsset exists: give IT and operations teams one trustworthy record of every asset they own.',
+    'Why PioAssets exists: give IT and operations teams one trustworthy record of every asset they own.',
 };
 
 const VALUES = [
@@ -43,7 +43,7 @@ export default function AboutPage() {
             We help teams know exactly what they own.
           </h1>
           <p className="mt-5 max-w-2xl text-lg text-[var(--color-content-muted)]">
-            TechpioAsset was built by TechPio Services LLP for a simple reason: most growing
+            PioAssets was built by TechPio Services LLP for a simple reason: most growing
             organisations lose track of their equipment. Laptops move between people, warranties
             lapse, and no one can say what anything cost. We set out to fix that with one clear,
             trustworthy register — not another spreadsheet.

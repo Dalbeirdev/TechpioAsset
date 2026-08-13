@@ -99,7 +99,7 @@ export default function PlatformMailPage() {
     username: current?.username ?? '',
     password: '',
     fromAddress: from.address,
-    fromName: from.name || 'TechpioAsset',
+    fromName: from.name || 'PioAssets',
   };
   const set = (patch: Partial<typeof draft>) => setForm({ ...draft, ...patch });
   const provider = PROVIDERS.find((p) => p.key === draft.provider);
@@ -397,7 +397,7 @@ export default function PlatformMailPage() {
                 id="mfn"
                 value={draft.fromName}
                 onChange={(e) => set({ fromName: e.target.value })}
-                placeholder="TechpioAsset"
+                placeholder="PioAssets"
               />
             </Field>
           </div>

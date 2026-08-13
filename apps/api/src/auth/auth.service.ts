@@ -424,7 +424,7 @@ export class AuthService {
         to: user.email,
         subject: 'Reset your PioAssets password',
         text: [
-          'Someone asked to reset the password for this TechpioAsset account.',
+          'Someone asked to reset the password for this PioAssets account.',
           '',
           `Reset it here: ${link}`,
           '',

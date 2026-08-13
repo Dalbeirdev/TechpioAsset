@@ -343,7 +343,7 @@ export default function IntegrationsPage() {
             id="wh-url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/hooks/techpioasset"
+            placeholder="https://example.com/hooks/pioassets"
           />
         </Field>
         <div>

@@ -49,7 +49,7 @@ export default function AppearanceSettingsPage() {
           <Palette aria-hidden="true" className="size-5 text-[var(--color-brand)]" /> Appearance
         </h1>
         <p className="text-sm text-[var(--color-content-muted)]">
-          How TechpioAsset looks on this device. Saved in this browser, not on your account.
+          How PioAssets looks on this device. Saved in this browser, not on your account.
         </p>
       </header>
 
