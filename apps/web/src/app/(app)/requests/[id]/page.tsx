@@ -138,6 +138,20 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   });
 
   const canAddToCatalog = can(PERMISSIONS.ASSETS_CREATE);
+  const canInternal = can(PERMISSIONS.REQUESTS_APPROVE);
+  const [commentBody, setCommentBody] = useState('');
+  const [commentInternal, setCommentInternal] = useState(false);
+  const postComment = useMutation({
+    mutationFn: (body: { body: string; isInternal: boolean }) =>
+      apiFetch(`/requests/${id}/comments`, { method: 'POST', body }),
+    onSuccess: async () => {
+      setCommentBody('');
+      setCommentInternal(false);
+      await queryClient.invalidateQueries({ queryKey: ['request', id] });
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not send'),
+  });
   const addToCatalog = useMutation({
     mutationFn: (body: { name: string; categoryId: string | null }) =>
       apiFetch('/requests/catalog-items', { method: 'POST', body }),
@@ -475,9 +489,12 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
           </Card>
 
           <Card className="p-5">
-            <h2 className="text-sm font-semibold">Comments</h2>
+            <h2 className="text-sm font-semibold">Conversation</h2>
             {data.comments.length === 0 ? (
-              <p className="mt-2 text-sm text-[var(--color-content-subtle)]">No comments yet.</p>
+              <p className="mt-2 text-sm text-[var(--color-content-subtle)]">
+                No messages yet. Questions about this request — timelines, status, details — belong
+                here; the right people are notified when you write.
+              </p>
             ) : (
               <ul className="mt-3 grid gap-3">
                 {data.comments.map((c) => (
@@ -505,6 +522,53 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                 ))}
               </ul>
             )}
+
+            <form
+              className="mt-4 grid gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (commentBody.trim().length === 0 || postComment.isPending) return;
+                postComment.mutate({ body: commentBody.trim(), isInternal: commentInternal });
+              }}
+            >
+              <label htmlFor="req-comment" className="sr-only">
+                Write a message
+              </label>
+              <textarea
+                id="req-comment"
+                rows={2}
+                value={commentBody}
+                onChange={(e) => setCommentBody(e.target.value)}
+                placeholder={
+                  data.requester.id === user?.id || data.beneficiary?.id === user?.id
+                    ? 'Ask a question about this request — e.g. how long will this take?'
+                    : 'Reply to the requester — they are notified of your message.'
+                }
+                className="w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-brand)]"
+              />
+              <div className="flex items-center justify-between gap-3">
+                {canInternal ? (
+                  <label className="flex items-center gap-1.5 text-xs text-[var(--color-content-muted)]">
+                    <input
+                      type="checkbox"
+                      checked={commentInternal}
+                      onChange={(e) => setCommentInternal(e.target.checked)}
+                    />
+                    Internal note (hidden from the requester)
+                  </label>
+                ) : (
+                  <span />
+                )}
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={commentBody.trim().length === 0}
+                  loading={postComment.isPending}
+                >
+                  Send
+                </Button>
+              </div>
+            </form>
           </Card>
         </div>
 

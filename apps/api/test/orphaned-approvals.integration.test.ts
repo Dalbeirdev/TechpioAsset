@@ -50,7 +50,7 @@ describe('a role step nobody holds', () => {
         type: 'DAMAGE',
         businessReason: 'Orphaned-approval regression: hinge cracked on the lid',
         isReplacement: false,
-        items: [{ description: 'Repair hinge', quantity: 1 }],
+        items: [{ description: `Repair hinge (${Math.random().toString(36).slice(2, 8)})`, quantity: 1 }],
       });
     expect(filed.status, JSON.stringify(filed.body)).toBe(201);
     const requestId = filed.body.data.id as string;
@@ -100,7 +100,7 @@ describe('a role step nobody holds', () => {
         type: 'DAMAGE',
         businessReason: 'Second orphan-check request for the closed-door case',
         isReplacement: false,
-        items: [{ description: 'Check', quantity: 1 }],
+        items: [{ description: `Check (${Math.random().toString(36).slice(2, 8)})`, quantity: 1 }],
       });
     const secondId = another.body.data.id as string;
     await api(app).post(`/api/v1/requests/${secondId}/submit`).set(auth(s.employee));

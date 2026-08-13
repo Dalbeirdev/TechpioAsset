@@ -30,7 +30,7 @@ async function submittedRequest() {
       type: 'ADDITIONAL_EQUIPMENT',
       businessReason: 'Checking who is offered the approve control on this request.',
       estimatedCost: '1699.00',
-      items: [{ description: 'Dell Latitude 7450', quantity: 1, estimatedCost: '1699.00' }],
+      items: [{ description: `Dell Latitude 7450 (${Math.random().toString(36).slice(2, 8)})`, quantity: 1, estimatedCost: '1699.00' }],
     });
   await api(app).post(`/api/v1/requests/${created.body.data.id}/submit`).set(auth(s.employee));
   return created.body.data.id as string;

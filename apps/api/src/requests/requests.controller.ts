@@ -20,6 +20,8 @@ import 'multer';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
+  openDuplicateQuerySchema,
+  type OpenDuplicateQuery,
   catalogItemSchema,
   approvalDecisionSchema,
   createRequestSchema,
@@ -108,6 +110,22 @@ export class RequestsController {
   })
   catalog(@CurrentUser() actor: AuthUser) {
     return this.requests.equipmentCatalog(actor);
+  }
+
+  @Get('open-duplicate')
+  @RequirePermissions(PERMISSIONS.REQUESTS_CREATE)
+  @ApiOperation({
+    summary: 'Whether an open ticket already covers this request',
+    description:
+      'Pre-check for the form: same type about the same asset (or item), still ' +
+      'in flight and younger than 10 days. The create endpoint enforces the ' +
+      'same rule with a 409.',
+  })
+  openDuplicate(
+    @CurrentUser() actor: AuthUser,
+    @Query(zodBody(openDuplicateQuerySchema)) query: OpenDuplicateQuery,
+  ) {
+    return this.requests.openDuplicate(actor, query);
   }
 
   @Post('catalog-items')
