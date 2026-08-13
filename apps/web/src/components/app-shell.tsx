@@ -38,6 +38,7 @@ import { ProfileMenu } from './profile-menu';
 import { NotificationBell } from './notification-bell';
 import { ThemeToggle } from './theme-toggle';
 import { RouteGuard, canViewRoute } from './route-guard';
+import { BrandLockup } from '@/components/brand';
 
 interface NavItem {
   href: string;
@@ -362,8 +363,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Menu aria-hidden="true" className="size-5" />
         </button>
 
-        <Link href="/dashboard" className="font-semibold tracking-tight">
-          TechpioAsset
+        <Link href="/dashboard" className="inline-flex items-center">
+          <BrandLockup markSize={24} />
         </Link>
 
         <div className="ml-auto flex items-center gap-2">

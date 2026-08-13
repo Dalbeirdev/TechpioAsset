@@ -81,7 +81,7 @@ export default function AssetReceiptPage({ params }: { params: Promise<{ id: str
       <div className="border-b-2 border-black pb-4">
         <h1 className="text-xl font-bold">Equipment handover receipt</h1>
         <p className="mt-1 text-xs text-neutral-600">
-          TechpioAsset · generated {new Date().toLocaleDateString()}
+          PioAssets · generated {new Date().toLocaleDateString()}
         </p>
       </div>
 

@@ -21,6 +21,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { BrandLockup } from '@/components/brand';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
@@ -87,7 +88,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">TechpioAsset</h1>
+            <h1 className="text-xl">
+              <BrandLockup markSize={30} textClass="text-xl" />
+            </h1>
             <p className="mt-1 text-sm text-[var(--color-content-muted)]">
               Manage Assets. Control Costs. Simplify Operations.
             </p>
