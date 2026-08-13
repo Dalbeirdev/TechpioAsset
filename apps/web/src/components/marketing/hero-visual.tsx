@@ -16,7 +16,7 @@ export function HeroLifecycleScene() {
   return (
     <div className="relative mx-auto w-full max-w-[560px]" aria-label="Animated example: a laptop is scanned, registered, covered by warranty, flagged for maintenance, and synced to the PioAssets dashboard" role="img">
       {/* Mini dashboard the story feeds into */}
-      <div className="relative z-10 ml-auto w-[78%] rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
+      <div className="relative z-10 ml-auto w-full rounded-3xl sm:w-[78%] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
             PioAssets · Live overview
@@ -35,7 +35,7 @@ export function HeroLifecycleScene() {
           <Kpi label="Locations" value={<Counter to={6} />} />
         </div>
 
-        <ul className="mt-3 grid gap-1.5 text-xs">
+        <ul className="mt-3 grid grid-cols-1 gap-1.5 text-xs">
           <Activity icon={<CheckCircle2 className="size-3.5 text-[var(--tone-success-fg)]" />} text="MacBook Pro assigned to Alex" delay={0.4} />
           <Activity icon={<CheckCircle2 className="size-3.5 text-[var(--tone-success-fg)]" />} text="Dell Latitude warranty updated" delay={1.0} />
           <Activity icon={<Bell className="size-3.5 text-[var(--tone-warning-fg)]" />} text="12 licences expiring this quarter" delay={1.6} />
@@ -44,7 +44,7 @@ export function HeroLifecycleScene() {
       </div>
 
       {/* The story: device being scanned into the system */}
-      <div className="relative z-20 -mt-10 w-[64%] sm:-mt-14">
+      <div className="relative z-20 -mt-8 w-[86%] sm:-mt-14 sm:w-[64%]">
         <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg">
           <div className="flex items-start gap-3">
             {/* laptop + scan beam */}
