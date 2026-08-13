@@ -22,3 +22,4 @@ export * from './stock';
 export * from './discovery';
 export * from './integrations';
 export * from './org';
+export * from './marketing';
