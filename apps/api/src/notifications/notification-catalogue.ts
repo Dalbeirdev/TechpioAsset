@@ -43,6 +43,12 @@ export const NOTIFICATION_CATALOGUE: Readonly<Record<NotificationType, Notificat
     mandatory: false,
     channels: ['IN_APP', 'EMAIL', 'PUSH'],
   },
+  REQUEST_COMMENT: {
+    type: 'REQUEST_COMMENT',
+    title: 'Reply on a request',
+    mandatory: false,
+    channels: ['IN_APP', 'EMAIL'],
+  },
   REQUEST_REJECTED: {
     type: 'REQUEST_REJECTED',
     title: 'Request rejected',

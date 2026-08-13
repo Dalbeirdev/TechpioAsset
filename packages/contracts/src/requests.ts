@@ -98,6 +98,14 @@ export const createRequestSchema = z.object({
 });
 export type CreateRequestInput = z.infer<typeof createRequestSchema>;
 
+/** Pre-check query: is there an open ticket that makes this a duplicate? */
+export const openDuplicateQuerySchema = z.object({
+  type: requestTypeEnum,
+  targetAssetId: z.string().optional(),
+  item: z.string().trim().max(500).optional(),
+});
+export type OpenDuplicateQuery = z.infer<typeof openDuplicateQuerySchema>;
+
 export const requestListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),

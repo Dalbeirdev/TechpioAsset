@@ -261,6 +261,27 @@ function NewRequestForm() {
 
   const selectedAsset = eligible.data?.find((a) => a.id === targetAssetId) ?? null;
 
+  // One open ticket per problem: check BEFORE submit so the form can point at
+  // the existing request instead of bouncing with a 409.
+  const firstItemDesc = form.watch('items.0.description') ?? '';
+  const dupParams = assetLinked
+    ? targetAssetId
+      ? `type=${type}&targetAssetId=${targetAssetId}`
+      : null
+    : firstItemDesc.trim().length > 2
+      ? `type=${type}&item=${encodeURIComponent(firstItemDesc.trim())}`
+      : null;
+  const dupCheck = useQuery({
+    queryKey: ['open-duplicate', dupParams],
+    queryFn: () =>
+      apiFetch<{ duplicate: { id: string; requestNumber: string; status: string } | null }>(
+        `/requests/open-duplicate?${dupParams}`,
+      ),
+    enabled: Boolean(dupParams),
+    staleTime: 15_000,
+  });
+  const duplicate = dupParams ? (dupCheck.data?.duplicate ?? null) : null;
+
   // One eligible asset: select it for the user instead of asking.
   useEffect(() => {
     const only = eligible.data?.length === 1 ? eligible.data[0] : undefined;
@@ -896,6 +917,31 @@ function NewRequestForm() {
               </p>
             </Card>
 
+            {duplicate ? (
+              <div
+                className="rounded-[var(--radius-control)] border px-4 py-3 text-sm"
+                style={{
+                  color: 'var(--tone-warning-fg)',
+                  backgroundColor: 'var(--tone-warning-bg)',
+                  borderColor: 'var(--tone-warning-border)',
+                }}
+              >
+                <p className="font-semibold">
+                  You already have an open request about this — {duplicate.requestNumber}
+                </p>
+                <p className="mt-0.5 text-xs opacity-90">
+                  Ask for an update there instead of raising it again. If it is still unresolved
+                  after 10 days, you can submit a new one.
+                </p>
+                <Link
+                  href={`/requests/${duplicate.id}`}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-current px-3 py-1.5 text-xs font-semibold"
+                >
+                  View request &amp; ask for an update →
+                </Link>
+              </div>
+            ) : null}
+
             {form.formState.errors.root ? (
               <p
                 role="alert"
@@ -914,7 +960,7 @@ function NewRequestForm() {
               <Button type="button" variant="secondary" onClick={() => router.back()}>
                 Cancel
               </Button>
-              <Button type="submit" loading={submit.isPending}>
+              <Button type="submit" loading={submit.isPending} disabled={Boolean(duplicate)}>
                 Submit for approval <Send aria-hidden="true" className="ml-1.5 size-4" />
               </Button>
             </div>

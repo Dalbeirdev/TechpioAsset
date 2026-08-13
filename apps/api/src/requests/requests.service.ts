@@ -298,6 +298,57 @@ export class RequestsService {
   }
 
   /**
+   * The open ticket that makes a new one a duplicate, if any: same subject,
+   * same type, same asset (or an identical item), still in flight, younger
+   * than 10 days. DRAFTs never block - an abandoned half-form is not a ticket.
+   */
+  private async findOpenDuplicate(
+    companyId: string,
+    subjectId: string,
+    input: { type: RequestType; targetAssetId: string | null; itemDescriptions: string[] },
+  ) {
+    const since = new Date(Date.now() - 10 * 86_400_000);
+    return this.prisma.client.assetRequest.findFirst({
+      where: {
+        companyId,
+        type: input.type,
+        status: { notIn: ['DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'] },
+        createdAt: { gte: since },
+        // The SUBJECT owns the duplicate space: HR raising for two different
+        // people is two problems, not one.
+        OR: [{ beneficiaryId: subjectId }, { beneficiaryId: null, requesterId: subjectId }],
+        ...(input.targetAssetId
+          ? { replacesAssetId: input.targetAssetId }
+          : {
+              items: {
+                some: {
+                  OR: input.itemDescriptions
+                    .filter((d) => d.trim().length > 0)
+                    .map((d) => ({ description: { equals: d.trim(), mode: 'insensitive' as const } })),
+                },
+              },
+            }),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, requestNumber: true, status: true, createdAt: true },
+    });
+  }
+
+  /** Pre-check for the form: lets the UI point at the existing ticket BEFORE
+   * a submit bounces. Same rule as the create-time guard. */
+  async openDuplicate(
+    actor: AuthUser,
+    query: { type: RequestType; targetAssetId?: string; item?: string },
+  ) {
+    const duplicate = await this.findOpenDuplicate(actor.companyId, actor.id, {
+      type: query.type,
+      targetAssetId: query.targetAssetId ?? null,
+      itemDescriptions: query.item ? [query.item] : [],
+    });
+    return { duplicate };
+  }
+
+  /**
    * The caller's own assigned assets, shaped for the dynamic request form.
    * Scoped to the requester by construction - no cost fields, no other
    * people's equipment - so the form can never show what the API would refuse.
@@ -457,6 +508,29 @@ export class RequestsService {
       where: { userId: beneficiaryId },
       select: { managerId: true, departmentId: true, officeId: true },
     });
+
+    // v2.17: one open ticket per problem. The same subject re-raising the
+    // same type about the same asset (or the same item) while the earlier
+    // request is still in flight gets pointed at the existing ticket instead.
+    // The block expires after 10 days so a stalled approval never locks
+    // anyone out for good.
+    const dupTargetAssetId = input.details?.targetAssetId ?? input.replacesAssetId ?? null;
+    const duplicate = await this.findOpenDuplicate(actor.companyId, beneficiaryId, {
+      type: input.type,
+      targetAssetId: dupTargetAssetId,
+      itemDescriptions: input.items.map((i) => i.description),
+    });
+    if (duplicate) {
+      throw new AppError(
+        'CONFLICT',
+        `You already have an open request about this (${duplicate.requestNumber})`,
+        {
+          detail:
+            'Open that request and ask for an update in its comments. If it is still ' +
+            'unresolved after 10 days, you can raise it again.',
+        },
+      );
+    }
 
     // v2.17 dynamic form: when the request is ABOUT a specific asset, the
     // asset must exist here and be assigned to the request's subject - the
@@ -1044,7 +1118,67 @@ export class RequestsService {
       data: { requestId: id, authorId: actor.id, body, isInternal },
     });
 
+    // v2.17: a message should reach the other side of the ticket, not sit
+    // unseen. Requester-side messages go to whoever holds the pending step;
+    // reviewer replies (never internal notes) go to the requester.
+    const request = await this.prisma.client.assetRequest.findUniqueOrThrow({
+      where: { id },
+      select: { companyId: true, requesterId: true, beneficiaryId: true, requestNumber: true },
+    });
+    const excerpt = body.length > 140 ? `${body.slice(0, 137)}…` : body;
+    const requesterSide = actor.id === request.requesterId || actor.id === request.beneficiaryId;
+    if (requesterSide) {
+      const approvers = (await this.pendingApproverIds(id)).filter((uid) => uid !== actor.id);
+      await this.notifications.notifyMany(approvers, {
+        companyId: request.companyId,
+        type: 'REQUEST_COMMENT',
+        title: `New message on ${request.requestNumber}`,
+        body: excerpt,
+        linkPath: `/requests/${id}`,
+        entityType: 'AssetRequest',
+        entityId: id,
+      });
+    } else if (!isInternal) {
+      const targets = [request.requesterId, request.beneficiaryId].filter(
+        (uid): uid is string => Boolean(uid) && uid !== actor.id,
+      );
+      await this.notifications.notifyMany(targets, {
+        companyId: request.companyId,
+        type: 'REQUEST_COMMENT',
+        title: `Reply on your request ${request.requestNumber}`,
+        body: excerpt,
+        linkPath: `/requests/${id}`,
+        entityType: 'AssetRequest',
+        entityId: id,
+      });
+    }
+
     return this.findOne(actor, id);
+  }
+
+  /** Who currently holds the pending approval step, resolved the same way the
+   * submit-time notification resolves it. */
+  private async pendingApproverIds(requestId: string): Promise<string[]> {
+    const approval = await this.prisma.client.requestApproval.findFirst({
+      where: { requestId, decision: ApprovalDecision.PENDING },
+      orderBy: { stepOrder: 'asc' },
+      include: { request: { include: { requester: { include: { profile: true } } } } },
+    });
+    if (!approval) return [];
+    if (approval.approverId) return [approval.approverId];
+    if (approval.approverType === 'LINE_MANAGER') {
+      const managerId = approval.request.requester.profile?.managerId;
+      return managerId ? [managerId] : [];
+    }
+    if (approval.approverRoleId) {
+      const holders = await this.prisma.client.userRole.findMany({
+        where: { roleId: approval.approverRoleId },
+        select: { userId: true },
+        take: 25,
+      });
+      return holders.map((h) => h.userId);
+    }
+    return [];
   }
 
   // ───────────────────────────────────────────────────────────────────────────

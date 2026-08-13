@@ -323,6 +323,9 @@ enum NotificationType {
   SECURITY_ALERT
   // v2.3 licenses
   LICENSE_EXPIRING
+  /// v2.17 - a message posted under a request: requester asking for an update,
+  /// or a reviewer replying.
+  REQUEST_COMMENT
   SEAT_LIMIT_REACHED
   // v2.5 work orders
   WORK_ORDER_ASSIGNED
