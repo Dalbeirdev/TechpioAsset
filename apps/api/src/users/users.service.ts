@@ -626,7 +626,7 @@ export class UsersService {
         to: email,
         subject: 'You have been invited to PioAssets',
         text: [
-          `${firstName}, you have been invited to your company's TechpioAsset workspace.`,
+          `${firstName}, you have been invited to your company's PioAssets workspace.`,
           '',
           `Set your password and sign in here: ${inviteUrl}`,
           '',

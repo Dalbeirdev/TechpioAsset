@@ -11,7 +11,7 @@ export function MarketingFooter() {
             <span className="grid size-7 place-items-center rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-contrast)]">
               <Boxes aria-hidden="true" className="size-4" />
             </span>
-            TechpioAsset
+            PioAssets
           </div>
           <p className="mt-3 max-w-xs text-sm text-[var(--color-content-muted)]">
             Track every laptop, licence, and asset from purchase to retirement — in one place.

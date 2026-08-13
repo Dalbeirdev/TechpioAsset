@@ -25,7 +25,7 @@ export default function ContactPage() {
       return;
     }
     setError(null);
-    const subject = `TechpioAsset enquiry from ${name.trim()}`;
+    const subject = `PioAssets enquiry from ${name.trim()}`;
     const body = [
       `Name: ${name.trim()}`,
       `Email: ${email.trim()}`,

@@ -49,7 +49,7 @@ function AcceptInviteForm() {
           <span className="grid size-8 place-items-center rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-contrast)]">
             <Boxes aria-hidden="true" className="size-4" />
           </span>
-          TechpioAsset
+          PioAssets
         </div>
 
         {done ? (

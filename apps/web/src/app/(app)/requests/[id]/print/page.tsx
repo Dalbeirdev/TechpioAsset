@@ -87,7 +87,7 @@ export default function RequestPrintPage({ params }: { params: Promise<{ id: str
         <div>
           <h1 className="text-xl font-bold">Equipment request {data.requestNumber}</h1>
           <p className="mt-1 text-xs text-neutral-600">
-            TechpioAsset · generated {new Date().toLocaleDateString()}
+            PioAssets · generated {new Date().toLocaleDateString()}
           </p>
         </div>
         <span className="rounded border border-black px-2 py-1 text-xs font-semibold uppercase">
