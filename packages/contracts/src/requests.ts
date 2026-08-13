@@ -36,8 +36,35 @@ export const requestItemSchema = z.object({
   estimatedCost: moneyString.optional().nullable(),
 });
 
+/**
+ * Structured context for the dynamic request form (v2.17). All optional so the
+ * older flows (issue reports, API clients) keep working; the web form enforces
+ * per-type requirements and the service enforces asset ownership.
+ */
+export const requestDetailsSchema = z
+  .object({
+    /** The requester's own asset this request is about (upgrade/repair/replace). */
+    targetAssetId: z.string().optional().nullable(),
+    upgradeType: z
+      .enum(['RAM', 'STORAGE', 'CPU_PERFORMANCE', 'DISPLAY', 'WARRANTY', 'DOCKING_CONNECTIVITY', 'OPERATING_SYSTEM', 'OTHER'])
+      .optional()
+      .nullable(),
+    currentSpec: z.string().trim().max(200).optional().nullable(),
+    requestedSpec: z.string().trim().max(200).optional().nullable(),
+    replacementReason: z
+      .enum(['DAMAGED', 'LOST', 'END_OF_LIFE', 'PERFORMANCE_ISSUE', 'WARRANTY_ISSUE', 'UPGRADE_REQUIRED', 'OTHER'])
+      .optional()
+      .nullable(),
+    /** The "please specify" text whenever an OTHER option is chosen. */
+    otherText: z.string().trim().max(300).optional().nullable(),
+  })
+  .optional()
+  .nullable();
+export type RequestDetails = z.infer<typeof requestDetailsSchema>;
+
 export const createRequestSchema = z.object({
   type: requestTypeEnum,
+  details: requestDetailsSchema,
   priority: requestPriorityEnum.default('NORMAL'),
   /** HR and similar roles raise requests for someone else; needs requests:create-on-behalf. */
   beneficiaryId: z.string().optional().nullable(),

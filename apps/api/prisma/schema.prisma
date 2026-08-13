@@ -1765,6 +1765,9 @@ model AssetRequest {
   preferredSpec   String?
   isReplacement   Boolean   @default(false)
   replacesAssetId String?
+  /// v2.17 - structured context from the dynamic request form (target asset,
+  /// upgrade type, current/requested spec, replacement reason, "other" text).
+  details         Json?
   estimatedCost   Decimal?  @db.Decimal(14, 2)
   currency        String?   @db.Char(3)
   notes           String?
