@@ -30,3 +30,32 @@ export const demoRequestSchema = z.object({
   website: z.literal('').optional(),
 });
 export type DemoRequestInput = z.infer<typeof demoRequestSchema>;
+
+/* v2.18 - notification engine admin (kept here to avoid a new barrel file). */
+export const notificationRuleSchema = z.object({
+  enabled: z.boolean(),
+  notifyPrimary: z.boolean().default(true),
+  recipientRoleKeys: z.array(z.string().max(64)).max(20).default([]),
+  ccRoleKeys: z.array(z.string().max(64)).max(20).default([]),
+  escalationRoleKeys: z.array(z.string().max(64)).max(20).default([]),
+  thresholds: z.array(z.number().int().min(0).max(3650)).max(12).default([]),
+});
+export type NotificationRuleInput = z.infer<typeof notificationRuleSchema>;
+
+export const emailTemplateSchema = z.object({
+  subject: z.string().trim().min(3).max(200),
+  heading: z.string().trim().max(200).optional().nullable(),
+  body: z.string().trim().min(3).max(5000),
+  ctaLabel: z.string().trim().max(60).optional().nullable(),
+  enabled: z.boolean().default(true),
+});
+export type EmailTemplateInput = z.infer<typeof emailTemplateSchema>;
+
+export const emailLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  status: z.enum(['SENT', 'SIMULATED', 'FAILED']).optional(),
+  type: z.string().max(64).optional(),
+  q: z.string().trim().max(200).optional(),
+});
+export type EmailLogQuery = z.infer<typeof emailLogQuerySchema>;

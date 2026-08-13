@@ -708,6 +708,19 @@ export class AssetsService {
       reason,
     });
 
+    if (status === 'LOST') {
+      // v2.18: a missing asset is a high-priority, escalated event.
+      await this.notifications.notifyRoles(actor.companyId, {
+        type: 'ASSET_MISSING',
+        title: `URGENT: asset reported missing - ${before.assetTag}`,
+        body: `${before.name} (${before.assetTag}) has been marked as lost or missing.`,
+        linkPath: `/assets/${id}`,
+        entityType: 'Asset',
+        entityId: id,
+        vars: { 'asset.name': before.name, 'asset.asset_tag': before.assetTag },
+      }, { escalate: true, excludeUserIds: [actor.id] });
+    }
+
     await this.recordConditionLog(id, before, after, reason);
     return this.findOne(actor, id);
   }
@@ -979,6 +992,22 @@ export class AssetsService {
       entityId: id,
       previousValues: { status: asset.status, assignedUserId: asset.assignedUserId },
       newValues: { status: input.resultingStatus, conditionIn: input.conditionIn },
+    });
+
+    // v2.18: role-routed heads-up that stock changed.
+    await this.notifications.notifyRoles(actor.companyId, {
+      type: 'ASSET_RETURNED',
+      title: `Asset returned: ${asset.name}`,
+      body: `${asset.assetTag} was returned and is back in stock.`,
+      linkPath: `/assets/${id}`,
+      entityType: 'Asset',
+      entityId: id,
+      vars: { 'asset.name': asset.name, 'asset.asset_tag': asset.assetTag },
+      emailRows: [
+        ['Asset', asset.name],
+        ['Asset tag', asset.assetTag],
+        ['Returned', new Date().toISOString().slice(0, 10)],
+      ],
     });
 
     return this.findOne(actor, id);
@@ -1267,6 +1296,17 @@ export class AssetsService {
       newValues: { status: 'IN_TRANSIT', toOfficeId: input.toOfficeId },
       reason: input.reason ?? `Dispatched to ${destination.name}`,
     });
+
+    // v2.18: transfers are visible to the configured roles, not just parties.
+    await this.notifications.notifyRoles(actor.companyId, {
+      type: 'ASSET_TRANSFERRED',
+      title: `Asset transfer: ${asset.name}`,
+      body: `${asset.assetTag} is being transferred.`,
+      linkPath: `/assets/${id}`,
+      entityType: 'Asset',
+      entityId: id,
+      vars: { 'asset.name': asset.name, 'asset.asset_tag': asset.assetTag },
+    }, { excludeUserIds: [actor.id] });
 
     return this.findOne(actor, id);
   }

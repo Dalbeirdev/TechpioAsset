@@ -43,6 +43,42 @@ export const NOTIFICATION_CATALOGUE: Readonly<Record<NotificationType, Notificat
     mandatory: false,
     channels: ['IN_APP', 'EMAIL', 'PUSH'],
   },
+  ASSET_RETURNED: {
+    type: 'ASSET_RETURNED',
+    title: 'Asset returned',
+    mandatory: false,
+    channels: ['IN_APP', 'EMAIL'],
+  },
+  ASSET_TRANSFERRED: {
+    type: 'ASSET_TRANSFERRED',
+    title: 'Asset transferred',
+    mandatory: false,
+    channels: ['IN_APP', 'EMAIL'],
+  },
+  ASSET_MISSING: {
+    type: 'ASSET_MISSING',
+    title: 'Asset missing',
+    mandatory: true,
+    channels: ['IN_APP', 'EMAIL', 'PUSH'],
+  },
+  USER_CREATED: {
+    type: 'USER_CREATED',
+    title: 'New employee added',
+    mandatory: false,
+    channels: ['IN_APP', 'EMAIL'],
+  },
+  USER_DEACTIVATED: {
+    type: 'USER_DEACTIVATED',
+    title: 'Employee offboarding',
+    mandatory: false,
+    channels: ['IN_APP', 'EMAIL'],
+  },
+  DAILY_DIGEST: {
+    type: 'DAILY_DIGEST',
+    title: 'Daily summary',
+    mandatory: false,
+    channels: ['EMAIL'],
+  },
   REQUEST_COMMENT: {
     type: 'REQUEST_COMMENT',
     title: 'Reply on a request',

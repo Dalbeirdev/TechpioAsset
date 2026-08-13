@@ -15,6 +15,7 @@ import { TokenService } from '../auth/token.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { MailProvider } from '../providers/mail/mail.provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { StorageProvider } from '../providers/storage/storage.provider.js';
 import { validateUpload } from '../providers/storage/file-validation.js';
 
@@ -33,6 +34,7 @@ export class UsersService {
     private readonly mail: MailProvider,
     private readonly config: AppConfig,
     private readonly storage: StorageProvider,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Scope + filters, ANDed (never spread — see AssetsService.list for why). */
@@ -804,6 +806,25 @@ export class UsersService {
       where: { id },
       data: { deletedAt: new Date(), status: 'DEACTIVATED' },
     });
+
+    // v2.18: offboarding heads-up with the outstanding equipment picture.
+    const outstanding = await this.prisma.client.asset.findMany({
+      where: { companyId: actor.companyId, assignedUserId: id, deletedAt: null },
+      select: { name: true, assetTag: true },
+      take: 20,
+    });
+    await this.notifications.notifyRoles(actor.companyId, {
+      type: 'USER_DEACTIVATED',
+      title: `Employee offboarding: action required`,
+      body:
+        outstanding.length > 0
+          ? `${outstanding.length} asset(s) are still assigned to this person and require return before offboarding can be completed.`
+          : 'No assets remain assigned to this person.',
+      linkPath: `/people/${id}`,
+      entityType: 'User',
+      entityId: id,
+      emailRows: outstanding.map((a) => ['Outstanding', `${a.name} (${a.assetTag})`] as [string, string]),
+    }, { excludeUserIds: [actor.id, id] });
     await this.tokens.revokeAllForUser(id, 'USER_DELETED');
 
     await this.audit.record({

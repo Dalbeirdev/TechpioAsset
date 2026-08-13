@@ -326,6 +326,13 @@ enum NotificationType {
   /// v2.17 - a message posted under a request: requester asking for an update,
   /// or a reviewer replying.
   REQUEST_COMMENT
+  // v2.18 - notification engine events
+  ASSET_RETURNED
+  ASSET_TRANSFERRED
+  ASSET_MISSING
+  USER_CREATED
+  USER_DEACTIVATED
+  DAILY_DIGEST
   SEAT_LIMIT_REACHED
   // v2.5 work orders
   WORK_ORDER_ASSIGNED
@@ -523,6 +530,10 @@ model Company {
   @@index([deletedAt])
   @@map("companies")
   catalogItems CatalogItem[]
+
+  emailTemplates    EmailTemplate[]
+  notificationRules NotificationRule[]
+  emailLogs         EmailLog[]
 
 }
 
@@ -2112,6 +2123,73 @@ model NotificationPreference {
 
 /// Polymorphic file attachment. Storage keys are private; access always goes
 /// through a signed, permission-checked URL.
+/// v2.18 - per-company overrides for notification emails. Absent row = the
+/// code default; subject/body accept {{variable}} placeholders.
+model EmailTemplate {
+  id          String @id @default(cuid())
+  companyId   String
+  type        NotificationType
+  subject     String
+  heading     String?
+  body        String
+  ctaLabel    String?
+  enabled     Boolean  @default(true)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type])
+  @@map("email_templates")
+}
+
+/// v2.18 - who an event reaches beyond its natural recipient: role-based
+/// To/CC, escalation roles, warranty thresholds, and the off switch.
+model NotificationRule {
+  id                 String   @id @default(cuid())
+  companyId          String
+  type               NotificationType
+  enabled            Boolean  @default(true)
+  /// Keep notifying the event's natural recipient (holder, employee, requester).
+  notifyPrimary      Boolean  @default(true)
+  recipientRoleKeys  String[]
+  ccRoleKeys         String[]
+  escalationRoleKeys String[]
+  /// Day marks for threshold events (warranty): e.g. [90,60,30,15,7,1,0].
+  thresholds         Int[]
+  updatedById        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type])
+  @@map("notification_rules")
+}
+
+/// v2.18 - one row per outgoing notification email: who, what, and whether it
+/// left the building. SENT / SIMULATED / FAILED with the provider error kept.
+model EmailLog {
+  id         String   @id @default(cuid())
+  companyId  String
+  type       NotificationType
+  toEmail    String
+  toUserId   String?
+  subject    String
+  status     String
+  error      String?
+  entityType String?
+  entityId   String?
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, status])
+  @@map("email_logs")
+}
+
 model Attachment {
   id        String @id @default(cuid())
   companyId String
