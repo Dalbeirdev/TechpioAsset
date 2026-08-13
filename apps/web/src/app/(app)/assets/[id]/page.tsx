@@ -310,6 +310,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
               label="Warranty ends"
               value={
                 <WarrantyCheck
+                  assetId={id}
                   ends={data.warrantyEndDate}
                   serial={data.serialNumber}
                   identity={[
@@ -318,6 +319,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                     data.model,
                     data.name,
                   ]}
+                  canUpdate={can(PERMISSIONS.ASSETS_UPDATE)}
                 />
               }
             />
@@ -776,19 +778,68 @@ function CreateTicketMenu({ assetTag, assetName }: { assetTag: string; assetName
  * form-based vendors the serial rides the clipboard.
  */
 function WarrantyCheck({
+  assetId,
   ends,
   serial,
   identity,
+  canUpdate,
 }: {
+  assetId: string;
   ends: string | null;
   serial: string | null;
   identity: (string | null | undefined)[];
+  canUpdate: boolean;
 }) {
   const toast = useToast();
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(ends ? ends.slice(0, 10) : '');
   const source = warrantySource(serial, ...identity);
+
+  const save = useMutation({
+    mutationFn: () =>
+      apiFetch(`/assets/${assetId}`, {
+        method: 'PATCH',
+        body: { warrantyEndDate: date || null },
+      }),
+    onSuccess: async () => {
+      toast.success('Warranty date recorded');
+      setEditing(false);
+      await queryClient.invalidateQueries({ queryKey: ['asset', assetId] });
+    },
+    onError: () => toast.error('Could not save the warranty date'),
+  });
+
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <span>{fmtDate(ends)}</span>
+      {editing ? (
+        <span className="inline-flex items-center gap-1.5">
+          <input
+            type="date"
+            aria-label="Warranty end date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="h-7 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-1.5 text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            className="text-xs font-semibold text-[var(--color-brand)]"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="text-xs text-[var(--color-content-subtle)]"
+          >
+            Cancel
+          </button>
+        </span>
+      ) : (
+        <span>{fmtDate(ends)}</span>
+      )}
       {source ? (
         <a
           href={source.url}
@@ -806,6 +857,18 @@ function WarrantyCheck({
           Check with {source.label}
           <ExternalLink aria-hidden="true" className="size-3" />
         </a>
+      ) : null}
+      {/* Record what the vendor said without a trip through the edit form -
+          check, type, saved. */}
+      {canUpdate && !editing ? (
+        <button
+          type="button"
+          aria-label="Record warranty end date"
+          onClick={() => setEditing(true)}
+          className="text-xs font-medium text-[var(--color-content-subtle)] hover:text-[var(--color-brand)]"
+        >
+          <Pencil aria-hidden="true" className="size-3" />
+        </button>
       ) : null}
     </span>
   );
