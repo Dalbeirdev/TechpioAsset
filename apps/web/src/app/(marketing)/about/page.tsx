@@ -1,125 +1,421 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, Compass, HeartHandshake, ShieldCheck, Target } from 'lucide-react';
+import { ArrowRight, Mail } from 'lucide-react';
+import { Reveal } from '@/components/marketing/motion';
+import { AboutContactForm, AssetMap, AssetTree } from '@/components/marketing/about-visuals';
 
 export const metadata: Metadata = {
-  title: 'About — PioAssets',
+  title: { absolute: 'About PioAssets | IT Asset Management Platform' },
   description:
-    'Why PioAssets exists: give IT and operations teams one trustworthy record of every asset they own.',
+    'Discover the story behind PioAssets, an IT asset management platform created by TechPIO Services LLP to bring clarity, accountability and lifecycle visibility to modern IT environments.',
+  openGraph: {
+    title: 'About PioAssets | IT Asset Management Platform',
+    description:
+      'The story, philosophy and people behind PioAssets — IT asset management built on practical operations experience.',
+    url: 'https://pioassets.com/about',
+    siteName: 'PioAssets',
+    type: 'website',
+  },
+  alternates: { canonical: 'https://pioassets.com/about' },
 };
 
-const VALUES = [
+/**
+ * About page (2026-08 redesign). Deliberately editorial where the homepage is
+ * product marketing: story, belief, origin, direction. Few cards, oversized
+ * type, asymmetric columns, and one recurring visual idea - an asset as a
+ * record with meaning around it.
+ */
+
+const PHILOSOPHY = [
   {
-    Icon: Target,
-    title: 'One source of truth',
-    body: 'Scattered spreadsheets and memory don’t scale. Every asset, person, and cost lives in one place that stays current.',
+    n: '01',
+    title: 'Information should be clear',
+    body: 'Important operational information should not require unnecessary effort to find or interpret. If answering "who has this laptop?" takes ten minutes, the system has already failed.',
   },
   {
-    Icon: ShieldCheck,
-    title: 'Trust by design',
-    body: 'Roles decide who sees what, prices are recorded once and locked, and every sensitive action is written to an audit log that can’t be edited.',
+    n: '02',
+    title: 'Every asset has context',
+    body: 'A record becomes valuable when it connects the device to its owner, location, history and lifecycle. A serial number alone tells you almost nothing worth knowing.',
   },
   {
-    Icon: Compass,
-    title: 'Built for the daily job',
-    body: 'The workflows match how IT and operations actually work — assign, transfer, repair, retire — rather than forcing a new process on you.',
+    n: '03',
+    title: 'Visibility should lead to action',
+    body: 'Good asset information exists to drive decisions — what to renew, what to replace, what to investigate. Data that never changes a decision is just storage.',
   },
   {
-    Icon: HeartHandshake,
-    title: 'Yours to grow into',
-    body: 'Start with the register you have today and add approvals, maintenance, and reporting as your team grows.',
+    n: '04',
+    title: 'Technology should reduce administrative work',
+    body: 'Software should absorb the repetitive parts of asset management, not add a second job on top of it. Every workflow we build is measured against that.',
+  },
+  {
+    n: '05',
+    title: 'Products should grow with their users',
+    body: 'PioAssets evolves alongside the needs of the teams who run it. What operators struggle with this month shapes what we build next.',
   },
 ];
+
+const MINDSET = [
+  ['Clarity', 'Complexity', 'Interfaces should make information easier to understand, not demonstrate how much of it exists.'],
+  ['Context', 'Data', 'Records should explain the asset — its owner, history and obligations — not just list fields.'],
+  ['Action', 'Administration', 'The product should surface what needs attention, so teams spend time deciding rather than searching.'],
+  ['Consistency', 'Guesswork', 'One centralized record should end the era of three spreadsheets disagreeing with each other.'],
+  ['Progress', 'Perfection', 'The platform improves continuously against real operational needs, not a theoretical ideal.'],
+] as const;
+
+const DIRECTION = [
+  ['Now', 'A dependable asset record', 'Ownership, lifecycle, warranty, maintenance and audit history in one structured environment.'],
+  ['Next', 'Deeper automation', 'More vendor integrations and automatic enrichment, so records maintain themselves where possible.'],
+  ['Ahead', 'Decision support', 'Smarter replacement forecasting, spend intelligence and proactive alerts that arrive before problems do.'],
+] as const;
 
 export default function AboutPage() {
   return (
     <>
-      <section className="border-b border-[var(--color-border)]">
-        <div className="mx-auto max-w-6xl px-5 py-20 sm:py-24">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-brand)]">
-            About us
-          </p>
-          <h1 className="mt-3 max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">
-            We help teams know exactly what they own.
-          </h1>
-          <p className="mt-5 max-w-2xl text-lg text-[var(--color-content-muted)]">
-            PioAssets was built by TechPio Services LLP for a simple reason: most growing
-            organisations lose track of their equipment. Laptops move between people, warranties
-            lapse, and no one can say what anything cost. We set out to fix that with one clear,
-            trustworthy register — not another spreadsheet.
-          </p>
-        </div>
-      </section>
-
-      {/* Mission */}
-      <section className="mx-auto max-w-6xl px-5 py-20">
-        <div className="grid gap-10 md:grid-cols-2 md:gap-16">
+      {/* ── 1 · HERO ──────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden border-b border-[var(--color-border)]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(38rem 24rem at 92% 8%, color-mix(in srgb, var(--color-brand) 9%, transparent), transparent 62%)',
+          }}
+        />
+        <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-5 py-20 sm:py-24 lg:grid-cols-[1.05fr_0.95fr] lg:py-28">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Our mission</h2>
-            <p className="mt-4 text-[var(--color-content-muted)]">
-              Give every IT and operations team the confidence that comes from a single, accurate
-              record: who holds each asset, what condition it’s in, what it cost, and when it needs
-              attention.
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+              About PioAssets
             </p>
-            <p className="mt-4 text-[var(--color-content-muted)]">
-              That confidence turns into real outcomes — less equipment lost, warranties claimed on
-              time, cleaner audits, and finance numbers everyone believes.
+            <h1 className="mt-6 text-4xl font-bold leading-[1.06] tracking-tight text-balance sm:text-5xl lg:text-[3.6rem]">
+              Built around a simple belief: IT should be easier to{' '}
+              <span className="text-[var(--color-brand)]">account for.</span>
+            </h1>
+            <p className="mt-7 max-w-xl text-lg leading-relaxed text-[var(--color-content-muted)]">
+              PioAssets was created with a straightforward idea: businesses should be able to trust
+              the information they have about their technology.
             </p>
-          </div>
-          <div className="grid gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-8">
-            <Stat value="Purchase → retirement" label="Full lifecycle tracked for every asset" />
-            <Stat value="Role-based" label="Who sees cost and who can approve is enforced" />
-            <Stat value="Append-only" label="Audit trail that can never be rewritten" />
-          </div>
-        </div>
-      </section>
-
-      {/* Values */}
-      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
-        <div className="mx-auto max-w-6xl px-5 py-20">
-          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">What we value</h2>
-          <div className="mt-10 grid gap-5 sm:grid-cols-2">
-            {VALUES.map(({ Icon, title, body }) => (
-              <div
-                key={title}
-                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6"
+            <p className="mt-4 max-w-xl leading-relaxed text-[var(--color-content-muted)]">
+              As IT environments grow, knowing what exists, where it is, who is responsible for it
+              and what happens to it over time becomes increasingly important.
+            </p>
+            <div className="mt-9 flex flex-wrap items-center gap-4">
+              <Link
+                href="/"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-brand)] px-6 text-sm font-semibold text-[var(--color-brand-contrast)] transition-colors hover:bg-[var(--color-brand-hover)]"
               >
-                <span className="grid size-10 place-items-center rounded-xl bg-[var(--color-surface-sunken)] text-[var(--color-brand)]">
-                  <Icon aria-hidden="true" className="size-5" />
-                </span>
-                <h3 className="mt-4 text-[15px] font-semibold">{title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-[var(--color-content-muted)]">
-                  {body}
-                </p>
-              </div>
-            ))}
+                Meet the Product <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+              <Link
+                href="#conversation"
+                className="text-sm font-semibold text-[var(--color-content-muted)] underline-offset-4 transition-colors hover:text-[var(--color-brand)] hover:underline"
+              >
+                Talk to Us
+              </Link>
+            </div>
           </div>
+          <Reveal>
+            <AssetMap />
+          </Reveal>
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-5 py-20 text-center">
-        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Want to see it in action?
-        </h2>
-        <p className="mx-auto mt-3 max-w-xl text-[var(--color-content-muted)]">
-          We’re happy to walk your team through it and help you bring your register across.
-        </p>
-        <Link
-          href="/contact"
-          className="mt-7 inline-flex h-11 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-5 text-sm font-semibold text-[var(--color-brand-contrast)] hover:bg-[var(--color-brand-hover)]"
-        >
-          Get in touch <ArrowRight aria-hidden="true" className="size-4" />
-        </Link>
+      {/* ── 2 · OUR STORY ─────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-5 py-24">
+        <Reveal>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+            Our story
+          </p>
+          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Why we started PioAssets</h2>
+        </Reveal>
+        <div className="mt-12 grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:gap-20">
+          <Reveal delay={100}>
+            <p className="text-3xl font-bold leading-snug tracking-tight text-balance sm:text-4xl">
+              The challenge was never just tracking devices.{' '}
+              <span className="text-[var(--color-brand)]">It was understanding them.</span>
+            </p>
+          </Reveal>
+          <Reveal delay={200}>
+            <div className="border-l-2 border-[var(--color-brand)]/25 pl-8 text-[17px] leading-relaxed text-[var(--color-content-muted)]">
+              <p>
+                Managing technology is rarely difficult because of the devices themselves. The
+                difficulty is keeping the information around them accurate.
+              </p>
+              <p className="mt-5">
+                Over time, that information drifts apart — a purchase in one file, a repair in an
+                email thread, an owner in someone&apos;s memory. Each gap is small. Together, they
+                are why equipment goes missing, warranties lapse quietly, and budgets get built on
+                guesses.
+              </p>
+              <p className="mt-5">
+                PioAssets was created to bring that information into one structured environment: a
+                record a business can act on, not just a list it maintains.
+              </p>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── 3 · THE IDEA ──────────────────────────────────────────────── */}
+      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-24 lg:grid-cols-2 lg:gap-16">
+          <Reveal>
+            <div className="max-w-md">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+                The idea
+              </p>
+              <h2 className="mt-4 text-2xl font-bold tracking-tight text-balance sm:text-3xl">
+                An asset carries more information than its serial number.
+              </h2>
+              <p className="mt-5 leading-relaxed text-[var(--color-content-muted)]">
+                A laptop on a desk is also a responsibility, a cost, a service history and a
+                decision waiting to be made. PioAssets treats each of those as part of the same
+                record — because separately, none of them tells the whole story.
+              </p>
+            </div>
+          </Reveal>
+          <Reveal delay={150}>
+            <AssetTree />
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── 4 · PHILOSOPHY ────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-4xl px-5 py-24">
+        <Reveal>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+            Our philosophy
+          </p>
+          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">What we believe</h2>
+        </Reveal>
+        <div className="mt-6">
+          {PHILOSOPHY.map((p, i) => (
+            <Reveal key={p.n} delay={i * 60}>
+              <div className="grid gap-4 border-b border-[var(--color-border)] py-10 sm:grid-cols-[110px_1fr] sm:gap-8">
+                <span aria-hidden="true" className="text-5xl font-bold tracking-tight text-[var(--color-brand)]/25 sm:text-6xl">
+                  {p.n}
+                </span>
+                <div>
+                  <h3 className="text-xl font-semibold tracking-tight">{p.title}</h3>
+                  <p className="mt-2.5 max-w-2xl leading-relaxed text-[var(--color-content-muted)]">{p.body}</p>
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ── 5 · APPROACH ──────────────────────────────────────────────── */}
+      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
+        <div className="mx-auto max-w-6xl px-5 py-24">
+          <Reveal className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+              Our approach
+            </p>
+            <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Practical by design</h2>
+            <p className="mt-5 leading-relaxed text-[var(--color-content-muted)]">
+              PioAssets is designed around practical IT operations rather than theory. The platform
+              focuses on the information and workflows teams encounter every day — ownership,
+              location, lifecycle events, maintenance, warranty, cost and accountability — without
+              turning asset management into another complicated administrative system.
+            </p>
+          </Reveal>
+          <Reveal delay={150}>
+            <ol className="mt-14 grid gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+              {['Real IT environment', 'Structured information', 'Better visibility', 'Better decisions'].map((step, i) => (
+                <li key={step} className="relative pr-8">
+                  {i < 3 ? (
+                    <ArrowRight aria-hidden="true" className="absolute right-2 top-1 hidden size-5 text-[var(--color-brand)]/50 lg:block" />
+                  ) : null}
+                  <p className="font-mono text-xs text-[var(--color-content-subtle)]">{String(i + 1).padStart(2, '0')}</p>
+                  <p className="mt-2 text-lg font-semibold tracking-tight">{step}</p>
+                </li>
+              ))}
+            </ol>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── 6 · WHAT WE ARE BUILDING ──────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-5 py-24">
+        <Reveal className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+            What we are building
+          </p>
+          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">More than an inventory</h2>
+          <p className="mt-5 leading-relaxed text-[var(--color-content-muted)]">
+            An inventory tells you what you have. A well-managed asset environment helps you
+            understand what those assets mean to the business — what they cost, what they need, and
+            what should happen to them next. That is the direction PioAssets is heading.
+          </p>
+        </Reveal>
+        <div className="relative mt-14">
+          <div aria-hidden="true" className="absolute left-2 top-3 bottom-3 w-px bg-[var(--color-border-strong)] md:left-0 md:right-0 md:top-2.5 md:bottom-auto md:h-px md:w-auto" />
+          <ol className="grid gap-10 md:grid-cols-3 md:gap-8">
+            {DIRECTION.map(([era, title, body], i) => (
+              <Reveal key={era} delay={i * 120}>
+                <li className="relative pl-8 md:pl-0 md:pt-8">
+                  <span aria-hidden="true" className="absolute left-0 top-1 size-4 rounded-full border-2 border-[var(--color-brand)] bg-[var(--color-background)] md:left-0 md:top-0" />
+                  <p className="font-mono text-xs font-semibold uppercase tracking-widest text-[var(--color-brand)]">{era}</p>
+                  <h3 className="mt-2 text-lg font-semibold tracking-tight">{title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--color-content-muted)]">{body}</p>
+                </li>
+              </Reveal>
+            ))}
+          </ol>
+        </div>
+        <Reveal delay={200}>
+          <p className="mt-10 max-w-2xl text-sm text-[var(--color-content-subtle)]">
+            Direction, not promises: items beyond &ldquo;Now&rdquo; describe where development is
+            headed, shaped by the teams already using the platform.
+          </p>
+        </Reveal>
+      </section>
+
+      {/* ── 7 · TECHPIO ───────────────────────────────────────────────── */}
+      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
+        <div className="mx-auto grid max-w-6xl gap-12 px-5 py-24 lg:grid-cols-[1.1fr_0.9fr] lg:gap-20">
+          <Reveal>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+              The company
+            </p>
+            <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
+              Created by TechPIO Services LLP
+            </h2>
+            <p className="mt-5 leading-relaxed text-[var(--color-content-muted)]">
+              PioAssets is created by TechPIO Services LLP, a technology company focused on
+              practical IT services, infrastructure and operational solutions.
+            </p>
+            <p className="mt-4 leading-relaxed text-[var(--color-content-muted)]">
+              Years of running real IT environments shaped how we think about asset management:
+              systems should be useful, understandable and designed around the people who operate
+              them — because we are those people too.
+            </p>
+          </Reveal>
+          <Reveal delay={150}>
+            <div className="border-l-2 border-[var(--color-brand)]/25 pl-8">
+              <p className="font-semibold">TechPIO Services LLP</p>
+              <p className="mt-1 text-sm text-[var(--color-content-subtle)]">Powered by IT experience</p>
+              <ul className="mt-5 grid gap-2 text-sm text-[var(--color-content-muted)]">
+                {['Managed IT Services', 'IT Infrastructure', 'Network Management', 'Cybersecurity', 'RMM & Automation', 'Microsoft 365', 'Technical Operations'].map((s) => (
+                  <li key={s} className="flex items-center gap-2.5">
+                    <span aria-hidden="true" className="size-1 rounded-full bg-[var(--color-brand)]" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── 8 · PRODUCT MINDSET ───────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-5 py-24">
+        <Reveal className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+            Product mindset
+          </p>
+          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Built with operators in mind</h2>
+        </Reveal>
+        <dl className="mt-12 grid gap-x-12 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+          {MINDSET.map(([over, under, body], i) => (
+            <Reveal key={over} delay={(i % 3) * 90}>
+              <div className="border-t-2 border-[var(--color-brand)]/30 pt-4">
+                <dt className="text-lg font-bold tracking-tight">
+                  {over} <span className="font-normal text-[var(--color-content-subtle)]">over</span> {under}
+                </dt>
+                <dd className="mt-2 text-sm leading-relaxed text-[var(--color-content-muted)]">{body}</dd>
+              </div>
+            </Reveal>
+          ))}
+        </dl>
+      </section>
+
+      {/* ── 9 · WHO FOR + 10 · TRUST ──────────────────────────────────── */}
+      <section className="border-y border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
+        <div className="mx-auto max-w-4xl px-5 py-24 text-center">
+          <Reveal>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+              Who it&apos;s for
+            </p>
+            <h2 className="mt-4 text-2xl font-bold tracking-tight text-balance sm:text-3xl">
+              Built for the people behind the technology
+            </h2>
+            <p className="mx-auto mt-5 max-w-2xl leading-relaxed text-[var(--color-content-muted)]">
+              PioAssets is intended for the people responsible for keeping technology organized,
+              available and accountable — IT administrators and MSPs first, and just as much the
+              operations teams, finance teams, business owners and technology leaders who depend on
+              the same answers.
+            </p>
+          </Reveal>
+          <Reveal delay={150}>
+            <div className="mx-auto mt-14 max-w-xl border-t border-[var(--color-border)] pt-12">
+              <h2 className="text-xl font-bold tracking-tight">
+                Trust starts with information you can rely on.
+              </h2>
+              <p className="mt-4 leading-relaxed text-[var(--color-content-muted)]">
+                Asset management is ultimately about confidence — confidence that the information
+                is accurate, accessible and useful when a decision needs to be made.
+              </p>
+              <p className="mt-8 flex flex-wrap items-center justify-center gap-3 font-mono text-sm font-semibold tracking-wide">
+                <span>Information</span>
+                <ArrowRight aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+                <span>Confidence</span>
+                <ArrowRight aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+                <span className="text-[var(--color-brand)]">Control</span>
+              </p>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── 11 · CONVERSATION ─────────────────────────────────────────── */}
+      <section id="conversation" className="mx-auto max-w-6xl scroll-mt-24 px-5 py-24">
+        <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:gap-20">
+          <Reveal>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
+              Get in touch
+            </p>
+            <h2 className="mt-4 text-2xl font-bold tracking-tight text-balance sm:text-3xl">
+              Have an asset management challenge?
+            </h2>
+            <p className="mt-5 leading-relaxed text-[var(--color-content-muted)]">
+              Tell us what you&apos;re trying to improve. We&apos;d like to understand your
+              environment, your process and where PioAssets could fit.
+            </p>
+            <a
+              href="mailto:dalbeir@techpio.com"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-brand)] hover:underline"
+            >
+              <Mail aria-hidden="true" className="size-4" /> dalbeir@techpio.com
+            </a>
+          </Reveal>
+          <Reveal delay={120} className="relative">
+            <AboutContactForm />
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── 12 · FINAL STATEMENT ──────────────────────────────────────── */}
+      <section className="border-t border-[var(--color-border)]">
+        <div className="mx-auto max-w-4xl px-5 py-24 text-center sm:py-28">
+          <Reveal>
+            <p className="text-3xl font-bold leading-tight tracking-tight text-balance sm:text-5xl">
+              Know what you own.
+              <br />
+              <span className="text-[var(--color-brand)]">Understand what happens next.</span>
+            </p>
+            <p className="mt-6 text-sm text-[var(--color-content-subtle)]">
+              PioAssets — IT Asset Management by TechPIO Services LLP
+            </p>
+            <Link
+              href="/"
+              className="mt-9 inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-brand)] px-7 text-sm font-semibold text-[var(--color-brand-contrast)] transition-colors hover:bg-[var(--color-brand-hover)]"
+            >
+              Explore PioAssets <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          </Reveal>
+        </div>
       </section>
     </>
-  );
-}
-
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="border-l-2 border-[var(--color-brand)] pl-4">
-      <p className="text-lg font-semibold tracking-tight">{value}</p>
-      <p className="text-sm text-[var(--color-content-muted)]">{label}</p>
-    </div>
   );
 }
