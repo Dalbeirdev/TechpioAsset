@@ -171,7 +171,7 @@ export default function AssetReceiptPage({ params }: { params: Promise<{ id: str
       ) : null}
 
       <p className="mt-10 border-t border-neutral-300 pt-2 text-xs text-neutral-500">
-        Generated from piotask.com — {data.assetTag}
+        Generated from pioassets.com — {data.assetTag}
         {open ? `, issued ${new Date(open.assignedAt).toLocaleDateString()}` : ''}. In-app receipt
         confirmation is recorded in the audit log independently of this paper copy.
       </p>

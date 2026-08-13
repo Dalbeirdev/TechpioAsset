@@ -197,7 +197,7 @@ export default function RequestPrintPage({ params }: { params: Promise<{ id: str
       ) : null}
 
       <p className="mt-8 border-t border-neutral-300 pt-2 text-xs text-neutral-500">
-        Generated from piotask.com — request {data.requestNumber}. Figures reflect what the
+        Generated from pioassets.com — request {data.requestNumber}. Figures reflect what the
         generating user is authorised to see.
       </p>
     </div>
