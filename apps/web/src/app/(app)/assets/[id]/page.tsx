@@ -4,7 +4,7 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck, ExternalLink, TicketPlus, ChevronDown, Printer, Lock, Pencil } from 'lucide-react';
+import { ShieldCheck, ExternalLink, TicketPlus, ChevronDown, Printer, Lock, Pencil, Sparkles } from 'lucide-react';
 import {
   ASSET_STATUS_TOKENS,
   CONDITION_TOKENS,
@@ -794,6 +794,8 @@ function WarrantyCheck({
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState(ends ? ends.slice(0, 10) : '');
+  const [pasted, setPasted] = useState('');
+  const [aiNote, setAiNote] = useState<string | null>(null);
   const source = warrantySource(serial, ...identity);
 
   const save = useMutation({
@@ -808,6 +810,50 @@ function WarrantyCheck({
       await queryClient.invalidateQueries({ queryKey: ['asset', assetId] });
     },
     onError: () => toast.error('Could not save the warranty date'),
+  });
+
+  // Whether AI paste-and-extract is switched on for this user; asked only once
+  // the editor opens, so the read view costs nothing.
+  const aiGate = useQuery({
+    queryKey: ['ai-gate', 'WARRANTY_EXTRACTION'],
+    queryFn: () =>
+      apiFetch<{ enabled: boolean; simulated: boolean }>('/ai-config/gate/WARRANTY_EXTRACTION'),
+    enabled: editing && canUpdate,
+    staleTime: 60_000,
+  });
+
+  const extract = useMutation({
+    mutationFn: () =>
+      apiFetch<{
+        warrantyEndDate: string | null;
+        warrantyType: string | null;
+        serialSeen: boolean;
+        simulated: boolean;
+      }>(`/assets/${assetId}/warranty-extract`, { method: 'POST', body: { text: pasted } }),
+    onSuccess: (r) => {
+      if (!r.warrantyEndDate) {
+        setAiNote(null);
+        toast.error('No warranty end date found in the pasted text');
+        return;
+      }
+      setDate(r.warrantyEndDate);
+      setAiNote(
+        [
+          `Found ${fmtDate(r.warrantyEndDate)}`,
+          r.warrantyType ? `— ${r.warrantyType}` : null,
+          r.simulated ? '(simulated — add a real AI key under Platform → AI provider)' : null,
+          !r.serialSeen && serial
+            ? '· the pasted text does not mention this serial — check it is the right device'
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      );
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Extraction failed',
+      ),
   });
 
   return (
@@ -840,6 +886,31 @@ function WarrantyCheck({
       ) : (
         <span>{fmtDate(ends)}</span>
       )}
+      {editing && aiGate.data?.enabled ? (
+        <span className="mt-1 grid w-full basis-full gap-1.5">
+          <textarea
+            rows={3}
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            placeholder={`Copy the ${source?.label ?? 'vendor'} warranty page (Ctrl+A, Ctrl+C) and paste it here`}
+            className="w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 py-1.5 text-xs"
+          />
+          <span className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => extract.mutate()}
+              disabled={extract.isPending || pasted.trim().length < 20}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)] disabled:opacity-50"
+            >
+              <Sparkles aria-hidden="true" className="size-3" />
+              {extract.isPending ? 'Reading…' : 'Find date with AI'}
+            </button>
+            {aiNote ? (
+              <span className="text-xs text-[var(--color-content-muted)]">{aiNote}</span>
+            ) : null}
+          </span>
+        </span>
+      ) : null}
       {source ? (
         <a
           href={source.url}

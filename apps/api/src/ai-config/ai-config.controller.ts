@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { updateAiConfigSchema, type AuthUser } from '@techpioasset/contracts';
 import { AI_FEATURES, AI_FEATURE_MODES } from '@techpioasset/domain';
 import { PERMISSIONS } from '@techpioasset/domain';
+import { AppError } from '../common/errors/app-error.js';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AiConfigService } from './ai-config.service.js';
@@ -31,6 +32,31 @@ export class AiConfigController {
       config: { ...config, providerName: effective.provider },
       availableFeatures: AI_FEATURES,
       availableModes: AI_FEATURE_MODES,
+    };
+  }
+
+  @Get('gate/:feature')
+  @ApiOperation({
+    summary: 'Whether one AI feature is available to the current user',
+    description:
+      'Open to any authenticated user - the UI asks this before showing an AI ' +
+      'control, so the answer must not need the configure permission.',
+  })
+  async gateFor(@CurrentUser() actor: AuthUser, @Param('feature') feature: string) {
+    if (!AI_FEATURES.includes(feature as (typeof AI_FEATURES)[number])) {
+      throw AppError.notFound('AI feature');
+    }
+    const gate = await this.aiConfig.gate(actor.companyId, feature as (typeof AI_FEATURES)[number], {
+      officeId: actor.officeId,
+      roleKeys: actor.roles,
+    });
+    const effective = await this.ai.effective();
+    return {
+      enabled: gate.enabled,
+      reason: gate.reason ?? null,
+      requiresHumanReview: gate.requiresHumanReview,
+      provider: effective.provider,
+      simulated: effective.provider === 'mock',
     };
   }
 
