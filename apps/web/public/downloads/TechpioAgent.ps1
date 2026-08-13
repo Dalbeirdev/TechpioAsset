@@ -19,7 +19,7 @@
     exactly what leaves the machine before trusting it.
 
 .PARAMETER PortalUrl
-    Base URL of the API, e.g. https://piotask.com/api/v1
+    Base URL of the API, e.g. https://pioassets.com/api/v1
 
 .PARAMETER EnrolmentToken
     The company enrolment token from Discovery -> Agents. Needed only on the
@@ -29,7 +29,7 @@
     Registers a daily scheduled task that runs this script as SYSTEM.
 
 .EXAMPLE
-    .\TechpioAgent.ps1 -PortalUrl https://piotask.com/api/v1 -EnrolmentToken tae_xxx -Install
+    .\TechpioAgent.ps1 -PortalUrl https://pioassets.com/api/v1 -EnrolmentToken tae_xxx -Install
 
 .NOTES
     Requires Windows PowerShell 5.1+ (present on every supported Windows) or

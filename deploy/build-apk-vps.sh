@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Build the Android APK on the VPS (no Expo/EAS), then publish it for download at
-# https://piotask.com/downloads/techpioasset.apk.
+# https://pioassets.com/downloads/techpioasset.apk.
 #
 # Prerequisites (one-time, already installed on this server — see /opt/android-setup.sh):
 #   - JDK 17, Node 22 in /opt/node22, pnpm, Android SDK in /opt/android-sdk
@@ -14,7 +14,7 @@ set -euo pipefail
 source /opt/android-build.env
 APP_DIR="${APP_DIR:-/opt/techpioasset}"
 PUBLISH_TO="${PUBLISH_TO:-/var/www/piotask-downloads/techpioasset.apk}"
-API_URL="${EXPO_PUBLIC_API_URL:-https://piotask.com}"
+API_URL="${EXPO_PUBLIC_API_URL:-https://pioassets.com}"
 
 cd "$APP_DIR"
 echo "[1/4] install workspace deps + build mobile's workspace packages"

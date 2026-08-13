@@ -61,7 +61,7 @@ The portal serves the script itself, so nothing needs copying by hand — this
 single line downloads it and installs it, from any directory:
 
 ```powershell
-iwr -useb https://piotask.com/downloads/TechpioAgent.ps1 -OutFile $env:TEMP\TechpioAgent.ps1; powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\TechpioAgent.ps1 -PortalUrl https://piotask.com/api/v1 -EnrolmentToken tae_your_token_here -Install
+iwr -useb https://pioassets.com/downloads/TechpioAgent.ps1 -OutFile $env:TEMP\TechpioAgent.ps1; powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\TechpioAgent.ps1 -PortalUrl https://pioassets.com/api/v1 -EnrolmentToken tae_your_token_here -Install
 ```
 
 The `-ExecutionPolicy Bypass` matters: Windows' default policy refuses
@@ -71,7 +71,7 @@ the direct form works too:
 
 ```powershell
 .\TechpioAgent.ps1 `
-    -PortalUrl https://piotask.com/api/v1 `
+    -PortalUrl https://pioassets.com/api/v1 `
     -EnrolmentToken tae_your_token_here `
     -Install
 ```
