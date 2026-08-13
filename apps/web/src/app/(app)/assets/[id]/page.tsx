@@ -4,7 +4,7 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck, ExternalLink, TicketPlus, ChevronDown, Printer, Lock, Pencil, Sparkles } from 'lucide-react';
+import { ShieldCheck, ExternalLink, TicketPlus, ChevronDown, Printer, Lock, Pencil, RefreshCw, Sparkles } from 'lucide-react';
 import {
   ASSET_STATUS_TOKENS,
   CONDITION_TOKENS,
@@ -812,6 +812,32 @@ function WarrantyCheck({
     onError: () => toast.error('Could not save the warranty date'),
   });
 
+  // Lenovo answers serial lookups directly - one click, no copying anything.
+  const vendorRefresh = useMutation({
+    mutationFn: () =>
+      apiFetch<{
+        warrantyEndDate: string | null;
+        warrantyName: string | null;
+        status: string | null;
+        applied: boolean;
+      }>(`/assets/${assetId}/warranty-refresh`, { method: 'POST', body: {} }),
+    onSuccess: async (r) => {
+      if (!r.warrantyEndDate) {
+        toast.error('Lenovo returned no coverage end date for this serial');
+        return;
+      }
+      toast.success(
+        `Lenovo: ${r.warrantyName ?? 'warranty'} ends ${fmtDate(r.warrantyEndDate)}${
+          r.status ? ` — ${r.status}` : ''
+        }`,
+      );
+      setEditing(false);
+      await queryClient.invalidateQueries({ queryKey: ['asset', assetId] });
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Lookup failed'),
+  });
+
   // Whether AI paste-and-extract is switched on for this user; asked only once
   // the editor opens, so the read view costs nothing.
   const aiGate = useQuery({
@@ -942,6 +968,20 @@ function WarrantyCheck({
             ) : null}
           </span>
         </span>
+      ) : null}
+      {canUpdate && source?.vendor === 'lenovo' && serial ? (
+        <button
+          type="button"
+          onClick={() => vendorRefresh.mutate()}
+          disabled={vendorRefresh.isPending}
+          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)] disabled:opacity-50"
+        >
+          <RefreshCw
+            aria-hidden="true"
+            className={vendorRefresh.isPending ? 'size-3 animate-spin' : 'size-3'}
+          />
+          {vendorRefresh.isPending ? 'Asking Lenovo…' : 'Update from Lenovo'}
+        </button>
       ) : null}
       {source ? (
         <a

@@ -9,6 +9,7 @@ import { AppError } from '../common/errors/app-error.js';
 import { tenantFilter } from '../common/scope.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AlertSweepService } from './alert-sweep.service.js';
+import { LenovoWarrantyService } from '../assets/lenovo-warranty.service.js';
 import { ReportRunnerService } from './report-runner.service.js';
 import { nextCronRun } from './cron.js';
 
@@ -21,6 +22,7 @@ export class ScheduledController {
     private readonly prisma: PrismaService,
     private readonly sweep: AlertSweepService,
     private readonly runner: ReportRunnerService,
+    private readonly lenovoWarranty: LenovoWarrantyService,
   ) {}
 
   @Get('reports')
@@ -140,5 +142,18 @@ export class ScheduledController {
       // v2.9 C4: lots going off, split from lots already gone.
       expiryAlerts: expiry,
     };
+  }
+
+  @Post('warranty-refresh/run')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Refresh warranty dates from Lenovo for the whole fleet now',
+    description:
+      'Runs the zero-touch Lenovo warranty sweep that also runs nightly. ' +
+      'Returns how many devices were checked, updated and failed.',
+  })
+  runWarrantyRefresh() {
+    return this.lenovoWarranty.sweep();
   }
 }

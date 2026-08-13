@@ -13,6 +13,7 @@ import { AuditAction, Prisma } from '@prisma/client';
 import { AppConfig } from '../config/config.module.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AssetHealthService } from '../asset-health/asset-health.service.js';
+import { LenovoWarrantyService } from '../assets/lenovo-warranty.service.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -58,6 +59,7 @@ export class AlertSweepService implements OnModuleInit {
     private readonly maintenance: MaintenanceService,
     private readonly assetHealth: AssetHealthService,
     private readonly tokens: TokenService,
+    private readonly lenovoWarranty: LenovoWarrantyService,
   ) {}
 
   onModuleInit(): void {
@@ -79,6 +81,9 @@ export class AlertSweepService implements OnModuleInit {
       void this.runDiscoveryStalenessSweep();
       void this.runReceiptSweep();
       void this.runReturnOverdueSweep();
+      // Zero-touch warranty refresh: Lenovo answers serial lookups directly,
+      // so those dates never need a human. Summary is logged by the service.
+      void this.lenovoWarranty.sweep();
       // Retention: delete refresh tokens that have been dead for over a week.
       // Nothing ever removed them before, so the table only grew.
       void this.tokens.purgeDeadTokens();
