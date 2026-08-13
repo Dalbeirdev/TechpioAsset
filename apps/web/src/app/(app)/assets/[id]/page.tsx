@@ -823,13 +823,13 @@ function WarrantyCheck({
   });
 
   const extract = useMutation({
-    mutationFn: () =>
+    mutationFn: (text: string) =>
       apiFetch<{
         warrantyEndDate: string | null;
         warrantyType: string | null;
         serialSeen: boolean;
         simulated: boolean;
-      }>(`/assets/${assetId}/warranty-extract`, { method: 'POST', body: { text: pasted } }),
+      }>(`/assets/${assetId}/warranty-extract`, { method: 'POST', body: { text } }),
     onSuccess: (r) => {
       if (!r.warrantyEndDate) {
         setAiNote(null);
@@ -892,18 +892,50 @@ function WarrantyCheck({
             rows={3}
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
-            placeholder={`Copy the ${source?.label ?? 'vendor'} warranty page (Ctrl+A, Ctrl+C) and paste it here`}
+            onPaste={(e) => {
+              // Pasting IS the intent - run the extraction immediately rather
+              // than making the paste and the button two separate ideas.
+              const text = e.clipboardData.getData('text/plain');
+              if (text.trim().length >= 20 && !extract.isPending) {
+                setPasted(text);
+                extract.mutate(text);
+              }
+            }}
+            placeholder={`Copy the ${source?.label ?? 'vendor'} warranty page (Ctrl+A, Ctrl+C), come back and click the button`}
             className="w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 py-1.5 text-xs"
           />
           <span className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => extract.mutate()}
-              disabled={extract.isPending || pasted.trim().length < 20}
+              onClick={async () => {
+                if (pasted.trim().length >= 20) {
+                  extract.mutate(pasted);
+                  return;
+                }
+                // One-click path: read what they copied on the vendor page.
+                try {
+                  const text = await navigator.clipboard.readText();
+                  if (text.trim().length >= 20) {
+                    setPasted(text);
+                    extract.mutate(text);
+                  } else {
+                    toast.error(
+                      `Copy the ${source?.label ?? 'vendor'} page first (Ctrl+A, Ctrl+C), then click this`,
+                    );
+                  }
+                } catch {
+                  toast.error('Clipboard is blocked — click in the box and press Ctrl+V instead');
+                }
+              }}
+              disabled={extract.isPending}
               className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)] disabled:opacity-50"
             >
               <Sparkles aria-hidden="true" className="size-3" />
-              {extract.isPending ? 'Reading…' : 'Find date with AI'}
+              {extract.isPending
+                ? 'Reading…'
+                : pasted.trim().length >= 20
+                  ? 'Find date with AI'
+                  : 'Paste & find date'}
             </button>
             {aiNote ? (
               <span className="text-xs text-[var(--color-content-muted)]">{aiNote}</span>
