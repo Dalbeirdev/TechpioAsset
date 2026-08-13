@@ -58,8 +58,30 @@ export class LenovoWarrantyService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Asks Lenovo about one serial. Throws on transport trouble or unknown serial. */
+  /**
+   * Asks Lenovo about one serial. Agents often report the BIOS identity string
+   * ("1S" + machine type/model + serial) rather than the bare 8-character
+   * serial Lenovo indexes by, so an unknown long "1S…" value gets one retry
+   * with its last 8 characters — verified against this fleet's real devices.
+   */
   async lookup(serial: string): Promise<LenovoWarrantyResult> {
+    try {
+      return await this.lookupOne(serial);
+    } catch (error) {
+      const derived = serial.trim().toUpperCase();
+      if (
+        error instanceof AppError &&
+        error.code === 'NOT_FOUND' &&
+        derived.startsWith('1S') &&
+        derived.length > 10
+      ) {
+        return this.lookupOne(derived.slice(-8));
+      }
+      throw error;
+    }
+  }
+
+  private async lookupOne(serial: string): Promise<LenovoWarrantyResult> {
     let payload: {
       code?: number;
       data?: {
