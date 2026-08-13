@@ -118,7 +118,7 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
           </p>
         </div>
         <Link
-          href={`/people?q=${encodeURIComponent(p.email)}`}
+          href={`/people?q=${encodeURIComponent(p.email)}&manage=1`}
           className="inline-flex h-9 items-center rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
         >
           Manage
