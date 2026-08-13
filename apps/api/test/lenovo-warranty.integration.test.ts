@@ -128,6 +128,35 @@ describe('one-click refresh', () => {
     expect(res.status).toBe(409);
   });
 
+  it('retries a BIOS identity string ("1S…") with its last 8 characters', async () => {
+    const bare = `LW${Math.random().toString(36).slice(2, 8).toUpperCase()}`.slice(0, 8);
+    const biosString = `1S20UCS0YB0V${bare}`;
+    // First call (full string) unknown; second call (bare serial) succeeds.
+    const calls: string[] = [];
+    lenovo.fetchImpl = (async (_url: unknown, init?: RequestInit) => {
+      const sent = (JSON.parse(String(init?.body)) as { serialNumber: string }).serialNumber;
+      calls.push(sent);
+      const payload = sent === bare ? lenovoPayload() : { code: 105, data: null };
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const id = await makeAsset({
+      name: 'ThinkPad with BIOS identity serial',
+      brand: 'Lenovo',
+      serialNumber: biosString,
+    });
+    const res = await api(app)
+      .post(`/api/v1/assets/${id}/warranty-refresh`)
+      .set(auth(s.itAdmin))
+      .send({});
+    expect(res.status).toBe(201);
+    expect(res.body.data.warrantyEndDate).toBe('2026-04-05');
+    expect(calls).toEqual([biosString, bare]);
+  });
+
   it('surfaces an unknown serial as not-found, not as a saved guess', async () => {
     stubFetch({ code: 105, data: null });
     const id = await makeAsset({
