@@ -1,9 +1,22 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
-import { pageQuerySchema, type AuthUser, type PageQuery } from '@techpioasset/contracts';
+import {
+  emailLogQuerySchema,
+  emailTemplateSchema,
+  notificationRuleSchema,
+  pageQuerySchema,
+  type AuthUser,
+  type EmailLogQuery,
+  type EmailTemplateInput,
+  type NotificationRuleInput,
+  type PageQuery,
+} from '@techpioasset/contracts';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
-import { CurrentUser } from '../auth/decorators.js';
+import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
+import { PERMISSIONS } from '@techpioasset/domain';
+import type { NotificationType } from '@prisma/client';
+import { NotificationAdminService } from './notification-admin.service.js';
 import { NotificationsService } from './notifications.service.js';
 
 const preferenceSchema = z.object({
@@ -22,7 +35,85 @@ const listQuerySchema = pageQuerySchema.extend({
 @ApiTags('Notifications')
 @Controller('notifications')
 export class NotificationsController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly admin: NotificationAdminService,
+  ) {}
+
+  // ── admin plane (v2.18) ─────────────────────────────────────────────────
+
+  @Get('admin/rules')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Routing rules for every notification event' })
+  listRules(@CurrentUser() actor: AuthUser) {
+    return this.admin.listRules(actor);
+  }
+
+  @Patch('admin/rules/:type')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Update one event routing rule' })
+  upsertRule(
+    @CurrentUser() actor: AuthUser,
+    @Param('type') type: string,
+    @Body(zodBody(notificationRuleSchema)) body: NotificationRuleInput,
+  ) {
+    return this.admin.upsertRule(actor, type as NotificationType, body);
+  }
+
+  @Get('admin/templates')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Email templates with defaults and overrides' })
+  listTemplates(@CurrentUser() actor: AuthUser) {
+    return this.admin.listTemplates(actor);
+  }
+
+  @Patch('admin/templates/:type')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Save a company email template override' })
+  upsertTemplate(
+    @CurrentUser() actor: AuthUser,
+    @Param('type') type: string,
+    @Body(zodBody(emailTemplateSchema)) body: EmailTemplateInput,
+  ) {
+    return this.admin.upsertTemplate(actor, type as NotificationType, body);
+  }
+
+  @Post('admin/templates/:type/reset')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Reset a template to the built-in default' })
+  resetTemplate(@CurrentUser() actor: AuthUser, @Param('type') type: string) {
+    return this.admin.resetTemplate(actor, type as NotificationType);
+  }
+
+  @Get('admin/templates/:type/preview')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Rendered HTML preview with sample data' })
+  previewTemplate(@CurrentUser() actor: AuthUser, @Param('type') type: string) {
+    return this.admin.preview(actor, type as NotificationType);
+  }
+
+  @Post('admin/templates/:type/test')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @HttpCode(202)
+  @ApiOperation({ summary: "Send the sample email to the caller's own inbox" })
+  testTemplate(@CurrentUser() actor: AuthUser, @Param('type') type: string) {
+    return this.admin.sendTest(actor, type as NotificationType);
+  }
+
+  @Get('admin/email-logs')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Outgoing email log with delivery status' })
+  emailLogs(@CurrentUser() actor: AuthUser, @Query(zodBody(emailLogQuerySchema)) query: EmailLogQuery) {
+    return this.admin.emailLogs(actor, { ...query, type: query.type as NotificationType | undefined });
+  }
+
+  @Get('admin/overview')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Dashboard widget: sent today, failed, warranty alerts' })
+  overview(@CurrentUser() actor: AuthUser) {
+    return this.admin.overview(actor);
+  }
 
   @Get()
   @ApiOperation({

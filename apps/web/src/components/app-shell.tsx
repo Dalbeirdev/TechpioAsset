@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sparkles,
+  BellRing,
   Building2,
   ChevronRight,
   Boxes,
@@ -154,6 +155,12 @@ const NAV_GROUPS: NavGroup[] = [
         permission: PERMISSIONS.INTEGRATIONS_MANAGE,
       },
       { href: '/settings/ai', label: 'AI settings', Icon: Cpu, permission: PERMISSIONS.AI_CONFIGURE },
+      {
+        href: '/settings/notifications',
+        label: 'Notifications',
+        Icon: BellRing,
+        permission: PERMISSIONS.SETTINGS_MANAGE,
+      },
       {
         href: '/settings/organisation',
         label: 'Organisation',

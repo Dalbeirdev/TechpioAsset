@@ -11,8 +11,20 @@ import { MailProvider } from '../providers/mail/mail.provider.js';
 import { PushProvider } from '../providers/push/push.provider.js';
 import { QueueProvider } from '../providers/queue/queue.provider.js';
 import { NOTIFICATION_CATALOGUE, isMandatory } from './notification-catalogue.js';
+import { interpolate, renderBrandedEmail } from './email-layout.js';
+import { DEFAULT_EMAIL_TEMPLATES } from './email-template-defaults.js';
 
-export const SEND_NOTIFICATION_JOB = 'notification.send';
+export /** Fallback audiences until an admin stores a rule. Keys are system roles. */
+const DEFAULT_RULE_ROLES: Partial<Record<NotificationType, string[]>> = {
+  USER_CREATED: ['HR', 'IT_ADMIN'],
+  USER_DEACTIVATED: ['HR', 'IT_ADMIN'],
+  ASSET_RETURNED: ['IT_ADMIN'],
+  ASSET_TRANSFERRED: ['IT_ADMIN'],
+  ASSET_MISSING: ['IT_ADMIN', 'SUPER_ADMIN'],
+  // DAILY_DIGEST is deliberately opt-in: no audience until configured.
+};
+
+const SEND_NOTIFICATION_JOB = 'notification.send';
 export const SEND_PUSH_JOB = 'notification.push';
 export const SEND_CHAT_JOB = 'notification.chat';
 
@@ -46,10 +58,24 @@ export interface NotifyInput {
   linkPath?: string;
   entityType?: string;
   entityId?: string;
+  /** Template variables ({{asset.name}} etc.) for the email rendering. */
+  vars?: Record<string, string>;
+  /** Extra key-value rows for the email's information card. */
+  emailRows?: [string, string][];
+  /** Expand recipients via the company's routing rule (roles, CC). */
+  expand?: boolean;
+  /** Also include the rule's escalation roles (thresholds crossed). */
+  escalate?: boolean;
 }
 
 interface SendJobPayload {
   notificationId: string;
+  companyId: string;
+  type: NotificationType;
+  userId: string;
+  entityType?: string;
+  entityId?: string;
+  html?: string;
   email: string;
   subject: string;
   text: string;
@@ -85,16 +111,23 @@ export class NotificationsService implements OnModuleInit {
 
   onModuleInit(): void {
     this.queue.register<SendJobPayload>(SEND_NOTIFICATION_JOB, async (payload) => {
-      const result = await this.mail.send({
-        to: payload.email,
-        subject: payload.subject,
-        text: payload.text,
-      });
+      try {
+        const result = await this.mail.send({
+          to: payload.email,
+          subject: payload.subject,
+          text: payload.text,
+          ...(payload.html ? { html: payload.html } : {}),
+        });
 
-      await this.prisma.client.notification.update({
-        where: { id: payload.notificationId },
-        data: { deliveredAt: new Date(), simulated: result.simulated },
-      });
+        await this.prisma.client.notification.update({
+          where: { id: payload.notificationId },
+          data: { deliveredAt: new Date(), simulated: result.simulated },
+        });
+        await this.logEmail(payload, result.simulated ? 'SIMULATED' : 'SENT', null);
+      } catch (error) {
+        await this.logEmail(payload, 'FAILED', (error as Error).message);
+        throw error;
+      }
     });
 
     // Team alerts post to the company's Teams/Slack webhook off the request
@@ -150,6 +183,36 @@ export class NotificationsService implements OnModuleInit {
   async notify(input: NotifyInput): Promise<void> {
     const definition = NOTIFICATION_CATALOGUE[input.type];
 
+    // v2.18: the company's routing rule. Disabled switches the whole event off
+    // (mandatory types excepted); expand fans out to the configured roles.
+    const rule = await this.getRule(input.companyId, input.type);
+    if (rule && !rule.enabled && !definition.mandatory) return;
+
+    if (input.expand) {
+      const roleKeys = [
+        ...(rule?.recipientRoleKeys ?? []),
+        ...(rule?.ccRoleKeys ?? []),
+        ...(input.escalate ? (rule?.escalationRoleKeys ?? []) : []),
+      ];
+      const extra = roleKeys.length
+        ? await this.prisma.client.userRole.findMany({
+            where: {
+              role: { companyId: input.companyId, key: { in: roleKeys } },
+              user: { deletedAt: null, status: 'ACTIVE' },
+            },
+            select: { userId: true },
+            distinct: ['userId'],
+            take: 100,
+          })
+        : [];
+      const recipients = new Set<string>(extra.map((e) => e.userId));
+      if (rule?.notifyPrimary !== false) recipients.add(input.userId);
+      for (const userId of recipients) {
+        await this.notify({ ...input, userId, expand: false, escalate: false });
+      }
+      return;
+    }
+
     const notification = await this.prisma.client.notification.create({
       data: {
         companyId: input.companyId,
@@ -199,16 +262,163 @@ export class NotificationsService implements OnModuleInit {
 
     const user = await this.prisma.client.user.findUnique({
       where: { id: input.userId },
-      select: { email: true },
+      select: { email: true, profile: { select: { firstName: true, lastName: true } } },
     });
     if (!user) return;
 
+    const rendered = await this.renderEmail(input, {
+      name: user.profile ? `${user.profile.firstName} ${user.profile.lastName}` : user.email,
+      email: user.email,
+    });
+
     await this.queue.enqueue<SendJobPayload>(SEND_NOTIFICATION_JOB, {
       notificationId: notification.id,
+      companyId: input.companyId,
+      type: input.type,
+      userId: input.userId,
+      entityType: input.entityType,
+      entityId: input.entityId,
       email: user.email,
-      subject: input.title,
-      text: `${input.body}\n\n${input.linkPath ? `${this.config.get('WEB_URL')}${input.linkPath}` : ''}`.trim(),
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html,
     });
+  }
+
+  /**
+   * Role-routed event (v2.18): no natural single recipient - the audience is
+   * whatever the company's rule says, with sensible role defaults until an
+   * admin configures it. Used by hooks like user-created, asset-returned,
+   * transfers, missing assets and the digest.
+   */
+  async notifyRoles(
+    companyId: string,
+    input: Omit<NotifyInput, 'userId' | 'companyId' | 'expand'>,
+    options: { escalate?: boolean; excludeUserIds?: string[] } = {},
+  ): Promise<void> {
+    const definition = NOTIFICATION_CATALOGUE[input.type];
+    const rule = await this.getRule(companyId, input.type);
+    if (rule && !rule.enabled && !definition.mandatory) return;
+
+    const roleKeys = [
+      ...(rule?.recipientRoleKeys?.length
+        ? rule.recipientRoleKeys
+        : (DEFAULT_RULE_ROLES[input.type] ?? [])),
+      ...(rule?.ccRoleKeys ?? []),
+      ...(options.escalate ? (rule?.escalationRoleKeys ?? []) : []),
+    ];
+    if (roleKeys.length === 0) return;
+
+    const holders = await this.prisma.client.userRole.findMany({
+      where: {
+        role: { companyId, key: { in: roleKeys } },
+        user: { deletedAt: null, status: 'ACTIVE' },
+      },
+      select: { userId: true },
+      distinct: ['userId'],
+      take: 100,
+    });
+    const excluded = new Set(options.excludeUserIds ?? []);
+    await this.notifyMany(
+      holders.map((h) => h.userId).filter((uid) => !excluded.has(uid)),
+      { ...input, companyId },
+    );
+  }
+
+  /** Admin writes call these so their next read is fresh, not 30s stale. */
+  bustRuleCache(companyId: string, type: NotificationType): void {
+    void this.cache.del(`notify-rule:${companyId}:${type}`);
+  }
+
+  bustTemplateCache(companyId: string, type: NotificationType): void {
+    void this.cache.del(`notify-tpl:${companyId}:${type}`);
+  }
+
+  /** Routing rule with a short cache; null when the company keeps defaults. */
+  private async getRule(companyId: string, type: NotificationType) {
+    return this.cache.wrap(`notify-rule:${companyId}:${type}`, 30, () =>
+      this.prisma.client.notificationRule.findUnique({
+        where: { companyId_type: { companyId, type } },
+      }),
+    );
+  }
+
+  /**
+   * Branded, templated email: company override -> code default -> the event's
+   * own title/body. Variables interpolate into subject, heading and body.
+   */
+  async renderEmail(
+    input: Pick<NotifyInput, 'companyId' | 'type' | 'title' | 'body' | 'linkPath' | 'vars' | 'emailRows'>,
+    recipient: { name: string; email: string },
+  ): Promise<{ subject: string; text: string; html: string }> {
+    const override = await this.cache.wrap(`notify-tpl:${input.companyId}:${input.type}`, 30, () =>
+      this.prisma.client.emailTemplate.findUnique({
+        where: { companyId_type: { companyId: input.companyId, type: input.type } },
+      }),
+    );
+    const fallback = DEFAULT_EMAIL_TEMPLATES[input.type];
+    const template =
+      override && override.enabled
+        ? { subject: override.subject, heading: override.heading ?? override.subject, body: override.body, ctaLabel: override.ctaLabel ?? undefined }
+        : fallback
+          ? { subject: fallback.subject, heading: fallback.heading, body: fallback.body, ctaLabel: fallback.ctaLabel }
+          : { subject: input.title, heading: input.title, body: input.body, ctaLabel: undefined };
+
+    const company = await this.cache.wrap(`company-name:${input.companyId}`, 300, async () => {
+      const row = await this.prisma.client.company.findUnique({
+        where: { id: input.companyId },
+        select: { name: true },
+      });
+      return row?.name ?? 'PioAssets';
+    });
+    const now = new Date();
+    const vars: Record<string, string> = {
+      'user.name': recipient.name,
+      'user.email': recipient.email,
+      'company.name': company,
+      'system.name': 'PioAssets',
+      'system.url': this.config.get('WEB_URL'),
+      'notification.date': now.toISOString().slice(0, 10),
+      'notification.time': now.toISOString().slice(11, 16),
+      ...(input.vars ?? {}),
+    };
+
+    const subject = interpolate(template.subject, vars);
+    const paragraphs = interpolate(template.body, vars)
+      .split(/\n\n+/)
+      .filter((par) => par.trim().length > 0);
+    const url = input.linkPath ? `${this.config.get('WEB_URL')}${input.linkPath}` : this.config.get('WEB_URL');
+    const html = renderBrandedEmail({
+      heading: interpolate(template.heading, vars),
+      paragraphs,
+      rows: input.emailRows,
+      cta: { label: template.ctaLabel ?? 'Open PioAssets', url },
+      companyName: company,
+      productUrl: this.config.get('WEB_URL'),
+    });
+    const rowsText = (input.emailRows ?? []).map(([k, v]) => `${k}: ${v}`).join('\n');
+    const text = [paragraphs.join('\n\n'), rowsText, url].filter(Boolean).join('\n\n');
+    return { subject, text, html };
+  }
+
+  private async logEmail(payload: SendJobPayload, status: string, error: string | null) {
+    try {
+      await this.prisma.client.emailLog.create({
+        data: {
+          companyId: payload.companyId,
+          type: payload.type,
+          toEmail: payload.email,
+          toUserId: payload.userId,
+          subject: payload.subject,
+          status,
+          error,
+          entityType: payload.entityType ?? null,
+          entityId: payload.entityId ?? null,
+        },
+      });
+    } catch (logError) {
+      this.logger.error(`Email log write failed: ${(logError as Error).message}`);
+    }
   }
 
   /** Fan-out helper; one row per recipient so read state is per-user. */

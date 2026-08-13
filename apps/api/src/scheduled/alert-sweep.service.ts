@@ -5,9 +5,7 @@ import {
   expiryBucket,
   expiryState,
   isHighUtilization,
-  isWarrantyAlertable,
   seatsAvailable,
-  warrantyBucket,
 } from '@techpioasset/domain';
 import { AuditAction, Prisma } from '@prisma/client';
 import { AppConfig } from '../config/config.module.js';
@@ -84,6 +82,7 @@ export class AlertSweepService implements OnModuleInit {
       // Zero-touch warranty refresh: Lenovo answers serial lookups directly,
       // so those dates never need a human. Summary is logged by the service.
       void this.lenovoWarranty.sweep();
+      void this.runDailyDigest();
       // Retention: delete refresh tokens that have been dead for over a week.
       // Nothing ever removed them before, so the table only grew.
       void this.tokens.purgeDeadTokens();
@@ -99,7 +98,7 @@ export class AlertSweepService implements OnModuleInit {
    * assert the sweep did its job.
    */
   async runWarrantySweep(now: Date = new Date()): Promise<number> {
-    const horizon = new Date(now.getTime() + 91 * 86_400_000);
+    const horizon = new Date(now.getTime() + 181 * 86_400_000);
 
     const assets = await this.prisma.client.asset.findMany({
       where: {
@@ -118,14 +117,34 @@ export class AlertSweepService implements OnModuleInit {
       },
     });
 
+    // v2.18: thresholds are configurable per company (default 90/60/30/15/7/1/0).
+    // An alert fires only on the exact day-mark, which is also what makes the
+    // sweep idempotent across days; the same-day guard covers restarts.
+    const thresholdsByCompany = new Map<string, number[]>();
+    const thresholdsFor = async (companyId: string): Promise<number[]> => {
+      if (!thresholdsByCompany.has(companyId)) {
+        const rule = await this.prisma.client.notificationRule.findUnique({
+          where: { companyId_type: { companyId, type: 'WARRANTY_EXPIRATION' } },
+          select: { thresholds: true, enabled: true },
+        });
+        thresholdsByCompany.set(
+          companyId,
+          rule && !rule.enabled ? [] : rule?.thresholds?.length ? rule.thresholds : [90, 60, 30, 15, 7, 1, 0],
+        );
+      }
+      return thresholdsByCompany.get(companyId)!;
+    };
+
     let raised = 0;
     for (const asset of assets) {
-      const bucket = warrantyBucket(asset.warrantyEndDate, now);
-      if (!isWarrantyAlertable(bucket)) continue;
+      if (!asset.warrantyEndDate) continue;
+      const daysRemaining = Math.ceil((asset.warrantyEndDate.getTime() - now.getTime()) / 86_400_000);
+      const thresholds = await thresholdsFor(asset.companyId);
+      if (!thresholds.includes(daysRemaining)) continue;
 
       if (await this.alreadyAlertedToday(asset.id, 'WARRANTY_EXPIRATION', now)) continue;
 
-      // Notify whoever holds the asset, or whoever created it (typically IT).
+      const expiresToday = daysRemaining === 0;
       const recipientId = asset.assignedUserId ?? asset.createdById;
       if (!recipientId) continue;
 
@@ -133,11 +152,29 @@ export class AlertSweepService implements OnModuleInit {
         companyId: asset.companyId,
         userId: recipientId,
         type: 'WARRANTY_EXPIRATION',
-        title: `Warranty expiring: ${asset.name}`,
-        body: `${asset.assetTag}'s warranty ends ${asset.warrantyEndDate?.toDateString()} (${bucket.replace('WITHIN_', 'within ')} days).`,
+        title: expiresToday
+          ? `Warranty expires today: ${asset.name}`
+          : `Warranty expiring in ${daysRemaining} days: ${asset.name}`,
+        body: expiresToday
+          ? `${asset.assetTag}'s warranty ends today. Review the asset and decide the appropriate action.`
+          : `${asset.assetTag}'s warranty ends ${asset.warrantyEndDate.toISOString().slice(0, 10)}. Review whether it should be renewed, replaced, or retired.`,
         linkPath: `/assets/${asset.id}`,
         entityType: 'Asset',
         entityId: asset.id,
+        expand: true,
+        escalate: daysRemaining <= 7,
+        vars: {
+          'asset.name': asset.name,
+          'asset.asset_tag': asset.assetTag,
+          'warranty.expiry_date': asset.warrantyEndDate.toISOString().slice(0, 10),
+          'warranty.days_remaining': String(daysRemaining),
+        },
+        emailRows: [
+          ['Asset', asset.name],
+          ['Asset tag', asset.assetTag],
+          ['Warranty ends', asset.warrantyEndDate.toISOString().slice(0, 10)],
+          ['Days remaining', String(daysRemaining)],
+        ],
       });
       raised += 1;
     }
@@ -802,4 +839,56 @@ export class AlertSweepService implements OnModuleInit {
     });
     return existing !== null;
   }
+  /**
+   * v2.18 - opt-in daily digest. Only companies whose DAILY_DIGEST rule is
+   * enabled with configured roles receive it; once per calendar day.
+   */
+  async runDailyDigest(now: Date = new Date()): Promise<number> {
+    const rules = await this.prisma.client.notificationRule.findMany({
+      where: { type: 'DAILY_DIGEST', enabled: true },
+      select: { companyId: true, recipientRoleKeys: true },
+    });
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayAgo = new Date(now.getTime() - 86_400_000);
+    const in30 = new Date(now.getTime() + 30 * 86_400_000);
+    let sent = 0;
+
+    for (const rule of rules) {
+      if (rule.recipientRoleKeys.length === 0) continue;
+      const already = await this.prisma.client.notification.count({
+        where: { companyId: rule.companyId, type: 'DAILY_DIGEST', createdAt: { gte: dayStart } },
+      });
+      if (already > 0) continue;
+
+      const companyFilter = { companyId: rule.companyId, deletedAt: null } as const;
+      const [expiring, expired, newAssets, assignments, missing, openRequests] = await Promise.all([
+        this.prisma.client.asset.count({ where: { ...companyFilter, warrantyEndDate: { gte: now, lte: in30 } } }),
+        this.prisma.client.asset.count({ where: { ...companyFilter, warrantyEndDate: { lt: now }, status: { notIn: ['RETIRED', 'DISPOSED'] } } }),
+        this.prisma.client.asset.count({ where: { ...companyFilter, createdAt: { gte: dayAgo } } }),
+        this.prisma.client.assetAssignment.count({ where: { assignedAt: { gte: dayAgo }, asset: { companyId: rule.companyId } } }),
+        this.prisma.client.asset.count({ where: { ...companyFilter, status: 'LOST' } }),
+        this.prisma.client.assetRequest.count({ where: { companyId: rule.companyId, createdAt: { gte: dayAgo }, status: { not: 'DRAFT' } } }),
+      ]);
+
+      await this.notifications.notifyRoles(rule.companyId, {
+        type: 'DAILY_DIGEST',
+        title: 'PioAssets daily summary',
+        body: 'Here is what needs attention across the fleet today.',
+        linkPath: '/dashboard',
+        emailRows: [
+          ['Warranties expiring (30 days)', String(expiring)],
+          ['Warranties expired', String(expired)],
+          ['New assets (24h)', String(newAssets)],
+          ['Assignments (24h)', String(assignments)],
+          ['Missing assets', String(missing)],
+          ['New requests (24h)', String(openRequests)],
+        ],
+      });
+      sent += 1;
+    }
+    if (sent > 0) this.logger.log(`Daily digest sent for ${sent} company(ies)`);
+    return sent;
+  }
+
 }
