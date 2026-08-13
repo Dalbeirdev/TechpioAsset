@@ -519,6 +519,8 @@ model Company {
 
   @@index([deletedAt])
   @@map("companies")
+  catalogItems CatalogItem[]
+
 }
 
 model User {
@@ -968,6 +970,8 @@ model Category {
   @@unique([companyId, key])
   @@index([companyId, isActive, sortOrder])
   @@map("categories")
+  catalogItems CatalogItem[]
+
 }
 
 model Subcategory {
@@ -1821,6 +1825,13 @@ model RequestItem {
   quantity         Decimal   @default(1) @db.Decimal(14, 3)
   preferredSpec    String?
   estimatedCost    Decimal?  @db.Decimal(14, 2)
+  /// v2.17 - the item is NOT in the catalog: requested as a one-off, reviewed
+  /// by admins who may promote it to a CatalogItem. Never auto-created as an
+  /// asset - only procurement turns it into tracked inventory.
+  isUncatalogued   Boolean   @default(false)
+  manufacturer     String?
+  model            String?
+  referenceUrl     String?
   fulfilledAssetId String?
   fulfilledAt      DateTime?
 
@@ -1834,6 +1845,24 @@ model RequestItem {
 
   @@index([requestId])
   @@map("request_items")
+}
+
+/// v2.17 - an admin-curated equipment name for the request form's picker.
+/// A catalog item is a TYPE ("HDMI Cable"), not a tracked asset; the picker
+/// merges these with the baseline and the company's real asset names.
+model CatalogItem {
+  id        String  @id @default(cuid())
+  companyId String
+  name      String
+  categoryId String?
+  createdById String?
+  createdAt DateTime @default(now())
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, name])
+  @@map("catalog_items")
 }
 
 model RequestApproval {

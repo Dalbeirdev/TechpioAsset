@@ -195,6 +195,10 @@ export class RequestsService {
             quantity: true,
             preferredSpec: true,
             estimatedCost: true,
+            isUncatalogued: true,
+            manufacturer: true,
+            model: true,
+            referenceUrl: true,
             category: { select: { id: true, name: true } },
             subcategory: { select: { id: true, name: true } },
             fulfilledAsset: { select: { id: true, assetTag: true, name: true } },
@@ -329,7 +333,7 @@ export class RequestsService {
    * design - a tenant's register grows the list, no hardcode to maintain.
    */
   async equipmentCatalog(actor: AuthUser) {
-    const [categories, owned] = await Promise.all([
+    const [categories, owned, curated] = await Promise.all([
       this.prisma.client.category.findMany({
         where: { companyId: actor.companyId },
         orderBy: { sortOrder: 'asc' },
@@ -342,16 +346,22 @@ export class RequestsService {
         take: 400,
         select: { name: true, category: { select: { name: true } } },
       }),
+      this.prisma.client.catalogItem.findMany({
+        where: { companyId: actor.companyId },
+        orderBy: { name: 'asc' },
+        take: 400,
+        select: { name: true, category: { select: { name: true } } },
+      }),
     ]);
 
     const groups = new Map<string, Set<string>>();
     for (const { group, items } of EQUIPMENT_CATALOG) {
       groups.set(group, new Set(items));
     }
-    for (const asset of owned) {
-      const label = asset.category?.name ?? 'In your register';
+    for (const entry of [...owned, ...curated]) {
+      const label = entry.category?.name ?? 'In your register';
       if (!groups.has(label)) groups.set(label, new Set());
-      groups.get(label)!.add(asset.name);
+      groups.get(label)!.add(entry.name);
     }
 
     return {
@@ -361,6 +371,46 @@ export class RequestsService {
       })),
       categories,
     };
+  }
+
+  /**
+   * Admin review outcome for an uncatalogued item: promote the NAME into the
+   * curated catalog so future requests offer it. Deliberately creates no
+   * asset and no serial - only procurement turns a purchase into inventory.
+   */
+  async addCatalogItem(actor: AuthUser, input: { name: string; categoryId?: string | null }) {
+    const existing = await this.prisma.client.catalogItem.findFirst({
+      where: { companyId: actor.companyId, name: { equals: input.name, mode: 'insensitive' } },
+      select: { id: true, name: true },
+    });
+    if (existing) {
+      throw AppError.conflict('CONFLICT', `"${existing.name}" is already in the catalog`);
+    }
+    if (input.categoryId) {
+      const category = await this.prisma.client.category.findFirst({
+        where: { id: input.categoryId, companyId: actor.companyId },
+        select: { id: true },
+      });
+      if (!category) throw AppError.notFound('Category', input.categoryId);
+    }
+    const item = await this.prisma.client.catalogItem.create({
+      data: {
+        companyId: actor.companyId,
+        name: input.name,
+        categoryId: input.categoryId ?? null,
+        createdById: actor.id,
+      },
+      select: { id: true, name: true, categoryId: true },
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'CatalogItem',
+      entityId: item.id,
+      newValues: { name: item.name, categoryId: item.categoryId },
+    });
+    return item;
   }
 
   private canSeeInternalComments(actor: AuthUser): boolean {
@@ -480,6 +530,10 @@ export class RequestsService {
             quantity: new Prisma.Decimal(item.quantity),
             preferredSpec: item.preferredSpec ?? null,
             estimatedCost: item.estimatedCost ? new Prisma.Decimal(item.estimatedCost) : null,
+            isUncatalogued: item.isUncatalogued ?? false,
+            manufacturer: item.manufacturer ?? null,
+            model: item.model ?? null,
+            referenceUrl: item.referenceUrl ?? null,
           })),
         },
       },

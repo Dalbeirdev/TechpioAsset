@@ -20,6 +20,7 @@ import 'multer';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
+  catalogItemSchema,
   approvalDecisionSchema,
   createRequestSchema,
   requestCommentSchema,
@@ -107,6 +108,21 @@ export class RequestsController {
   })
   catalog(@CurrentUser() actor: AuthUser) {
     return this.requests.equipmentCatalog(actor);
+  }
+
+  @Post('catalog-items')
+  @RequirePermissions(PERMISSIONS.ASSETS_CREATE)
+  @ApiOperation({
+    summary: 'Promote an uncatalogued item name into the equipment catalog',
+    description:
+      'Admin review action. Creates a catalog NAME only - never an asset or ' +
+      'serial; rejects case-insensitive duplicates.',
+  })
+  addCatalogItem(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(catalogItemSchema)) body: { name: string; categoryId?: string | null },
+  ) {
+    return this.requests.addCatalogItem(actor, body);
   }
 
   @Get(':id')

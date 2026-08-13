@@ -34,7 +34,19 @@ export const requestItemSchema = z.object({
   quantity: z.coerce.number().positive().max(9999).default(1),
   preferredSpec: z.string().trim().max(1000).optional().nullable(),
   estimatedCost: moneyString.optional().nullable(),
+  /** v2.17 - the item is not in the catalog; admins review and may promote it. */
+  isUncatalogued: z.boolean().optional(),
+  manufacturer: z.string().trim().max(120).optional().nullable(),
+  model: z.string().trim().max(120).optional().nullable(),
+  referenceUrl: z.string().trim().max(500).optional().nullable(),
 });
+
+/** Admin action: promote an uncatalogued name into the equipment catalog. */
+export const catalogItemSchema = z.object({
+  name: z.string().trim().min(2, 'Name the equipment').max(120),
+  categoryId: z.string().optional().nullable(),
+});
+export type CatalogItemInput = z.infer<typeof catalogItemSchema>;
 
 /**
  * Structured context for the dynamic request form (v2.17). All optional so the
