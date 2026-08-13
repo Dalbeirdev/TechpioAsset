@@ -4,6 +4,8 @@ import {
   AiDocumentProvider,
   type ExtractInput,
   type ExtractionResult,
+  type WarrantyTextInput,
+  type WarrantyTextResult,
 } from './ai-document.provider.js';
 
 /**
@@ -70,4 +72,66 @@ export class MockAiProvider extends AiDocumentProvider {
       costUsd: null,
     };
   }
+
+  /**
+   * Deterministic warranty-date finder: scans the pasted text for unambiguous
+   * date formats (ISO, "30 June 2027", "June 30, 2027") and reports the LATEST
+   * one — vendor pages list purchase, ship and expiry dates, and expiry is the
+   * furthest out. Slashed dates (30/06/2027) are deliberately ignored: without
+   * a locale they are a guess, and this provider never guesses. Flagged
+   * simulated so the UI says so.
+   */
+  override async extractWarrantyText(input: WarrantyTextInput): Promise<WarrantyTextResult> {
+    const started = Date.now();
+    const dates: string[] = [];
+
+    for (const match of input.text.matchAll(/\b(20\d{2})-(\d{2})-(\d{2})\b/g)) {
+      pushIsoDate(dates, Number(match[1]), Number(match[2]), Number(match[3]));
+    }
+    const months =
+      '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?';
+    const dayMonthYear = new RegExp(
+      `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${months},?\\s+(20\\d{2})\\b`,
+      'gi',
+    );
+    for (const match of input.text.matchAll(dayMonthYear)) {
+      pushIsoDate(dates, Number(match[3]), monthIndex(match[2]!), Number(match[1]));
+    }
+    const monthDayYear = new RegExp(
+      `\\b${months}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(20\\d{2})\\b`,
+      'gi',
+    );
+    for (const match of input.text.matchAll(monthDayYear)) {
+      pushIsoDate(dates, Number(match[3]), monthIndex(match[1]!), Number(match[2]));
+    }
+
+    const latest = dates.length > 0 ? dates.sort().at(-1)! : null;
+    const serial = input.serialNumber?.trim().toLowerCase();
+    this.logger.log(`SIMULATED warranty extraction found ${dates.length} date(s)`);
+
+    return {
+      warrantyEndDate: latest,
+      warrantyType: null,
+      serialSeen: Boolean(serial && input.text.toLowerCase().includes(serial)),
+      confidence: latest ? 0.85 : 0,
+      simulated: true,
+      provider: this.name,
+      modelName: 'mock-deterministic-v1',
+      durationMs: Date.now() - started,
+      costUsd: null,
+    };
+  }
+}
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+function monthIndex(name: string): number {
+  return MONTHS.indexOf(name.slice(0, 3).toLowerCase()) + 1;
+}
+
+function pushIsoDate(into: string[], year: number, month: number, day: number): void {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return;
+  into.push(
+    `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+  );
 }

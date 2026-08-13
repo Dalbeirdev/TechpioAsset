@@ -42,6 +42,7 @@ import {
   type ReturnAssetInput,
   type TransferAssetInput,
   type UpdateAssetInput,
+  warrantyExtractSchema,
 } from '@techpioasset/contracts';
 import { PERMISSIONS, type AssetStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
@@ -195,6 +196,23 @@ export class AssetsController {
     @Body(zodBody(updateAssetSchema)) body: UpdateAssetInput,
   ) {
     return this.assets.update(actor, id, body);
+  }
+
+  @Post(':id/warranty-extract')
+  @RequirePermissions(PERMISSIONS.ASSETS_UPDATE)
+  @ApiOperation({
+    summary: 'Propose a warranty end date from pasted vendor-page text (AI)',
+    description:
+      'Reads text the caller pasted from the manufacturer warranty page and ' +
+      'proposes a coverage end date. Nothing is saved - the caller confirms via ' +
+      'the ordinary asset update. Gated on the WARRANTY_EXTRACTION AI feature.',
+  })
+  extractWarranty(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(warrantyExtractSchema)) body: { text: string },
+  ) {
+    return this.assets.extractWarranty(actor, id, body.text);
   }
 
   @Patch(':id/price')

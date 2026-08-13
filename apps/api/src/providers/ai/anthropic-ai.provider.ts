@@ -8,6 +8,8 @@ import {
   type ExtractedField,
   type ExtractedLine,
   type ExtractionResult,
+  type WarrantyTextInput,
+  type WarrantyTextResult,
 } from './ai-document.provider.js';
 
 /**
@@ -88,6 +90,77 @@ export class AnthropicAiProvider extends AiDocumentProvider {
     );
 
     return this.toResult(parsed, durationMs, costUsd);
+  }
+
+  /**
+   * Warranty paste-and-extract: reads text the technician copied from the
+   * manufacturer's warranty page and reports the coverage end date. Extraction
+   * only — the date is a proposal the technician confirms before it is saved.
+   */
+  override async extractWarrantyText(input: WarrantyTextInput): Promise<WarrantyTextResult> {
+    const started = Date.now();
+    const context = [
+      input.vendorLabel ? `Expected manufacturer: ${input.vendorLabel}` : null,
+      input.serialNumber ? `Device serial / service tag: ${input.serialNumber}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    let message: Anthropic.Message;
+    try {
+      message = await this.client.messages.create({
+        model: this.model,
+        max_tokens: 2000,
+        thinking: { type: 'adaptive' },
+        system: WARRANTY_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `${context ? context + '\n\n' : ''}Pasted warranty page text:\n\n${input.text}`,
+              },
+            ],
+          },
+        ],
+        output_config: { format: { type: 'json_schema', schema: WARRANTY_SCHEMA } },
+      });
+    } catch (error) {
+      throw new AppError('AI_PROVIDER_ERROR', 'Claude warranty extraction request failed', {
+        detail: (error as Error).message,
+        cause: error,
+      });
+    }
+
+    if (message.stop_reason === 'refusal') {
+      throw new AppError('AI_PROVIDER_ERROR', 'Claude declined to process this text');
+    }
+
+    let parsed: RawWarranty;
+    try {
+      parsed = JSON.parse(this.firstJsonText(message)) as RawWarranty;
+    } catch {
+      throw new AppError('AI_PROVIDER_ERROR', 'Claude returned an unparseable warranty result');
+    }
+
+    // Trust nothing shaped wrong: a date that is not YYYY-MM-DD is no date.
+    const date =
+      typeof parsed.warrantyEndDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.warrantyEndDate)
+        ? parsed.warrantyEndDate
+        : null;
+
+    return {
+      warrantyEndDate: date,
+      warrantyType: typeof parsed.warrantyType === 'string' ? parsed.warrantyType : null,
+      serialSeen: parsed.serialSeen === true,
+      confidence: clampConfidence(parsed.confidence),
+      simulated: false,
+      provider: this.name,
+      modelName: this.model,
+      durationMs: Date.now() - started,
+      costUsd: this.estimateCostUsd(message.usage),
+    };
   }
 
   /** Turn the uploaded bytes into a document (PDF) or image content block. */
@@ -251,6 +324,36 @@ const EXTRACTION_SCHEMA = {
     'overallConfidence',
   ],
 } as const;
+
+const WARRANTY_SYSTEM_PROMPT =
+  'You read text copied from a computer manufacturer\'s warranty or support page ' +
+  'and report the warranty status of one specific device. Report the end date of ' +
+  'the device\'s warranty or support coverage as YYYY-MM-DD in warrantyEndDate. ' +
+  'If several entitlements are listed, report the LATEST end date and name that ' +
+  'entitlement in warrantyType. Only report a date that is actually printed in ' +
+  'the text — never compute, infer or guess one; if no coverage end date is ' +
+  'present, warrantyEndDate is null. Set serialSeen to true only if the pasted ' +
+  'text contains the device serial or service tag you were given. confidence is ' +
+  '0 to 1: how certain you are the reported date is this device\'s coverage end.';
+
+const WARRANTY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    warrantyEndDate: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    warrantyType: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    serialSeen: { type: 'boolean' },
+    confidence: { type: 'number' },
+  },
+  required: ['warrantyEndDate', 'warrantyType', 'serialSeen', 'confidence'],
+} as const;
+
+interface RawWarranty {
+  warrantyEndDate?: string | null;
+  warrantyType?: string | null;
+  serialSeen?: boolean;
+  confidence?: number;
+}
 
 interface RawField {
   value?: string | null;

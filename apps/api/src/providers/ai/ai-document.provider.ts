@@ -1,3 +1,5 @@
+import { AppError } from '../../common/errors/app-error.js';
+
 /**
  * AI document extraction behind a provider interface (spec sections 9, 28).
  *
@@ -51,7 +53,52 @@ export interface ExtractInput {
   fileName: string;
 }
 
+/**
+ * Warranty paste-and-extract (v2.16): the technician copies the manufacturer's
+ * warranty page and the provider finds the coverage end date in it. Same
+ * contract as invoice extraction — a *proposal* with a confidence, confirmed by
+ * a human before anything is saved.
+ */
+export interface WarrantyTextInput {
+  /** Text pasted from the vendor's warranty/support page. */
+  text: string;
+  /** The asset's serial / service tag, for the serialSeen cross-check. */
+  serialNumber?: string | null;
+  /** Detected manufacturer label (e.g. "Dell"), context for the model. */
+  vendorLabel?: string | null;
+}
+
+export interface WarrantyTextResult {
+  /** YYYY-MM-DD, or null when the text carries no coverage end date. */
+  warrantyEndDate: string | null;
+  /** The entitlement the date belongs to (e.g. "ProSupport"), when named. */
+  warrantyType: string | null;
+  /** Whether the pasted text mentions the asset's serial — a wrong-device tell. */
+  serialSeen: boolean;
+  confidence: number;
+  simulated: boolean;
+  provider: string;
+  modelName: string;
+  durationMs: number;
+  costUsd: number | null;
+}
+
 export abstract class AiDocumentProvider {
   abstract readonly name: string;
   abstract extract(input: ExtractInput): Promise<ExtractionResult>;
+
+  /**
+   * Providers that cannot read freeform text inherit this refusal — Azure
+   * Document Intelligence runs document models, not text comprehension, so for
+   * it the honest answer is "not supported", not a bad guess.
+   */
+  extractWarrantyText(_input: WarrantyTextInput): Promise<WarrantyTextResult> {
+    return Promise.reject(
+      new AppError(
+        'AI_PROVIDER_ERROR',
+        `The ${this.name} provider does not support warranty text extraction`,
+        { detail: 'Configure the Anthropic Claude provider under Platform → AI provider.' },
+      ),
+    );
+  }
 }

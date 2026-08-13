@@ -83,6 +83,16 @@ export const setAssetPriceSchema = z.object({
 });
 export type SetAssetPriceInput = z.infer<typeof setAssetPriceSchema>;
 
+/** Text pasted from a manufacturer's warranty page, for AI date extraction. */
+export const warrantyExtractSchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(20, 'Paste the vendor warranty page text')
+    .max(60_000, 'Pasted text is too long'),
+});
+export type WarrantyExtractInputBody = z.infer<typeof warrantyExtractSchema>;
+
 export const assetListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),

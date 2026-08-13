@@ -19,6 +19,7 @@ import {
   IllegalTransitionError,
   assetStatusMachine,
   ASSET_STATUSES_ASSIGNABLE,
+  detectWarrantyVendor,
   PERMISSIONS,
   requiresSerialNumber,
   type AssetStatus,
@@ -28,6 +29,8 @@ import { buildOrderBy, paginate } from '../common/paginate.js';
 import { assetScopeFilter, canSeeCost, canSeeVendor, tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { AiConfigService } from '../ai-config/ai-config.service.js';
+import { RoutingAiProvider } from '../providers/ai/routing-ai.provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WebhooksService } from '../integrations/webhooks.service.js';
 
@@ -60,6 +63,8 @@ export class AssetsService {
     private readonly audit: AuditService,
     private readonly webhooks: WebhooksService,
     private readonly notifications: NotificationsService,
+    private readonly aiConfig: AiConfigService,
+    private readonly ai: RoutingAiProvider,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -548,6 +553,78 @@ export class AssetsService {
 
     void after;
     return this.findOne(actor, id);
+  }
+
+  /**
+   * Warranty paste-and-extract (v2.16): proposes a warranty end date from text
+   * the technician pasted off the manufacturer's warranty page. Proposal only —
+   * nothing is saved here; the technician confirms and the ordinary update path
+   * (with its audit entry) records the date. Every call passes the AI gate
+   * first and lands in the usage ledger either way.
+   */
+  async extractWarranty(actor: AuthUser, id: string, text: string) {
+    const asset = await this.loadForWrite(actor, id);
+
+    const gate = await this.aiConfig.gate(actor.companyId, 'WARRANTY_EXTRACTION', {
+      officeId: actor.officeId,
+      roleKeys: actor.roles,
+    });
+    if (!gate.enabled) {
+      throw new AppError('AI_DISABLED', 'AI warranty extraction is switched off', {
+        detail:
+          gate.reason === 'GLOBALLY_DISABLED' || gate.reason === 'PAUSED'
+            ? 'AI is disabled for this company. A Super Admin can enable it under Settings → AI.'
+            : 'The warranty extraction feature is disabled. A Super Admin can enable it under Settings → AI.',
+      });
+    }
+
+    const hw = await this.prisma.client.asset.findFirst({
+      where: { id: asset.id },
+      select: { hardwareProfile: { select: { manufacturer: true } } },
+    });
+    const vendor = detectWarrantyVendor(
+      hw?.hardwareProfile?.manufacturer,
+      asset.brand,
+      asset.model,
+      asset.name,
+    );
+
+    try {
+      const result = await this.ai.extractWarrantyText({
+        text,
+        serialNumber: asset.serialNumber,
+        vendorLabel: vendor?.label ?? null,
+      });
+      await this.aiConfig.recordUsage({
+        companyId: actor.companyId,
+        userId: actor.id,
+        feature: 'WARRANTY_EXTRACTION',
+        provider: result.provider,
+        modelName: result.modelName,
+        entityType: 'Asset',
+        entityId: asset.id,
+        confidence: result.confidence,
+        durationMs: result.durationMs,
+        costUsd: result.costUsd,
+        succeeded: true,
+        simulated: result.simulated,
+      });
+      return result;
+    } catch (error) {
+      const effective = await this.ai.effective().catch(() => null);
+      await this.aiConfig.recordUsage({
+        companyId: actor.companyId,
+        userId: actor.id,
+        feature: 'WARRANTY_EXTRACTION',
+        provider: effective?.provider ?? 'unknown',
+        entityType: 'Asset',
+        entityId: asset.id,
+        succeeded: false,
+        simulated: false,
+        failureDetail: (error as Error).message,
+      });
+      throw error;
+    }
   }
 
   async update(actor: AuthUser, id: string, input: UpdateAssetInput) {

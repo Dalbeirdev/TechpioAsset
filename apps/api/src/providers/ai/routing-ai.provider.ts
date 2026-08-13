@@ -6,6 +6,8 @@ import {
   AiDocumentProvider,
   type ExtractInput,
   type ExtractionResult,
+  type WarrantyTextInput,
+  type WarrantyTextResult,
 } from './ai-document.provider.js';
 import { MockAiProvider } from './mock-ai.provider.js';
 import { AzureAiProvider } from './azure-ai.provider.js';
@@ -60,6 +62,11 @@ export class RoutingAiProvider extends AiDocumentProvider {
   async extract(input: ExtractInput): Promise<ExtractionResult> {
     const db = await this.dbDelegate();
     return (db ?? this.envProvider).extract(input);
+  }
+
+  override async extractWarrantyText(input: WarrantyTextInput): Promise<WarrantyTextResult> {
+    const db = await this.dbDelegate();
+    return (db ?? this.envProvider).extractWarrantyText(input);
   }
 
   /** What an extraction would actually use right now, and where it came from. */
