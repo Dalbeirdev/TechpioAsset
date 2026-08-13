@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -792,12 +793,17 @@ function PeopleTable() {
   const toast = useToast();
   const canManage =
     can(PERMISSIONS.USERS_MANAGE) || can(PERMISSIONS.ROLES_MANAGE) || can(PERMISSIONS.EMPLOYEES_CREATE);
+  // A profile page's Manage button arrives as /people?q=<email>&manage=1 -
+  // honour the filter and open the panel for that person straight away.
+  const urlParams = useSearchParams();
+  const initialQ = urlParams.get('q') ?? '';
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [q, setQ] = useState('');
+  const [search, setSearch] = useState(initialQ);
+  const [q, setQ] = useState(initialQ);
   const [role, setRole] = useState('');
   const [view, setView] = useState<'active' | 'deactivated'>('active');
   const [managing, setManaging] = useState<UserRow | null>(null);
+  const [autoManaged, setAutoManaged] = useState(false);
   const [inviting, setInviting] = useState(false);
   const canInvite = can(PERMISSIONS.USERS_MANAGE) || can(PERMISSIONS.EMPLOYEES_CREATE);
   const queryClient = useQueryClient();
@@ -834,6 +840,21 @@ function PeopleTable() {
     queryKey: ['people', q, role, view, page],
     queryFn: () => apiFetchPage<UserRow>(`/users?${query.toString()}`),
   });
+
+  // Open the Manage panel for the person the URL asked about - once, and only
+  // when the filter resolves them unambiguously.
+  useEffect(() => {
+    if (autoManaged || urlParams.get('manage') !== '1' || !canManage || !data) return;
+    const wanted = (urlParams.get('q') ?? '').toLowerCase();
+    const match =
+      data.data.length === 1
+        ? data.data[0]
+        : data.data.find((u) => u.email.toLowerCase() === wanted);
+    if (match) {
+      setManaging(match);
+      setAutoManaged(true);
+    }
+  }, [autoManaged, urlParams, canManage, data]);
 
   const hasFilters = q !== '' || role !== '';
 
