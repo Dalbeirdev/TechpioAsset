@@ -85,6 +85,30 @@ export class RequestsController {
     return this.requests.types();
   }
 
+  @Get('eligible-assets')
+  @RequirePermissions(PERMISSIONS.REQUESTS_CREATE)
+  @ApiOperation({
+    summary: "The caller's own assigned assets, for asset-linked requests",
+    description:
+      'Upgrade, repair and replacement requests pick from here. Scoped to the ' +
+      'requester server-side; contains no cost fields.',
+  })
+  eligibleAssets(@CurrentUser() actor: AuthUser) {
+    return this.requests.eligibleAssets(actor);
+  }
+
+  @Get('catalog')
+  @RequirePermissions(PERMISSIONS.REQUESTS_CREATE)
+  @ApiOperation({
+    summary: 'Equipment catalog for the request form',
+    description:
+      'Domain baseline merged with the distinct asset names this company owns, ' +
+      'grouped by category.',
+  })
+  catalog(@CurrentUser() actor: AuthUser) {
+    return this.requests.equipmentCatalog(actor);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.REQUESTS_READ)
   @ApiOperation({ summary: 'Read a request with its approval chain and comments' })

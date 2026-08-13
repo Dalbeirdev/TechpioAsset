@@ -1,14 +1,23 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { CalendarDays, FileText, Flag, Plus, Send, Tag, Trash2 } from 'lucide-react';
-import { PERMISSIONS, ISSUE_CATEGORIES, findIssueCategory } from '@techpioasset/domain';
+import { CalendarDays, FileText, Flag, Laptop, Loader2, Plus, Send, Tag, Trash2 } from 'lucide-react';
+import {
+  ASSET_LINKED_REQUEST_TYPES,
+  ISSUE_CATEGORIES,
+  PERMISSIONS,
+  RAM_UPGRADE_OPTIONS,
+  REPLACEMENT_REASONS,
+  STORAGE_UPGRADE_OPTIONS,
+  UPGRADE_TYPES,
+  findIssueCategory,
+} from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Button, Card } from '@/components/ui';
@@ -82,23 +91,85 @@ const NOTES_TIP = {
   body: 'A model, spec or link helps IT pick exactly the right equipment.',
 } as const;
 
-const requestSchema = z.object({
-  type: z.string().min(1, 'Choose a request type'),
-  priority: z.string().min(1),
-  businessReason: z.string().min(10, 'At least 10 characters — approvers read this first.'),
-  requiredBy: z.string().optional(),
-  items: z
-    .array(
-      z.object({
-        description: z.string().min(1, 'Required'),
-        quantity: z.coerce.number().int().min(1, 'Min 1'),
-        estimatedCost: z.string().optional(),
-        notes: z.string().optional(),
-        categoryId: z.string().optional(),
-      }),
-    )
-    .min(1, 'Add at least one item'),
-});
+const requestSchema = z
+  .object({
+    type: z.string().min(1, 'Choose a request type'),
+    priority: z.string().min(1),
+    businessReason: z.string().min(10, 'At least 10 characters — approvers read this first.'),
+    requiredBy: z.string().optional(),
+    // Dynamic-form fields; which are required depends on the type (below).
+    targetAssetId: z.string().optional(),
+    upgradeType: z.string().optional(),
+    requestedSpec: z.string().optional(),
+    replacementReason: z.string().optional(),
+    otherText: z.string().optional(),
+    items: z
+      .array(
+        z.object({
+          description: z.string().min(1, 'Required'),
+          quantity: z.coerce.number().int().min(1, 'Min 1'),
+          estimatedCost: z.string().optional(),
+          notes: z.string().optional(),
+          categoryId: z.string().optional(),
+        }),
+      )
+      .min(1, 'Add at least one item'),
+  })
+  .superRefine((v, ctx) => {
+    const linked = (ASSET_LINKED_REQUEST_TYPES as readonly string[]).includes(v.type);
+    if (linked && !v.targetAssetId) {
+      ctx.addIssue({ code: 'custom', path: ['targetAssetId'], message: 'Select which of your assets this is about' });
+    }
+    if (v.type === 'UPGRADE') {
+      if (!v.upgradeType) {
+        ctx.addIssue({ code: 'custom', path: ['upgradeType'], message: 'Choose the upgrade type' });
+      }
+      if ((v.upgradeType === 'RAM' || v.upgradeType === 'STORAGE') && !v.requestedSpec) {
+        ctx.addIssue({ code: 'custom', path: ['requestedSpec'], message: 'Choose what you need' });
+      }
+      if ((v.upgradeType === 'OTHER' || v.requestedSpec === 'OTHER') && !v.otherText?.trim()) {
+        ctx.addIssue({ code: 'custom', path: ['otherText'], message: 'Please specify' });
+      }
+    }
+    if (v.type === 'REPLACEMENT') {
+      if (!v.replacementReason) {
+        ctx.addIssue({ code: 'custom', path: ['replacementReason'], message: 'Choose a reason' });
+      }
+      if (v.replacementReason === 'OTHER' && !v.otherText?.trim()) {
+        ctx.addIssue({ code: 'custom', path: ['otherText'], message: 'Please specify the reason' });
+      }
+    }
+  });
+
+interface EligibleAsset {
+  id: string;
+  name: string;
+  assetTag: string;
+  serialNumber: string | null;
+  brand: string | null;
+  model: string | null;
+  status: string;
+  condition: string;
+  purchaseDate: string | null;
+  warrantyEndDate: string | null;
+  category: { id: string; name: string } | null;
+  office: { name: string } | null;
+  hardwareProfile: {
+    manufacturer: string | null;
+    cpu: string | null;
+    ramGb: string | number | null;
+    storageTotalGb: string | number | null;
+  } | null;
+}
+
+interface Catalog {
+  groups: { label: string; items: string[] }[];
+  categories: { id: string; name: string; key: string }[];
+}
+
+const gb = (v: string | number | null | undefined) => (v == null ? null : `${Number(v)} GB`);
+const fmtDate = (v: string | null) =>
+  v ? new Date(v).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 type RequestValues = z.infer<typeof requestSchema>;
 
 export default function NewRequestPage() {
@@ -163,6 +234,57 @@ function NewRequestForm() {
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: 'items' });
 
+  const type = form.watch('type');
+  const assetLinked = (ASSET_LINKED_REQUEST_TYPES as readonly string[]).includes(type);
+  const targetAssetId = form.watch('targetAssetId');
+  const upgradeType = form.watch('upgradeType');
+  const requestedSpec = form.watch('requestedSpec');
+
+  // The caller's own assets - fetched only once an asset-linked type is
+  // chosen. The API scopes this server-side; the form never filters.
+  const eligible = useQuery({
+    queryKey: ['eligible-assets'],
+    queryFn: () => apiFetch<EligibleAsset[]>('/requests/eligible-assets'),
+    enabled: assetLinked,
+    staleTime: 60_000,
+  });
+
+  const catalog = useQuery({
+    queryKey: ['equipment-catalog'],
+    queryFn: () => apiFetch<Catalog>('/requests/catalog'),
+    staleTime: 300_000,
+  });
+
+  const selectedAsset = eligible.data?.find((a) => a.id === targetAssetId) ?? null;
+
+  // One eligible asset: select it for the user instead of asking.
+  useEffect(() => {
+    const only = eligible.data?.length === 1 ? eligible.data[0] : undefined;
+    if (assetLinked && only && !form.getValues('targetAssetId')) {
+      form.setValue('targetAssetId', only.id, { shouldValidate: true });
+    }
+  }, [assetLinked, eligible.data]);
+
+  // Current spec for the chosen upgrade dimension, straight from the record.
+  const currentSpec =
+    upgradeType === 'RAM'
+      ? gb(selectedAsset?.hardwareProfile?.ramGb)
+      : upgradeType === 'STORAGE'
+        ? gb(selectedAsset?.hardwareProfile?.storageTotalGb)
+        : null;
+
+  // Keep the first item's description in step with the upgrade selections so
+  // nobody retypes what the form already knows - until they edit it by hand.
+  const itemTouched = useRef(false);
+  useEffect(() => {
+    if (type !== 'UPGRADE' || itemTouched.current) return;
+    const label = UPGRADE_TYPES.find(([k]) => k === upgradeType)?.[1];
+    if (!label) return;
+    const spec = requestedSpec && requestedSpec !== 'OTHER' ? ` to ${requestedSpec}` : '';
+    const about = selectedAsset ? ` — ${selectedAsset.name} (${selectedAsset.assetTag})` : '';
+    form.setValue('items.0.description', `${label}${spec}${about}`);
+  }, [type, upgradeType, requestedSpec, selectedAsset?.id]);
+
   const submit = useMutation({
     mutationFn: async (values: RequestValues) => {
       const created = await apiFetch<{ id: string }>('/requests', {
@@ -173,6 +295,40 @@ function NewRequestForm() {
           ...(issue ? { issueCategory: issue.key } : {}),
           businessReason: values.businessReason,
           ...(values.requiredBy ? { requiredBy: values.requiredBy } : {}),
+          ...(assetLinked && values.targetAssetId
+            ? {
+                details: {
+                  targetAssetId: values.targetAssetId,
+                  ...(values.type === 'UPGRADE'
+                    ? {
+                        upgradeType: values.upgradeType || null,
+                        currentSpec: currentSpec ?? null,
+                        requestedSpec:
+                          (values.requestedSpec === 'OTHER' ? values.otherText : values.requestedSpec) || null,
+                        otherText: values.otherText || null,
+                      }
+                    : {}),
+                  ...(values.type === 'REPLACEMENT'
+                    ? {
+                        replacementReason: values.replacementReason || null,
+                        otherText: values.otherText || null,
+                      }
+                    : {}),
+                },
+                ...(values.type === 'UPGRADE' && values.upgradeType
+                  ? {
+                      preferredSpec: [
+                        UPGRADE_TYPES.find(([k]) => k === values.upgradeType)?.[1],
+                        currentSpec && `current: ${currentSpec}`,
+                        (values.requestedSpec === 'OTHER' ? values.otherText : values.requestedSpec) &&
+                          `requested: ${values.requestedSpec === 'OTHER' ? values.otherText : values.requestedSpec}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · '),
+                    }
+                  : {}),
+              }
+            : {}),
           items: values.items.map((item) => ({
             description: item.description,
             quantity: item.quantity,
@@ -293,6 +449,212 @@ function NewRequestForm() {
                 )}
               />
 
+              {assetLinked ? (
+                <div className="grid gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)]/60 p-4">
+                  {eligible.isPending ? (
+                    <p className="flex items-center gap-2 text-sm text-[var(--color-content-muted)]">
+                      <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Loading your assets…
+                    </p>
+                  ) : eligible.isError ? (
+                    <p className="text-sm" style={{ color: 'var(--tone-critical-fg)' }}>
+                      Unable to load your assets. Please try again.
+                    </p>
+                  ) : eligible.data && eligible.data.length === 0 ? (
+                    <div className="grid justify-items-start gap-2">
+                      <p className="text-sm font-medium">No eligible assets were found.</p>
+                      <p className="text-xs text-[var(--color-content-subtle)]">
+                        Nothing is currently assigned to you, so there is nothing to{' '}
+                        {type === 'UPGRADE' ? 'upgrade' : type === 'REPLACEMENT' ? 'replace' : 'report'}.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => form.setValue('type', 'ADDITIONAL_EQUIPMENT', { shouldValidate: true })}
+                      >
+                        Request new equipment instead
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="targetAssetId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              Which asset is this about?{' '}
+                              <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                            </FormLabel>
+                            <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select one of your assets" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {(eligible.data ?? []).map((asset) => (
+                                  <SelectItem key={asset.id} value={asset.id}>
+                                    {asset.name} · {asset.assetTag}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {selectedAsset ? (
+                        <div className="rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5">
+                          <p className="flex items-center gap-2 text-sm font-semibold">
+                            <Laptop aria-hidden="true" className="size-4 text-[var(--color-brand)]" />
+                            {selectedAsset.name}
+                          </p>
+                          <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+                            {[
+                              ['Asset tag', selectedAsset.assetTag],
+                              ['Serial number', selectedAsset.serialNumber ?? '—'],
+                              ['Manufacturer', selectedAsset.hardwareProfile?.manufacturer ?? selectedAsset.brand ?? '—'],
+                              ['Model', selectedAsset.model ?? '—'],
+                              ['Category', selectedAsset.category?.name ?? '—'],
+                              ['Location', selectedAsset.office?.name ?? '—'],
+                              ['RAM', gb(selectedAsset.hardwareProfile?.ramGb) ?? '—'],
+                              ['Storage', gb(selectedAsset.hardwareProfile?.storageTotalGb) ?? '—'],
+                              ['Condition', selectedAsset.condition],
+                              ['Purchased', fmtDate(selectedAsset.purchaseDate)],
+                              ['Warranty until', fmtDate(selectedAsset.warrantyEndDate)],
+                              ['Status', selectedAsset.status.replaceAll('_', ' ').toLowerCase()],
+                            ].map(([k, v]) => (
+                              <div key={k}>
+                                <dt className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-content-subtle)]">{k}</dt>
+                                <dd className="mt-0.5 font-medium">{v}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                      ) : null}
+
+                      {type === 'UPGRADE' ? (
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <FormField
+                            control={form.control}
+                            name="upgradeType"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>
+                                  What upgrade is required?{' '}
+                                  <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                                </FormLabel>
+                                <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Choose an upgrade" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {UPGRADE_TYPES.map(([value, label]) => (
+                                      <SelectItem key={value} value={value}>
+                                        {label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          {upgradeType === 'RAM' || upgradeType === 'STORAGE' ? (
+                            <FormField
+                              control={form.control}
+                              name="requestedSpec"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>
+                                    Requested {upgradeType === 'RAM' ? 'RAM' : 'storage'}{' '}
+                                    <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                                  </FormLabel>
+                                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue
+                                          placeholder={currentSpec ? `Current: ${currentSpec}` : 'Choose'}
+                                        />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {(upgradeType === 'RAM' ? RAM_UPGRADE_OPTIONS : STORAGE_UPGRADE_OPTIONS).map((o) => (
+                                        <SelectItem key={o} value={o}>
+                                          {o}
+                                        </SelectItem>
+                                      ))}
+                                      <SelectItem value="OTHER">Other…</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {currentSpec ? (
+                                    <FormDescription>Currently: {currentSpec}</FormDescription>
+                                  ) : null}
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {type === 'REPLACEMENT' ? (
+                        <FormField
+                          control={form.control}
+                          name="replacementReason"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                Reason for replacement{' '}
+                                <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                              </FormLabel>
+                              <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Choose a reason" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {REPLACEMENT_REASONS.map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>
+                                      {label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      ) : null}
+
+                      {(type === 'UPGRADE' && (upgradeType === 'OTHER' || requestedSpec === 'OTHER')) ||
+                      (type === 'REPLACEMENT' && form.watch('replacementReason') === 'OTHER') ? (
+                        <FormField
+                          control={form.control}
+                          name="otherText"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                Please specify <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+                              </FormLabel>
+                              <FormControl>
+                                <Input placeholder="Describe exactly what you need" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+
               <FormField
                 control={form.control}
                 name="businessReason"
@@ -392,9 +754,9 @@ function NewRequestForm() {
                 </Button>
               </div>
 
-              <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)]">
+              <div className="rounded-[var(--radius-control)] border border-[var(--color-border)]">
                 <div
-                  className={`hidden gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs font-medium text-[var(--color-content-subtle)] sm:grid ${
+                  className={`hidden gap-3 rounded-t-[var(--radius-control)] border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs font-medium text-[var(--color-content-subtle)] sm:grid ${
                     canEnterCost
                       ? 'grid-cols-[1fr_5rem_7rem_10rem_2.5rem]'
                       : 'grid-cols-[1fr_5rem_12rem_2.5rem]'
@@ -425,7 +787,18 @@ function NewRequestForm() {
                         <FormItem>
                           <FormLabel className="sm:sr-only">Equipment name</FormLabel>
                           <FormControl>
-                            <Input placeholder="e.g. Dell 24-inch monitor" {...field} />
+                            <EquipmentPicker
+                              value={field.value}
+                              catalog={catalog.data}
+                              onChange={(description, categoryName) => {
+                                itemTouched.current = true;
+                                field.onChange(description);
+                                const match = categoryName
+                                  ? catalog.data?.categories.find((c) => c.name === categoryName)
+                                  : undefined;
+                                if (match) form.setValue(`items.${index}.categoryId`, match.id);
+                              }}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -552,6 +925,100 @@ function NewRequestForm() {
         </aside>
       </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Searchable equipment picker fed by /requests/catalog: the domain baseline
+ * merged with what the company actually owns, grouped by category. Typing
+ * filters; anything not in the list is kept as free text via the explicit
+ * "Use ..." row, which is the "Other" path.
+ */
+function EquipmentPicker({
+  value,
+  catalog,
+  onChange,
+}: {
+  value: string;
+  catalog: Catalog | undefined;
+  onChange: (description: string, categoryName?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  const q = value.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!catalog) return [];
+    return catalog.groups
+      .map((g) => ({
+        label: g.label,
+        items: q ? g.items.filter((i) => i.toLowerCase().includes(q)) : g.items,
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [catalog, q]);
+
+  const exactMatch = filtered.some((g) => g.items.some((i) => i.toLowerCase() === q));
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <Input
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        placeholder="Search equipment… e.g. HDMI, mouse, laptop"
+        value={value}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+      />
+      {open && catalog ? (
+        <div className="absolute z-30 mt-1 max-h-64 w-full min-w-64 overflow-y-auto rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] py-1 shadow-lg">
+          {filtered.length === 0 && !q ? null : (
+            <>
+              {filtered.map((group) => (
+                <div key={group.label}>
+                  <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                    {group.label}
+                  </p>
+                  {group.items.slice(0, 8).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className="block w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--color-surface-sunken)]"
+                      onClick={() => {
+                        onChange(item, group.label);
+                        setOpen(false);
+                      }}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              ))}
+              {q && !exactMatch ? (
+                <button
+                  type="button"
+                  className="block w-full border-t border-[var(--color-border)] px-3 py-2 text-left text-sm font-medium text-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)]"
+                  onClick={() => setOpen(false)}
+                >
+                  Other — use &ldquo;{value.trim()}&rdquo;
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

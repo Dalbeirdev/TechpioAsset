@@ -36,6 +36,15 @@ interface RequestDetail {
   priority: string;
   businessReason: string;
   issueCategory: string | null;
+  details: {
+    targetAssetId?: string | null;
+    upgradeType?: string | null;
+    currentSpec?: string | null;
+    requestedSpec?: string | null;
+    replacementReason?: string | null;
+    otherText?: string | null;
+  } | null;
+  aboutAsset: { id: string; assetTag: string; name: string; serialNumber: string | null } | null;
   requiredBy: string | null;
   estimatedCost: string | null;
   currency: string | null;
@@ -213,6 +222,50 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
               {data.issueCategory ? 'What is happening' : 'Business reason'}
             </h2>
             <p className="mt-2 text-sm text-[var(--color-content-muted)]">{data.businessReason}</p>
+
+            {data.aboutAsset || data.details ? (
+              <div className="mt-5 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)]/60 p-3.5">
+                <h2 className="text-sm font-semibold">Request details</h2>
+                <dl className="mt-2 grid gap-1.5 text-sm">
+                  {data.aboutAsset ? (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                      <dt className="text-xs text-[var(--color-content-subtle)]">About asset</dt>
+                      <dd className="font-medium">
+                        <Link href={`/assets/${data.aboutAsset.id}`} className="text-[var(--color-brand)] hover:underline">
+                          {data.aboutAsset.name} · {data.aboutAsset.assetTag}
+                        </Link>
+                      </dd>
+                    </div>
+                  ) : null}
+                  {data.details?.upgradeType ? (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                      <dt className="text-xs text-[var(--color-content-subtle)]">Upgrade</dt>
+                      <dd className="font-medium">{data.details.upgradeType.replaceAll('_', ' ').toLowerCase()}</dd>
+                    </div>
+                  ) : null}
+                  {data.details?.currentSpec || data.details?.requestedSpec ? (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                      <dt className="text-xs text-[var(--color-content-subtle)]">Change</dt>
+                      <dd className="font-medium">
+                        {data.details.currentSpec ?? '—'} → {data.details.requestedSpec ?? '—'}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {data.details?.replacementReason ? (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                      <dt className="text-xs text-[var(--color-content-subtle)]">Replacement reason</dt>
+                      <dd className="font-medium">{data.details.replacementReason.replaceAll('_', ' ').toLowerCase()}</dd>
+                    </div>
+                  ) : null}
+                  {data.details?.otherText ? (
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                      <dt className="text-xs text-[var(--color-content-subtle)]">Specified</dt>
+                      <dd className="font-medium">{data.details.otherText}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
+            ) : null}
 
             <h2 className="mt-5 text-sm font-semibold">Items</h2>
             <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">

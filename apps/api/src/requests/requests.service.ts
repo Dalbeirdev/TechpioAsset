@@ -2,6 +2,7 @@ import { Logger, Injectable } from '@nestjs/common';
 import { ApprovalDecision, AuditAction, Prisma, type RequestType } from '@prisma/client';
 import type { AuthUser, CreateRequestInput, RequestListQuery } from '@techpioasset/contracts';
 import {
+  EQUIPMENT_CATALOG,
   assertTransition,
   findIssueCategory,
   requestStatusMachine,
@@ -179,6 +180,8 @@ export class RequestsService {
         notes: true,
         preferredSpec: true,
         isReplacement: true,
+        details: true,
+        replacesAssetId: true,
         officeId: true,
         departmentId: true,
         currentStepOrder: true,
@@ -271,12 +274,92 @@ export class RequestsService {
         actorRoleKeys: actor.roles,
       }));
 
+    // The asset this request is about (upgrade/repair/replacement), as a
+    // light reference the detail page can link to.
+    const aboutAsset = request.replacesAssetId
+      ? await this.prisma.client.asset.findFirst({
+          where: { id: request.replacesAssetId, companyId: actor.companyId },
+          select: { id: true, assetTag: true, name: true, serialNumber: true },
+        })
+      : null;
+
     return {
       ...request,
+      aboutAsset,
       // Fetched newest-first so the cap keeps the RECENT comments; read
       // oldest-first, which is how a conversation is followed.
       comments: [...request.comments].reverse(),
       canDecide,
+    };
+  }
+
+  /**
+   * The caller's own assigned assets, shaped for the dynamic request form.
+   * Scoped to the requester by construction - no cost fields, no other
+   * people's equipment - so the form can never show what the API would refuse.
+   */
+  async eligibleAssets(actor: AuthUser) {
+    return this.prisma.client.asset.findMany({
+      where: { companyId: actor.companyId, deletedAt: null, assignedUserId: actor.id },
+      orderBy: { name: 'asc' },
+      take: 100,
+      select: {
+        id: true,
+        name: true,
+        assetTag: true,
+        serialNumber: true,
+        brand: true,
+        model: true,
+        status: true,
+        condition: true,
+        purchaseDate: true,
+        warrantyEndDate: true,
+        category: { select: { id: true, name: true } },
+        office: { select: { name: true } },
+        hardwareProfile: {
+          select: { manufacturer: true, cpu: true, ramGb: true, storageTotalGb: true },
+        },
+      },
+    });
+  }
+
+  /**
+   * Equipment picker contents: the domain baseline merged with the distinct
+   * asset names this company actually owns, grouped by category. DB-driven by
+   * design - a tenant's register grows the list, no hardcode to maintain.
+   */
+  async equipmentCatalog(actor: AuthUser) {
+    const [categories, owned] = await Promise.all([
+      this.prisma.client.category.findMany({
+        where: { companyId: actor.companyId },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, name: true, key: true },
+      }),
+      this.prisma.client.asset.findMany({
+        where: { companyId: actor.companyId, deletedAt: null },
+        distinct: ['name'],
+        orderBy: { name: 'asc' },
+        take: 400,
+        select: { name: true, category: { select: { name: true } } },
+      }),
+    ]);
+
+    const groups = new Map<string, Set<string>>();
+    for (const { group, items } of EQUIPMENT_CATALOG) {
+      groups.set(group, new Set(items));
+    }
+    for (const asset of owned) {
+      const label = asset.category?.name ?? 'In your register';
+      if (!groups.has(label)) groups.set(label, new Set());
+      groups.get(label)!.add(asset.name);
+    }
+
+    return {
+      groups: [...groups.entries()].map(([label, items]) => ({
+        label,
+        items: [...items].sort((a, b) => a.localeCompare(b)),
+      })),
+      categories,
     };
   }
 
@@ -325,6 +408,28 @@ export class RequestsService {
       select: { managerId: true, departmentId: true, officeId: true },
     });
 
+    // v2.17 dynamic form: when the request is ABOUT a specific asset, the
+    // asset must exist here and be assigned to the request's subject - the
+    // frontend filters, but only this check makes it a rule. Wider-scope
+    // roles (assets:read) may reference any company asset.
+    const targetAssetId = input.details?.targetAssetId ?? input.replacesAssetId ?? null;
+    if (targetAssetId) {
+      const target = await this.prisma.client.asset.findFirst({
+        where: { id: targetAssetId, companyId: actor.companyId, deletedAt: null },
+        select: { id: true, assignedUserId: true },
+      });
+      if (!target) throw AppError.notFound('Asset', targetAssetId);
+      // Assigned-to-the-subject, or a company-wide role: OWN/DEPARTMENT-scope
+      // requesters may only reference their own (or their beneficiary's) gear.
+      if (target.assignedUserId !== beneficiaryId && actor.scope !== 'ALL') {
+        throw new AppError('VALIDATION_FAILED', 'That asset is not assigned to you', {
+          fieldErrors: [
+            { path: 'details.targetAssetId', message: 'Pick one of your own assigned assets' },
+          ],
+        });
+      }
+    }
+
     // Total estimate drives threshold-based step skipping, so an explicit
     // request-level figure wins and otherwise the items are summed.
     const itemTotal = input.items.reduce(
@@ -353,8 +458,9 @@ export class RequestsService {
           : null,
         requiredBy: input.requiredBy ?? null,
         preferredSpec: input.preferredSpec ?? null,
-        isReplacement: input.isReplacement,
-        replacesAssetId: input.replacesAssetId ?? null,
+        isReplacement: input.isReplacement || input.type === 'REPLACEMENT',
+        replacesAssetId: targetAssetId,
+        details: input.details ? (input.details as Prisma.InputJsonValue) : undefined,
         estimatedCost,
         currency:
           input.currency ??
