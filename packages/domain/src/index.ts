@@ -13,6 +13,7 @@ export * from './ai-config';
 export * from './offline-sync';
 export * from './depreciation';
 export * from './warranty';
+export * from './warranty-sources';
 export * from './maintenance-status';
 export * from './license';
 export * from './procurement';

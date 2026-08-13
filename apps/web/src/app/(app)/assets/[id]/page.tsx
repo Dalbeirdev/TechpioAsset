@@ -4,7 +4,7 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { TicketPlus, ChevronDown, Printer, Lock, Pencil } from 'lucide-react';
+import { ShieldCheck, ExternalLink, TicketPlus, ChevronDown, Printer, Lock, Pencil } from 'lucide-react';
 import {
   ASSET_STATUS_TOKENS,
   CONDITION_TOKENS,
@@ -12,7 +12,7 @@ import {
   AVAILABILITY_STATE_TOKENS,
   OWNERSHIP_TYPE_TOKENS,
 } from '@techpioasset/ui-tokens';
-import {
+import { warrantySource,
   PERMISSIONS,
   type AssetCondition,
   type AssetStatus,
@@ -306,7 +306,21 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
               }
             />
             <Row label="Purchased on" value={fmtDate(data.purchaseDate)} />
-            <Row label="Warranty ends" value={fmtDate(data.warrantyEndDate)} />
+            <Row
+              label="Warranty ends"
+              value={
+                <WarrantyCheck
+                  ends={data.warrantyEndDate}
+                  serial={data.serialNumber}
+                  identity={[
+                    data.hardwareProfile?.manufacturer,
+                    data.brand,
+                    data.model,
+                    data.name,
+                  ]}
+                />
+              }
+            />
             <Row
               label="Assigned to"
               value={
@@ -751,5 +765,48 @@ function CreateTicketMenu({ assetTag, assetName }: { assetTag: string; assetName
         </>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The warranty checker (v2.15). Detects the manufacturer from what the asset
+ * already knows - the agent-reported hardware manufacturer first, the register
+ * fields second - and links the technician to that maker's OFFICIAL warranty
+ * source. Dell and Lenovo resolve the device straight from the URL; for the
+ * form-based vendors the serial rides the clipboard.
+ */
+function WarrantyCheck({
+  ends,
+  serial,
+  identity,
+}: {
+  ends: string | null;
+  serial: string | null;
+  identity: (string | null | undefined)[];
+}) {
+  const toast = useToast();
+  const source = warrantySource(serial, ...identity);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span>{fmtDate(ends)}</span>
+      {source ? (
+        <a
+          href={source.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          onClick={() => {
+            if (!source.serialInUrl && serial) {
+              void navigator.clipboard.writeText(serial);
+              toast.success(`Serial copied — paste it on the ${source.label} page`);
+            }
+          }}
+          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)]"
+        >
+          <ShieldCheck aria-hidden="true" className="size-3" />
+          Check with {source.label}
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </a>
+      ) : null}
+    </span>
   );
 }
