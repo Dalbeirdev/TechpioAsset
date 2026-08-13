@@ -24,7 +24,7 @@ export function MarketingFooter() {
           title="Product"
           links={[
             { href: '/', label: 'Overview' },
-            { href: '/#features', label: 'Features' },
+            { href: '/features', label: 'Features' },
             { href: '/#how-it-works', label: 'How It Works' },
             { href: '/#security', label: 'Security' },
             { href: '/#demo', label: 'Contact' },

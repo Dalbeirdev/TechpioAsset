@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn';
 const LINKS = [
   { href: '/', label: 'Home' },
   { href: '/about', label: 'About' },
-  { href: '/#features', label: 'Features' },
+  { href: '/features', label: 'Features' },
   { href: '/#how-it-works', label: 'How It Works' },
   { href: '/#feedback', label: 'Client Feedback' },
   { href: '/#demo', label: 'Contact' },
