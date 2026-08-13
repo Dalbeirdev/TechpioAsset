@@ -422,7 +422,7 @@ export class AuthService {
     try {
       await this.mail.send({
         to: user.email,
-        subject: 'Reset your TechpioAsset password',
+        subject: 'Reset your PioAssets password',
         text: [
           'Someone asked to reset the password for this TechpioAsset account.',
           '',

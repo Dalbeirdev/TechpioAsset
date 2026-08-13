@@ -9,11 +9,11 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'TechpioAsset',
-    template: '%s · TechpioAsset',
+    default: 'PioAssets',
+    template: '%s · PioAssets',
   },
   description: 'Manage Assets. Control Costs. Simplify Operations.',
-  applicationName: 'TechpioAsset',
+  applicationName: 'PioAssets',
   robots: { index: false, follow: false },
 };
 

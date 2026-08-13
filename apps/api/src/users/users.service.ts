@@ -624,7 +624,7 @@ export class UsersService {
     try {
       await this.mail.send({
         to: email,
-        subject: 'You have been invited to TechpioAsset',
+        subject: 'You have been invited to PioAssets',
         text: [
           `${firstName}, you have been invited to your company's TechpioAsset workspace.`,
           '',
