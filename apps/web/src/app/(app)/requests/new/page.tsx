@@ -111,6 +111,10 @@ const requestSchema = z
           estimatedCost: z.string().optional(),
           notes: z.string().optional(),
           categoryId: z.string().optional(),
+          isUncatalogued: z.boolean().optional(),
+          manufacturer: z.string().optional(),
+          model: z.string().optional(),
+          referenceUrl: z.string().optional(),
         }),
       )
       .min(1, 'Add at least one item'),
@@ -227,7 +231,7 @@ function NewRequestForm() {
       businessReason: '',
       requiredBy: '',
       items: [
-        { description: prefillAbout, quantity: 1, estimatedCost: '', notes: '', categoryId: '' },
+        { description: prefillAbout, quantity: 1, estimatedCost: '', notes: '', categoryId: '', isUncatalogued: false, manufacturer: '', model: '', referenceUrl: '' },
       ],
     },
   });
@@ -276,6 +280,8 @@ function NewRequestForm() {
   // Keep the first item's description in step with the upgrade selections so
   // nobody retypes what the form already knows - until they edit it by hand.
   const itemTouched = useRef(false);
+  // Which item row's "Asset not in list" dialog is open, if any.
+  const [uncataloguedFor, setUncataloguedFor] = useState<number | null>(null);
   useEffect(() => {
     if (type !== 'UPGRADE' || itemTouched.current) return;
     const label = UPGRADE_TYPES.find(([k]) => k === upgradeType)?.[1];
@@ -335,6 +341,14 @@ function NewRequestForm() {
             ...(canEnterCost && item.estimatedCost ? { estimatedCost: item.estimatedCost } : {}),
             ...(item.notes ? { preferredSpec: item.notes } : {}),
             ...(item.categoryId ? { categoryId: item.categoryId } : {}),
+            ...(item.isUncatalogued
+              ? {
+                  isUncatalogued: true,
+                  ...(item.manufacturer ? { manufacturer: item.manufacturer } : {}),
+                  ...(item.model ? { model: item.model } : {}),
+                  ...(item.referenceUrl ? { referenceUrl: item.referenceUrl } : {}),
+                }
+              : {}),
           })),
         },
       });
@@ -746,7 +760,7 @@ function NewRequestForm() {
                   size="sm"
                   className="border-[var(--color-brand)] text-[var(--color-brand)]"
                   onClick={() =>
-                    append({ description: '', quantity: 1, estimatedCost: '', notes: '', categoryId: '' })
+                    append({ description: '', quantity: 1, estimatedCost: '', notes: '', categoryId: '', isUncatalogued: false, manufacturer: '', model: '', referenceUrl: '' })
                   }
                 >
                   <Plus aria-hidden="true" className="size-3.5" />
@@ -787,18 +801,27 @@ function NewRequestForm() {
                         <FormItem>
                           <FormLabel className="sm:sr-only">Equipment name</FormLabel>
                           <FormControl>
-                            <EquipmentPicker
-                              value={field.value}
-                              catalog={catalog.data}
-                              onChange={(description, categoryName) => {
-                                itemTouched.current = true;
-                                field.onChange(description);
-                                const match = categoryName
-                                  ? catalog.data?.categories.find((c) => c.name === categoryName)
-                                  : undefined;
-                                if (match) form.setValue(`items.${index}.categoryId`, match.id);
-                              }}
-                            />
+                            <div>
+                              <EquipmentPicker
+                                value={field.value}
+                                catalog={catalog.data}
+                                onChange={(description, categoryName) => {
+                                  itemTouched.current = true;
+                                  field.onChange(description);
+                                  form.setValue(`items.${index}.isUncatalogued`, false);
+                                  const match = categoryName
+                                    ? catalog.data?.categories.find((c) => c.name === categoryName)
+                                    : undefined;
+                                  if (match) form.setValue(`items.${index}.categoryId`, match.id);
+                                }}
+                                onNotInList={() => setUncataloguedFor(index)}
+                              />
+                              {form.watch(`items.${index}.isUncatalogued`) ? (
+                                <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-[var(--color-tint-amber)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-tint-amber-fg)]">
+                                  Uncatalogued item — admins will review
+                                </span>
+                              ) : null}
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -898,6 +921,28 @@ function NewRequestForm() {
           </form>
         </Form>
 
+        {uncataloguedFor !== null ? (
+          <UncataloguedDialog
+            catalog={catalog.data}
+            canEnterCost={canEnterCost}
+            onClose={() => setUncataloguedFor(null)}
+            onAdd={(item) => {
+              const index = uncataloguedFor;
+              itemTouched.current = true;
+              form.setValue(`items.${index}.description`, item.name, { shouldValidate: true });
+              form.setValue(`items.${index}.quantity`, item.quantity);
+              form.setValue(`items.${index}.categoryId`, item.categoryId ?? '');
+              form.setValue(`items.${index}.notes`, item.notes);
+              if (canEnterCost) form.setValue(`items.${index}.estimatedCost`, item.estimatedCost);
+              form.setValue(`items.${index}.isUncatalogued`, true);
+              form.setValue(`items.${index}.manufacturer`, item.manufacturer);
+              form.setValue(`items.${index}.model`, item.model);
+              form.setValue(`items.${index}.referenceUrl`, item.referenceUrl);
+              setUncataloguedFor(null);
+            }}
+          />
+        ) : null}
+
         <aside className="content-start">
           <Card className="grid gap-5 p-5">
             <div className="grid place-items-center rounded-[var(--radius-card)] bg-[var(--color-brand)]/5 py-6">
@@ -939,10 +984,12 @@ function EquipmentPicker({
   value,
   catalog,
   onChange,
+  onNotInList,
 }: {
   value: string;
   catalog: Catalog | undefined;
   onChange: (description: string, categoryName?: string) => void;
+  onNotInList?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -1015,10 +1062,187 @@ function EquipmentPicker({
                   Other — use &ldquo;{value.trim()}&rdquo;
                 </button>
               ) : null}
+              {onNotInList ? (
+                <button
+                  type="button"
+                  className="block w-full border-t border-[var(--color-border)] px-3 py-2 text-left text-sm font-semibold text-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)]"
+                  onClick={() => {
+                    setOpen(false);
+                    onNotInList();
+                  }}
+                >
+                  + Asset not in list
+                </button>
+              ) : null}
             </>
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+interface UncataloguedDraft {
+  name: string;
+  categoryId: string;
+  quantity: number;
+  estimatedCost: string;
+  manufacturer: string;
+  model: string;
+  referenceUrl: string;
+  notes: string;
+}
+
+/**
+ * "Asset not in list": captures a one-off item the catalog does not carry.
+ * Creates NO asset and NO catalog record - the data rides on the request item
+ * (isUncatalogued) for admins to review and, if they choose, promote. A live
+ * similarity check nudges the user toward an existing entry first.
+ */
+function UncataloguedDialog({
+  catalog,
+  canEnterCost,
+  onClose,
+  onAdd,
+}: {
+  catalog: Catalog | undefined;
+  canEnterCost: boolean;
+  onClose: () => void;
+  onAdd: (item: { name: string; categoryId: string | null; quantity: number; estimatedCost: string; manufacturer: string; model: string; referenceUrl: string; notes: string }) => void;
+}) {
+  const [draft, setDraft] = useState<UncataloguedDraft>({
+    name: '',
+    categoryId: '',
+    quantity: 1,
+    estimatedCost: '',
+    manufacturer: '',
+    model: '',
+    referenceUrl: '',
+    notes: '',
+  });
+  const [error, setError] = useState<string | null>(null);
+  const set = (patch: Partial<UncataloguedDraft>) => setDraft((d) => ({ ...d, ...patch }));
+
+  const q = draft.name.trim().toLowerCase();
+  const similar = useMemo(() => {
+    if (!catalog || q.length < 3) return [];
+    return catalog.groups
+      .flatMap((g) => g.items.map((i) => ({ item: i, group: g.label })))
+      .filter(({ item }) => item.toLowerCase().includes(q) || q.includes(item.toLowerCase()))
+      .slice(0, 4);
+  }, [catalog, q]);
+
+  const inputCls =
+    'h-10 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-sm outline-none focus:border-[var(--color-brand)]';
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Add uncatalogued item">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl">
+        <h2 className="text-[15px] font-semibold">Add uncatalogued item</h2>
+        <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+          For equipment the catalog does not carry yet. It stays attached to this request as an
+          uncatalogued item — admins review it and decide whether it joins the catalog.
+        </p>
+
+        <div className="mt-4 grid gap-3">
+          <div>
+            <label htmlFor="unc-name" className="text-sm font-medium">
+              Asset / equipment name <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+            </label>
+            <input id="unc-name" className={`${inputCls} mt-1`} placeholder="e.g. USB-C to HDMI Adapter" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
+            {similar.length > 0 ? (
+              <div className="mt-1.5 rounded-[var(--radius-control)] bg-[var(--color-tint-amber)]/60 px-3 py-2">
+                <p className="text-xs font-medium text-[var(--color-tint-amber-fg)]">
+                  A similar item already exists — use it instead?
+                </p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {similar.map(({ item }) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]"
+                      onClick={() => {
+                        onAdd({ name: item, categoryId: null, quantity: draft.quantity, estimatedCost: '', manufacturer: '', model: '', referenceUrl: '', notes: '' });
+                      }}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="unc-cat" className="text-sm font-medium">
+                Category <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+              </label>
+              <select id="unc-cat" className={`${inputCls} mt-1`} value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
+                <option value="">Choose a category</option>
+                {(catalog?.categories ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="unc-qty" className="text-sm font-medium">
+                Quantity <span style={{ color: 'var(--tone-critical-fg)' }}>*</span>
+              </label>
+              <input id="unc-qty" type="number" min={1} className={`${inputCls} mt-1`} value={draft.quantity} onChange={(e) => set({ quantity: Math.max(1, Number(e.target.value) || 1) })} />
+            </div>
+            <div>
+              <label htmlFor="unc-make" className="text-sm font-medium">Manufacturer</label>
+              <input id="unc-make" className={`${inputCls} mt-1`} value={draft.manufacturer} onChange={(e) => set({ manufacturer: e.target.value })} />
+            </div>
+            <div>
+              <label htmlFor="unc-model" className="text-sm font-medium">Model</label>
+              <input id="unc-model" className={`${inputCls} mt-1`} value={draft.model} onChange={(e) => set({ model: e.target.value })} />
+            </div>
+            {canEnterCost ? (
+              <div>
+                <label htmlFor="unc-cost" className="text-sm font-medium">Estimated cost</label>
+                <input id="unc-cost" inputMode="decimal" placeholder="0.00" className={`${inputCls} mt-1`} value={draft.estimatedCost} onChange={(e) => set({ estimatedCost: e.target.value })} />
+              </div>
+            ) : null}
+            <div className={canEnterCost ? '' : 'sm:col-span-2'}>
+              <label htmlFor="unc-link" className="text-sm font-medium">Reference / product link</label>
+              <input id="unc-link" type="url" placeholder="https://…" className={`${inputCls} mt-1`} value={draft.referenceUrl} onChange={(e) => set({ referenceUrl: e.target.value })} />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="unc-notes" className="text-sm font-medium">Description / notes</label>
+            <textarea id="unc-notes" rows={2} className={`${inputCls} mt-1 h-auto py-2`} placeholder="Briefly describe the item and why this one." value={draft.notes} onChange={(e) => set({ notes: e.target.value })} />
+          </div>
+
+          {error ? <p className="text-sm" style={{ color: 'var(--tone-critical-fg)' }}>{error}</p> : null}
+
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (draft.name.trim().length < 2) return setError('Name the asset or equipment.');
+                if (!draft.categoryId) return setError('Choose a category.');
+                setError(null);
+                onAdd({
+                  name: draft.name.trim(),
+                  categoryId: draft.categoryId,
+                  quantity: draft.quantity,
+                  estimatedCost: draft.estimatedCost,
+                  manufacturer: draft.manufacturer.trim(),
+                  model: draft.model.trim(),
+                  referenceUrl: draft.referenceUrl.trim(),
+                  notes: draft.notes.trim(),
+                });
+              }}
+            >
+              Add to Request
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

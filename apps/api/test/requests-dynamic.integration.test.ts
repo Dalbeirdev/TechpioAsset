@@ -148,3 +148,67 @@ describe('POST /requests with details', () => {
     requests.push(res.body.data.id);
   });
 });
+
+describe('uncatalogued items + catalog promotion', () => {
+  const customName = `USB-C to HDMI Adapter ${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+  it('stores an uncatalogued item with its metadata on the request', async () => {
+    const res = await api(app)
+      .post('/api/v1/requests')
+      .set(auth(s.employee))
+      .send({
+        type: 'ADDITIONAL_EQUIPMENT',
+        priority: 'NORMAL',
+        businessReason: 'Need to present from my laptop to the meeting-room TV.',
+        items: [
+          {
+            description: customName,
+            quantity: 2,
+            isUncatalogued: true,
+            manufacturer: 'Anker',
+            model: 'A8312',
+            referenceUrl: 'https://example.com/a8312',
+            preferredSpec: '4K60 support required',
+          },
+        ],
+      });
+    expect(res.status).toBe(201);
+    requests.push(res.body.data.id);
+
+    const detail = await api(app).get(`/api/v1/requests/${res.body.data.id}`).set(auth(s.employee));
+    const item = detail.body.data.items[0];
+    expect(item.isUncatalogued).toBe(true);
+    expect(item.manufacturer).toBe('Anker');
+    expect(item.model).toBe('A8312');
+    expect(item.referenceUrl).toBe('https://example.com/a8312');
+  });
+
+  it('employee may not promote items into the catalog', async () => {
+    const res = await api(app)
+      .post('/api/v1/requests/catalog-items')
+      .set(auth(s.employee))
+      .send({ name: customName });
+    expect(res.status).toBe(403);
+  });
+
+  it('admin promotes the item; it appears in the catalog; duplicates are refused', async () => {
+    const res = await api(app)
+      .post('/api/v1/requests/catalog-items')
+      .set(auth(s.itAdmin))
+      .send({ name: customName });
+    expect(res.status).toBe(201);
+    const catalogItemId = res.body.data.id as string;
+
+    const cat = await api(app).get('/api/v1/requests/catalog').set(auth(s.employee));
+    const all = cat.body.data.groups.flatMap((g: { items: string[] }) => g.items);
+    expect(all).toContain(customName);
+
+    const dup = await api(app)
+      .post('/api/v1/requests/catalog-items')
+      .set(auth(s.itAdmin))
+      .send({ name: customName.toLowerCase() });
+    expect(dup.status).toBe(409);
+
+    await prisma.client.$executeRawUnsafe('DELETE FROM catalog_items WHERE id = $1', catalogItemId);
+  });
+});

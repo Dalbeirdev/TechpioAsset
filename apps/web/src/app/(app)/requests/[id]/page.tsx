@@ -55,7 +55,17 @@ interface RequestDetail {
     email: string;
     profile: { firstName: string; lastName: string } | null;
   } | null;
-  items: { id: string; description: string; quantity: string; estimatedCost: string | null }[];
+  items: {
+    id: string;
+    description: string;
+    quantity: string;
+    estimatedCost: string | null;
+    isUncatalogued?: boolean;
+    manufacturer?: string | null;
+    model?: string | null;
+    referenceUrl?: string | null;
+    category?: { id: string; name: string } | null;
+  }[];
   approvals: Approval[];
   /** Server-resolved: whether this caller may act on the current step. */
   canDecide: boolean;
@@ -125,6 +135,15 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['request', id],
     queryFn: () => apiFetch<RequestDetail>(`/requests/${id}`),
+  });
+
+  const canAddToCatalog = can(PERMISSIONS.ASSETS_CREATE);
+  const addToCatalog = useMutation({
+    mutationFn: (body: { name: string; categoryId: string | null }) =>
+      apiFetch('/requests/catalog-items', { method: 'POST', body }),
+    onSuccess: (_r, body) => toast.success(`"${body.name}" added to the equipment catalog`),
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not add to catalog'),
   });
 
   const decide = useMutation({
@@ -271,12 +290,40 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
             <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">
               {data.items.map((item) => (
                 <li key={item.id} className="flex justify-between gap-3 py-2">
-                  <span>
+                  <span className="min-w-0">
                     {item.description}
                     <span className="text-[var(--color-content-subtle)]">
                       {' '}
                       × {Number(item.quantity)}
                     </span>
+                    {item.isUncatalogued ? (
+                      <span className="mt-1 block">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-tint-amber)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-tint-amber-fg)]">
+                          ⚠ Item not currently in catalog
+                        </span>
+                        <span className="mt-0.5 block text-xs text-[var(--color-content-muted)]">
+                          {[item.manufacturer, item.model, item.category?.name].filter(Boolean).join(' · ') || null}
+                          {item.referenceUrl ? (
+                            <>
+                              {' '}
+                              <a href={item.referenceUrl} target="_blank" rel="noreferrer noopener" className="text-[var(--color-brand)] hover:underline">
+                                product link
+                              </a>
+                            </>
+                          ) : null}
+                        </span>
+                        {canAddToCatalog ? (
+                          <button
+                            type="button"
+                            disabled={addToCatalog.isPending}
+                            onClick={() => addToCatalog.mutate({ name: item.description, categoryId: item.category?.id ?? null })}
+                            className="mt-1 inline-flex items-center rounded-full border border-[var(--color-border-strong)] px-2.5 py-1 text-xs font-semibold text-[var(--color-brand)] hover:bg-[var(--color-surface-sunken)] disabled:opacity-50"
+                          >
+                            Add to catalog
+                          </button>
+                        ) : null}
+                      </span>
+                    ) : null}
                   </span>
                   {item.estimatedCost ? (
                     <span className="tabular-nums text-[var(--color-content-muted)]">
