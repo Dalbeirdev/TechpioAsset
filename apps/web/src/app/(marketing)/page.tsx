@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Image from 'next/image';
-import { HeroLifecycleScene, TrustBadge } from '@/components/marketing/hero-visual';
+import { HeroLifecycleScene } from '@/components/marketing/hero-visual';
 import { Reveal } from '@/components/marketing/motion';
 import { AnalyticsShowcase, ProductShowcase } from '@/components/marketing/showcase';
 import { DemoForm } from '@/components/marketing/demo-form';
@@ -91,11 +91,6 @@ const TINT: Record<Tint, string> = {
   teal: 'bg-[var(--color-tint-teal)] text-[var(--color-tint-teal-fg)]',
   rose: 'bg-[var(--color-tint-rose)] text-[var(--color-tint-rose-fg)]',
 };
-
-const primaryBtn =
-  'inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-brand)] px-6 text-sm font-semibold text-[var(--color-brand-contrast)] transition-all hover:bg-[var(--color-brand-hover)] hover:shadow-lg';
-const ghostBtn =
-  'inline-flex h-12 items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 text-sm font-semibold transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]';
 
 function Kicker({ children }: { children: React.ReactNode }) {
   return (
@@ -202,39 +197,85 @@ export default function HomePage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
 
       {/* HERO */}
-      <section className="relative overflow-hidden border-b border-[var(--color-border)]">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(48rem 28rem at 84% -10%, color-mix(in srgb, var(--color-brand) 16%, transparent), transparent 65%), radial-gradient(30rem 20rem at -10% 110%, color-mix(in srgb, #7c3aed 8%, transparent), transparent 60%)',
-          }}
-        />
+      <section
+        className="relative overflow-hidden"
+        style={{
+          background:
+            'linear-gradient(135deg, #0a1633 0%, #10265c 38%, #1d4ed8 78%, #2563eb 100%)',
+        }}
+      >
+        {/* glow orbs + dot grid, echoing the blue/orange brand palette */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+          <div
+            className="absolute -top-24 right-[8%] h-96 w-96 rounded-full opacity-30 blur-3xl"
+            style={{ background: 'radial-gradient(circle, #f97316, transparent 65%)' }}
+          />
+          <div
+            className="absolute -bottom-32 left-[-6%] h-[28rem] w-[28rem] rounded-full opacity-25 blur-3xl"
+            style={{ background: 'radial-gradient(circle, #8b5cf6, transparent 65%)' }}
+          />
+          <div
+            className="absolute top-1/3 left-[30%] h-72 w-72 rounded-full opacity-20 blur-3xl"
+            style={{ background: 'radial-gradient(circle, #38bdf8, transparent 65%)' }}
+          />
+          <div
+            className="absolute inset-0 opacity-40"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle, rgba(255,255,255,0.10) 1px, transparent 1px)',
+              backgroundSize: '26px 26px',
+              maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9), transparent 85%)',
+              WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9), transparent 85%)',
+            }}
+          />
+        </div>
         <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-16 sm:py-20 md:grid-cols-2 md:gap-10 lg:py-24">
           <div>
-            <Kicker>IT Asset Lifecycle Management</Kicker>
-            <h1 className="mt-5 text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-[3.5rem] lg:leading-[1.04]">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-sky-100 backdrop-blur">
+              <span className="size-1.5 rounded-full bg-orange-400" aria-hidden="true" />
+              IT Asset Lifecycle Management
+            </span>
+            <h1 className="mt-5 text-4xl font-bold tracking-tight text-balance text-white sm:text-5xl lg:text-[3.5rem] lg:leading-[1.04]">
               Know Every Asset.
               <br />
-              <span className="text-[var(--color-brand)]">Control Every Lifecycle.</span>
+              <span
+                className="bg-clip-text text-transparent"
+                style={{ backgroundImage: 'linear-gradient(90deg, #fb923c, #fbbf24 60%, #38bdf8 115%)' }}
+              >
+                Control Every Lifecycle.
+              </span>
             </h1>
-            <p className="mt-5 max-w-xl text-lg text-[var(--color-content-muted)]">
+            <p className="mt-5 max-w-xl text-lg text-white/80">
               PioAssets gives businesses complete visibility into their IT assets — from purchase
               and assignment to warranty, maintenance, transfers, reporting, and retirement.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href="/login" className={primaryBtn}>
+              <Link
+                href="/login"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-[#1d4ed8] shadow-lg shadow-blue-950/30 transition-all hover:bg-[#eef3ff] hover:shadow-xl"
+              >
                 Get Started <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
-              <Link href="/#demo" className={ghostBtn}>
+              <Link
+                href="/#demo"
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-white/35 px-6 text-sm font-semibold text-white transition-colors hover:border-white/70 hover:bg-white/10"
+              >
                 Book a Demo
               </Link>
             </div>
-            <TrustBadge />
+            <p className="mt-5 flex items-center gap-2 text-sm text-sky-100/80">
+              <ShieldCheck aria-hidden="true" className="size-4 text-orange-300" />
+              One platform for your complete IT asset lifecycle.
+            </p>
           </div>
           <HeroLifecycleScene />
         </div>
+        {/* soft fade into the page background */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
+          style={{ background: 'linear-gradient(to bottom, transparent, rgba(2,6,23,0.18))' }}
+        />
       </section>
 
       {/* VALUE STRIP */}
