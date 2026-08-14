@@ -944,8 +944,19 @@ export class AlertSweepService implements OnModuleInit {
         where: { toUserId: user.id, type: 'INVITE_REMINDER', status: { not: 'FAILED' } },
       });
 
+      // Cooldown: the boot-time sweep must not advance a stage the nightly
+      // pass already sent - for invites older than every stage threshold the
+      // count-based cursor would otherwise fire once per API restart.
+      const lastReminder = await this.prisma.client.emailLog.findFirst({
+        where: { toUserId: user.id, type: 'INVITE_REMINDER', status: { not: 'FAILED' } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      const cooledDown =
+        !lastReminder || now.getTime() - lastReminder.createdAt.getTime() > 20 * 3_600_000;
+
       const nextStage = stages[reminderCount];
-      if ((rule?.enabled ?? true) && nextStage !== undefined && daysSince >= nextStage) {
+      if ((rule?.enabled ?? true) && cooledDown && nextStage !== undefined && daysSince >= nextStage) {
         const token = await this.auth.issueInviteToken(user.id);
         const expiry = new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
         const acceptPath = `/accept-invite?token=${token}`;
