@@ -167,6 +167,63 @@ describe('identity fields', () => {
     expect(res.status).toBe(422);
   });
 
+  it('lets an asset keep its own IMEI on edit, but not take another’s', async () => {
+    const mine = await createAsset({
+      assetTag: `TY-${stamp}-E1`,
+      name: 'Phone being edited',
+      categoryId: itCategoryId,
+      subcategoryId: mobileTypeId,
+      imei: '359874102340001',
+    });
+    expect(mine.status).toBe(201);
+
+    // Re-saving with the value it already holds must not trip the guard.
+    const resave = await api(app)
+      .patch(`/api/v1/assets/${mine.body.data.id}`)
+      .set(auth(s.itAdmin))
+      .send({ name: 'Phone being edited (renamed)', imei: '359874102340001' });
+    expect(resave.status).toBeLessThan(300);
+
+    // Someone else's IMEI still is.
+    const theirs = await createAsset({
+      assetTag: `TY-${stamp}-E2`,
+      name: 'Another phone',
+      categoryId: itCategoryId,
+      subcategoryId: mobileTypeId,
+      imei: '359874102340002',
+    });
+    expect(theirs.status).toBe(201);
+
+    const steal = await api(app)
+      .patch(`/api/v1/assets/${mine.body.data.id}`)
+      .set(auth(s.itAdmin))
+      .send({ imei: '359874102340002' });
+    expect(steal.status).toBe(409);
+  });
+
+  it('updates the stored specification and drops cleared fields', async () => {
+    const asset = await createAsset({
+      assetTag: `TY-${stamp}-S1`,
+      name: 'Monitor to respec',
+      categoryId: itCategoryId,
+      subcategoryId: monitorTypeId,
+      specs: { screenSize: '24', panel: 'IPS' },
+    });
+    expect(asset.status).toBe(201);
+
+    const res = await api(app)
+      .patch(`/api/v1/assets/${asset.body.data.id}`)
+      .set(auth(s.itAdmin))
+      .send({ specs: { screenSize: '27', resolution: '2560 x 1440 (QHD)' } });
+    expect(res.status).toBeLessThan(300);
+
+    const row = await prisma.client.asset.findUnique({
+      where: { id: asset.body.data.id as string },
+      select: { specs: true },
+    });
+    expect(row?.specs).toEqual({ screenSize: '27', resolution: '2560 x 1440 (QHD)' });
+  });
+
   it('lets two assets both leave the identity fields empty', async () => {
     for (const n of ['C1', 'C2']) {
       const res = await createAsset({

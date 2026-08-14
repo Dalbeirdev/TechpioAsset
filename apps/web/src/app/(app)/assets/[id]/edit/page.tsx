@@ -3,10 +3,11 @@
 import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ASSET_STATUSES, ASSET_CONDITIONS } from '@techpioasset/domain';
+import { ASSET_STATUSES, ASSET_CONDITIONS, ASSET_TYPES_BY_KEY } from '@techpioasset/domain';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
@@ -32,7 +33,7 @@ import {
 interface Category {
   id: string;
   name: string;
-  subcategories: { id: string; name: string }[];
+  subcategories: { id: string; key: string; name: string }[];
 }
 interface Office {
   id: string;
@@ -45,13 +46,16 @@ interface AssetDetail {
   brand: string | null;
   model: string | null;
   serialNumber: string | null;
+  macAddress: string | null;
+  imei: string | null;
+  specs: Record<string, string> | null;
   status: string;
   condition: string;
   purchaseDate: string | null;
   warrantyEndDate: string | null;
   version: number;
   category: { id: string; name: string } | null;
-  subcategory: { id: string; name: string } | null;
+  subcategory: { id: string; key: string; name: string } | null;
   office: { id: string; name: string } | null;
 }
 
@@ -63,6 +67,8 @@ const editSchema = z.object({
   brand: z.string().optional(),
   model: z.string().optional(),
   serialNumber: z.string().optional(),
+  macAddress: z.string().optional(),
+  imei: z.string().optional(),
   officeId: z.string().optional(),
   purchaseDate: z.string().optional(),
   warrantyEndDate: z.string().optional(),
@@ -104,6 +110,8 @@ function EditAssetForm({
       brand: asset.brand ?? '',
       model: asset.model ?? '',
       serialNumber: asset.serialNumber ?? '',
+      macAddress: asset.macAddress ?? '',
+      imei: asset.imei ?? '',
       officeId: asset.office?.id ?? '',
       purchaseDate: toDateInput(asset.purchaseDate),
       warrantyEndDate: toDateInput(asset.warrantyEndDate),
@@ -113,6 +121,17 @@ function EditAssetForm({
   });
 
   const selectedCategory = categories.find((c) => c.id === form.watch('categoryId'));
+  // v2.20 - same type-driven fields as the create form, pre-filled from the
+  // record. Changing type keeps nothing from the old one, since the fields mean
+  // different things.
+  const selectedSubcategoryId = form.watch('subcategoryId');
+  const selectedType = selectedCategory?.subcategories.find((sub) => sub.id === selectedSubcategoryId);
+  const typeDef = selectedType ? ASSET_TYPES_BY_KEY[selectedType.key] : undefined;
+  const [specs, setSpecs] = useState<Record<string, string>>(asset.specs ?? {});
+  const originalTypeId = asset.subcategory?.id ?? '';
+  useEffect(() => {
+    setSpecs(selectedSubcategoryId === originalTypeId ? (asset.specs ?? {}) : {});
+  }, [selectedSubcategoryId, originalTypeId, asset.specs]);
 
   const save = useMutation({
     mutationFn: async (values: EditValues) => {
@@ -126,6 +145,10 @@ function EditAssetForm({
           brand: values.brand || null,
           model: values.model || null,
           serialNumber: values.serialNumber || null,
+          macAddress: values.macAddress || null,
+          imei: values.imei || null,
+          // Always sent, so clearing a field actually clears it.
+          specs: Object.fromEntries(Object.entries(specs).filter(([, v]) => v.trim())),
           officeId: values.officeId || null,
           purchaseDate: values.purchaseDate || null,
           warrantyEndDate: values.warrantyEndDate || null,
@@ -301,6 +324,88 @@ function EditAssetForm({
                 )}
               />
             </div>
+
+            {/* v2.20 - identity fields for this type. Unique per company, so a
+                value already on another asset is refused with its tag named. */}
+            {typeDef && (typeDef.identity.includes('macAddress') || typeDef.identity.includes('imei')) ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {typeDef.identity.includes('imei') ? (
+                  <FormField
+                    control={form.control}
+                    name="imei"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>IMEI</FormLabel>
+                        <FormControl>
+                          <Input inputMode="numeric" placeholder="359874102345678" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
+                {typeDef.identity.includes('macAddress') ? (
+                  <FormField
+                    control={form.control}
+                    name="macAddress"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>MAC address</FormLabel>
+                        <FormControl>
+                          <Input placeholder="A4:BB:6D:1E:22:9F" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            {typeDef && typeDef.fields.length > 0 ? (
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-4">
+                <p className="text-sm font-semibold">{typeDef.name} details</p>
+                <p className="mt-0.5 text-xs text-[var(--color-content-muted)]">
+                  Clearing a box removes that detail from the asset.
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                  {typeDef.fields.map((f) => (
+                    <div key={f.key}>
+                      <label htmlFor={`spec-${f.key}`} className="text-sm font-medium">
+                        {f.label}
+                        {f.unit ? (
+                          <span className="ml-1 font-normal text-[var(--color-content-muted)]">({f.unit})</span>
+                        ) : null}
+                      </label>
+                      {f.kind === 'select' ? (
+                        <select
+                          id={`spec-${f.key}`}
+                          value={specs[f.key] ?? ''}
+                          onChange={(e) => setSpecs((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          className="mt-1.5 h-10 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-sm"
+                        >
+                          <option value="">—</option>
+                          {(f.options ?? []).map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          id={`spec-${f.key}`}
+                          className="mt-1.5"
+                          inputMode={f.kind === 'number' ? 'decimal' : undefined}
+                          placeholder={f.placeholder}
+                          value={specs[f.key] ?? ''}
+                          onChange={(e) => setSpecs((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-3">
               <FormField
