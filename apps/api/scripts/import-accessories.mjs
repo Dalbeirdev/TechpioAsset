@@ -227,44 +227,66 @@ async function main() {
 
   let created = 0;
   let skippedExisting = 0;
+
+  // Serial-less items need a COUNTING check, not an existence one: "2 dell
+  // screens" produces two identical rows, and asking "does a Dell Monitor for
+  // this person already exist?" collapses the pair into one. So count what is
+  // planned, count what is already there, and create only the shortfall.
+  const grouped = new Map();
   for (const p of plan) {
-    // Idempotent: same serial anywhere, or same name already on this holder.
-    const existing = await prisma.asset.findFirst({
+    const key = p.serial
+      ? `serial:${p.serial}`
+      : `${p.holderId ?? 'none'}|${p.subcategoryId}|${p.name}`;
+    const list = grouped.get(key) ?? [];
+    list.push(p);
+    grouped.set(key, list);
+  }
+
+  for (const [key, items] of grouped) {
+    const first = items[0];
+    const existing = await prisma.asset.count({
       where: {
         companyId: company.id,
         deletedAt: null,
-        ...(p.serial
-          ? { serialNumber: p.serial }
-          : { name: p.name, assignedUserId: p.holderId, subcategoryId: p.subcategoryId }),
+        ...(key.startsWith('serial:')
+          ? { serialNumber: first.serial }
+          : {
+              name: first.name,
+              assignedUserId: first.holderId,
+              subcategoryId: first.subcategoryId,
+            }),
       },
-      select: { id: true },
     });
-    if (existing) {
-      skippedExisting += 1;
-      continue;
-    }
 
-    const assetTag = await nextTag();
-    await prisma.asset.create({
-      data: {
-        companyId: company.id,
-        categoryId: category.id,
-        subcategoryId: p.subcategoryId,
-        assetTag,
-        name: p.name,
-        brand: p.brand,
-        model: p.model,
-        serialNumber: p.serial,
-        qrToken: `acc${assetTag}${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
-        status: p.holderId ? 'ASSIGNED' : 'AVAILABLE',
-        assignedUserId: p.holderId,
-        assignmentDate: p.holderId ? new Date() : null,
-        condition: 'GOOD',
-        notes: `Imported from the asset sheet (accessory column of ${p.parentTag}).\nSheet text: ${p.source}`,
-      },
-    });
-    created += 1;
+    const toCreate = Math.max(0, items.length - existing);
+    skippedExisting += items.length - toCreate;
+
+    for (const p of items.slice(0, toCreate)) {
+      const assetTag = await nextTag();
+      await prisma.asset.create({
+        data: {
+          companyId: company.id,
+          categoryId: category.id,
+          subcategoryId: p.subcategoryId,
+          assetTag,
+          name: p.name,
+          brand: p.brand,
+          model: p.model,
+          serialNumber: p.serial,
+          qrToken: `acc${assetTag}${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+          status: p.holderId ? 'ASSIGNED' : 'AVAILABLE',
+          assignedUserId: p.holderId,
+          assignmentDate: p.holderId ? new Date() : null,
+          condition: 'GOOD',
+          notes:
+            `Imported from the asset sheet (accessory column of ${p.parentTag}).` +
+            `\nSheet text: ${p.source}`,
+        },
+      });
+      created += 1;
+    }
   }
+
   console.log(`\nCreated ${created} accessory assets; ${skippedExisting} already existed.`);
   await prisma.$disconnect();
 }
