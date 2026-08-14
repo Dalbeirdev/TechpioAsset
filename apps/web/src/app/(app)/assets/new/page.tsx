@@ -1,11 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { PERMISSIONS } from '@techpioasset/domain';
+import { ASSET_TYPES_BY_KEY, PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
 import { useAuth } from '@/providers/auth-provider';
@@ -31,7 +32,7 @@ import {
 interface Category {
   id: string;
   name: string;
-  subcategories: { id: string; name: string }[];
+  subcategories: { id: string; key: string; name: string }[];
 }
 interface Office {
   id: string;
@@ -48,6 +49,8 @@ const assetSchema = z.object({
   brand: z.string().optional(),
   model: z.string().optional(),
   serialNumber: z.string().optional(),
+  macAddress: z.string().optional(),
+  imei: z.string().optional(),
   officeId: z.string().optional(),
   purchaseDate: z.string().optional(),
   warrantyEndDate: z.string().optional(),
@@ -96,6 +99,18 @@ export default function NewAssetPage() {
   });
 
   const selectedCategory = categories?.find((c) => c.id === form.watch('categoryId'));
+  // v2.20 - the chosen Type decides which identity fields and specification
+  // inputs appear. Unknown or unset type: nothing extra, exactly as before.
+  const selectedSubcategoryId = form.watch('subcategoryId');
+  const selectedType = selectedCategory?.subcategories.find(
+    (sub) => sub.id === selectedSubcategoryId,
+  );
+  const typeDef = selectedType ? ASSET_TYPES_BY_KEY[selectedType.key] : undefined;
+  const [specs, setSpecs] = useState<Record<string, string>>({});
+  // Switching type must not carry the previous type's answers across.
+  useEffect(() => {
+    setSpecs({});
+  }, [selectedSubcategoryId]);
 
   const submit = useMutation({
     mutationFn: async (values: AssetValues) => {
@@ -109,6 +124,12 @@ export default function NewAssetPage() {
           ...(values.brand ? { brand: values.brand } : {}),
           ...(values.model ? { model: values.model } : {}),
           ...(values.serialNumber ? { serialNumber: values.serialNumber } : {}),
+          ...(values.macAddress ? { macAddress: values.macAddress } : {}),
+          ...(values.imei ? { imei: values.imei } : {}),
+          ...(Object.values(specs).some((v) => v.trim())
+            ? { specs: Object.fromEntries(Object.entries(specs).filter(([, v]) => v.trim())) }
+            : {}),
+          ...(typeDef ? { trackingType: typeDef.tracking } : {}),
           ...(values.officeId ? { officeId: values.officeId } : {}),
           ...(values.purchaseDate ? { purchaseDate: values.purchaseDate } : {}),
           ...(values.warrantyEndDate ? { warrantyEndDate: values.warrantyEndDate } : {}),
@@ -245,8 +266,19 @@ export default function NewAssetPage() {
                   <FormItem>
                     <FormLabel>Brand</FormLabel>
                     <FormControl>
-                      <Input placeholder="Dell" {...field} />
+                      <Input
+                        placeholder={typeDef?.brands[0] ?? 'Dell'}
+                        list={typeDef ? 'brand-suggestions' : undefined}
+                        {...field}
+                      />
                     </FormControl>
+                    {typeDef ? (
+                      <datalist id="brand-suggestions">
+                        {typeDef.brands.map((b) => (
+                          <option key={b} value={b} />
+                        ))}
+                      </datalist>
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -278,6 +310,96 @@ export default function NewAssetPage() {
                 )}
               />
             </div>
+
+            {/* v2.20 - identity fields the chosen type actually needs. Each one
+                is unique per company, so the server refuses a second asset
+                carrying the same value. */}
+            {typeDef && (typeDef.identity.includes('macAddress') || typeDef.identity.includes('imei')) ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {typeDef.identity.includes('imei') ? (
+                  <FormField
+                    control={form.control}
+                    name="imei"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>IMEI</FormLabel>
+                        <FormControl>
+                          <Input inputMode="numeric" placeholder="359874102345678" {...field} />
+                        </FormControl>
+                        <FormDescription>Dial *#06# on the handset. Identifies it uniquely.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
+                {typeDef.identity.includes('macAddress') ? (
+                  <FormField
+                    control={form.control}
+                    name="macAddress"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>MAC address</FormLabel>
+                        <FormControl>
+                          <Input placeholder="A4:BB:6D:1E:22:9F" {...field} />
+                        </FormControl>
+                        <FormDescription>Any separator is fine — it is stored in one format.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Type-specific specification. Stored as JSON, so adding a field
+                later needs no migration. */}
+            {typeDef && typeDef.fields.length > 0 ? (
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-4">
+                <p className="text-sm font-semibold">{typeDef.name} details</p>
+                <p className="mt-0.5 text-xs text-[var(--color-content-muted)]">
+                  All optional — fill in what you know.
+                  {typeDef.tracking === 'QUANTITY'
+                    ? ' This type is usually bought in bulk, so a serial number is rarely available.'
+                    : ''}
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                  {typeDef.fields.map((f) => (
+                    <div key={f.key}>
+                      <label htmlFor={`spec-${f.key}`} className="text-sm font-medium">
+                        {f.label}
+                        {f.unit ? (
+                          <span className="ml-1 font-normal text-[var(--color-content-muted)]">({f.unit})</span>
+                        ) : null}
+                      </label>
+                      {f.kind === 'select' ? (
+                        <select
+                          id={`spec-${f.key}`}
+                          value={specs[f.key] ?? ''}
+                          onChange={(e) => setSpecs((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          className="mt-1.5 h-10 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-sm"
+                        >
+                          <option value="">—</option>
+                          {(f.options ?? []).map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          id={`spec-${f.key}`}
+                          className="mt-1.5"
+                          inputMode={f.kind === 'number' ? 'decimal' : undefined}
+                          placeholder={f.placeholder}
+                          value={specs[f.key] ?? ''}
+                          onChange={(e) => setSpecs((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-3">
               <FormField

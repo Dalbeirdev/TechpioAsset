@@ -55,7 +55,9 @@ export const CATEGORY_SEED: CategorySeed[] = [
       'UPS',
       'Charger',
       'Adapter',
+      'Cable',
       'External storage',
+      'Projector',
     ].map(sub),
   },
   {

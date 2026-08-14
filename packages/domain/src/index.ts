@@ -28,3 +28,4 @@ export * from './rfq';
 export * from './batch';
 export * from './issue-catalogue';
 export * from './equipment-catalog';
+export * from './asset-types';

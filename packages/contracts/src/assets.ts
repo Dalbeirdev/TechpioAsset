@@ -38,6 +38,34 @@ export const createAssetSchema = z.object({
   manufacturerPartNumber: z.string().trim().max(120).optional().nullable(),
   barcode: z.string().trim().max(120).optional().nullable(),
 
+  /**
+   * v2.20 identity fields. Both are unique per company in the database, so a
+   * second asset carrying the same handset IMEI or NIC address is refused
+   * rather than quietly created. Blank is always allowed - most items have
+   * neither.
+   */
+  macAddress: z
+    .string()
+    .trim()
+    .max(32)
+    .regex(/^[0-9a-fA-F]{2}([:-]?[0-9a-fA-F]{2}){5}$/, 'Enter a 12-digit MAC address')
+    .optional()
+    .nullable()
+    .or(z.literal('')),
+  imei: z
+    .string()
+    .trim()
+    .regex(/^\d{14,16}$/, 'IMEI is 14-16 digits')
+    .optional()
+    .nullable()
+    .or(z.literal('')),
+  /**
+   * v2.20 type-specific specification. Values arrive as strings and are
+   * filtered against the chosen type's declared fields server-side, so an
+   * unexpected key never reaches the column.
+   */
+  specs: z.record(z.string(), z.string().max(200)).optional().nullable(),
+
   purchaseDate: optionalDate,
   purchaseCost: moneyString.optional().nullable(),
   currency: z.string().length(3).toUpperCase().optional().nullable(),

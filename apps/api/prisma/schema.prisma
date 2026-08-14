@@ -1038,6 +1038,14 @@ model Asset {
   serialNumber           String?
   manufacturerPartNumber String?
   barcode                String?
+  /// v2.20 identity columns. Unique per company like serialNumber, so the
+  /// database refuses to register the same handset or machine twice. Postgres
+  /// treats NULLs as distinct, so items without one coexist freely.
+  macAddress             String?
+  imei                   String?
+  /// v2.20 type-specific specification (screen size, cable length, DPI...).
+  /// Shape is declared per type in @techpioasset/domain asset-types.
+  specs                  Json?
   /// Opaque ULID. QR codes encode this, never asset data - spec section 15
   /// forbids exposing asset information through a public QR URL.
   qrToken                String  @unique
@@ -1131,6 +1139,8 @@ model Asset {
   /// rows (which carry no serial) coexist freely while real serials stay unique.
   @@unique([companyId, assetTag])
   @@unique([companyId, serialNumber])
+  @@unique([companyId, macAddress])
+  @@unique([companyId, imei])
   /// v2.9 C1 — the idempotency backstop. Both columns are null for every asset
   /// not born of a receipt, and Postgres treats NULLs as distinct, so those rows
   /// coexist freely while receipt-born units stay one-per-unit.

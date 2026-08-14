@@ -23,6 +23,9 @@ import {
   PERMISSIONS,
   requiresSerialNumber,
   type AssetStatus,
+  normalizeMacAddress,
+  normalizeImei,
+  sanitizeAssetSpecs,
 } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
@@ -436,6 +439,11 @@ export class AssetsService {
       await this.assertSerialAvailable(actor, input.serialNumber, input.duplicateExceptionReason);
     }
 
+    // v2.20 - identity fields are normalised before the uniqueness check, so
+    // "aa-bb-cc-dd-ee-ff" and "AA:BB:CC:DD:EE:FF" cannot both be registered.
+    const identity = await this.resolveIdentity(actor, input, null);
+    const specs = await this.resolveSpecs(actor, input.subcategoryId ?? null, input.specs);
+
     // Only cost-visible roles (Finance / Super Admin) may record a price; anyone
     // else registering an asset simply leaves it for Finance to price later.
     if (input.purchaseCost !== undefined && input.purchaseCost !== null && !canSeeCost(actor)) {
@@ -456,6 +464,9 @@ export class AssetsService {
         serialNumber: input.serialNumber ?? null,
         manufacturerPartNumber: input.manufacturerPartNumber ?? null,
         barcode: input.barcode ?? null,
+        macAddress: identity.macAddress,
+        imei: identity.imei,
+        specs: specs ?? Prisma.DbNull,
         // Opaque and unguessable: the QR code carries this, never asset data.
         qrToken: ulid(),
         purchaseDate: input.purchaseDate ?? null,
@@ -654,7 +665,23 @@ export class AssetsService {
       this.assertPriceChangeAllowed(actor, before as { purchaseCost?: unknown });
     }
 
-    const { version: _ignored, purchaseCost, ...rest } = input;
+    const { version: _ignored, purchaseCost, macAddress, imei, specs, ...rest } = input;
+
+    // v2.20 - same normalisation and uniqueness rules as create; `before.id` is
+    // excluded from the clash check so re-saving an unchanged asset is fine.
+    const identity = await this.resolveIdentity(
+      actor,
+      { macAddress, imei },
+      before.id,
+    );
+    const nextSpecs =
+      specs === undefined
+        ? undefined
+        : await this.resolveSpecs(
+            actor,
+            input.subcategoryId !== undefined ? input.subcategoryId : before.subcategoryId,
+            specs,
+          );
 
     const after = await this.prisma.client.asset.update({
       where: { id },
@@ -663,6 +690,9 @@ export class AssetsService {
         ...(purchaseCost !== undefined
           ? { purchaseCost: purchaseCost ? new Prisma.Decimal(purchaseCost) : null }
           : {}),
+        ...(macAddress !== undefined ? { macAddress: identity.macAddress } : {}),
+        ...(imei !== undefined ? { imei: identity.imei } : {}),
+        ...(specs !== undefined ? { specs: nextSpecs ?? Prisma.DbNull } : {}),
         updatedById: actor.id,
         version: { increment: 1 },
       },
@@ -1376,6 +1406,73 @@ export class AssetsService {
     });
     if (!asset) throw AppError.notFound('Asset', id);
     return asset;
+  }
+
+  /**
+   * v2.20 - normalise MAC/IMEI and refuse a clash inside the company.
+   *
+   * The database has unique indexes on both, so this check is belt-and-braces:
+   * its job is to turn a would-be Prisma P2002 into a message naming the asset
+   * that already holds the value, which is what the person actually needs.
+   */
+  private async resolveIdentity(
+    actor: AuthUser,
+    input: { macAddress?: string | null; imei?: string | null },
+    excludeAssetId: string | null,
+  ): Promise<{ macAddress: string | null; imei: string | null }> {
+    const macAddress = normalizeMacAddress(input.macAddress ?? null);
+    const imei = normalizeImei(input.imei ?? null);
+
+    // A value that was supplied but did not survive normalisation is malformed;
+    // silently storing null would lose the operator's input without telling them.
+    if (input.macAddress && !macAddress) {
+      throw new AppError('VALIDATION_FAILED', 'MAC address must be 12 hexadecimal digits');
+    }
+    if (input.imei && !imei) {
+      throw new AppError('VALIDATION_FAILED', 'IMEI must be 14-16 digits');
+    }
+
+    for (const [field, value, label] of [
+      ['macAddress', macAddress, 'MAC address'],
+      ['imei', imei, 'IMEI'],
+    ] as const) {
+      if (!value) continue;
+      const clash = await this.prisma.client.asset.findFirst({
+        where: {
+          companyId: actor.companyId,
+          [field]: value,
+          ...(excludeAssetId ? { id: { not: excludeAssetId } } : {}),
+        },
+        select: { assetTag: true, name: true },
+      });
+      if (clash) {
+        throw new AppError('CONFLICT', `${label} ${value} is already on ${clash.assetTag}`, {
+          // The tag belongs in the detail too: it is what the reader needs to go
+          // and find the other asset, and only the detail reaches the screen.
+          detail: `${clash.name} (${clash.assetTag}) already carries this ${label}. Every ${label} identifies exactly one asset.`,
+        });
+      }
+    }
+
+    return { macAddress, imei };
+  }
+
+  /**
+   * v2.20 - keep only the fields the chosen type declares. The type catalogue
+   * lives in the domain package, so the form and the API agree by construction
+   * and an unexpected key can never reach the column.
+   */
+  private async resolveSpecs(
+    actor: AuthUser,
+    subcategoryId: string | null,
+    specs: Record<string, string> | null | undefined,
+  ): Promise<Record<string, string> | undefined> {
+    if (!specs || Object.keys(specs).length === 0 || !subcategoryId) return undefined;
+    const subcategory = await this.prisma.client.subcategory.findFirst({
+      where: { id: subcategoryId, category: { companyId: actor.companyId } },
+      select: { key: true },
+    });
+    return sanitizeAssetSpecs(subcategory?.key, specs);
   }
 
   private async assertSerialAvailable(
