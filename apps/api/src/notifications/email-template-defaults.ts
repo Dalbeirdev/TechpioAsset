@@ -63,6 +63,54 @@ export const DEFAULT_EMAIL_TEMPLATES: Partial<Record<NotificationType, EmailTemp
     body: 'Here is what needs attention across the fleet today.',
     ctaLabel: 'Open PioAssets dashboard',
   },
+  USER_INVITED: {
+    subject: "You're invited to PioAssets — complete your account setup",
+    heading: 'Welcome to PioAssets, {{user.first_name}}',
+    body: "You've been invited by {{invited_by.name}} to join {{company.name}}'s PioAssets workspace — the place where the company's equipment, requests and approvals live.\n\nAccept the invitation to set your password and activate your account. The link is personal, works once, and expires on {{invitation.expiry_date}}.",
+    ctaLabel: 'Accept Invitation & Set Up Account',
+  },
+  INVITE_REMINDER: {
+    subject: 'Reminder: your PioAssets invitation is waiting',
+    heading: 'Your PioAssets account is still waiting',
+    body: 'The invitation {{invited_by.name}} sent you has not been used yet. Accept it to set your password and activate your account.\n\nThis fresh link replaces the earlier one and expires on {{invitation.expiry_date}}.',
+    ctaLabel: 'Accept Invitation',
+  },
+  INVITE_EXPIRED: {
+    subject: 'Your PioAssets invitation has expired',
+    heading: 'That invitation is no longer valid',
+    body: 'The invitation link sent to you has expired and can no longer be used.\n\nPlease contact your PioAssets administrator to request a new invitation.',
+    ctaLabel: 'Open PioAssets',
+  },
+  USER_WELCOME: {
+    subject: 'Welcome to PioAssets, {{user.first_name}}!',
+    heading: 'Your account is active',
+    body: 'Your PioAssets account at {{company.name}} is set up and ready. Sign in any time with {{user.email}}.\n\nDepending on your role you can view the equipment assigned to you, raise requests, report issues, and confirm handovers from your phone.',
+    ctaLabel: 'Go to PioAssets',
+  },
+  USER_ACTIVATED: {
+    subject: 'User account activated — {{subject.name}}',
+    heading: 'An invited user just activated their account',
+    body: '{{subject.name}} accepted their invitation and completed account setup.',
+    ctaLabel: 'View user',
+  },
+  USER_REACTIVATED: {
+    subject: 'Your PioAssets account has been reactivated',
+    heading: 'Welcome back',
+    body: 'Your PioAssets account at {{company.name}} is active again. Sign in with your usual email address.',
+    ctaLabel: 'Sign In to PioAssets',
+  },
+  ROLE_CHANGED: {
+    subject: 'Your PioAssets access has been updated',
+    heading: 'Your access has changed',
+    body: 'An administrator updated your role in PioAssets. The details of what changed are listed below; if anything looks wrong, contact your administrator.',
+    ctaLabel: 'Review My Access',
+  },
+  PASSWORD_RESET: {
+    subject: 'Reset your PioAssets password',
+    heading: 'Password reset requested',
+    body: 'Someone asked to reset the password for this PioAssets account. If that was you, use the button below — the link works once and expires shortly.\n\nIf you did not request this, you can ignore this email; your password remains unchanged.',
+    ctaLabel: 'Reset Password',
+  },
   RETURN_OVERDUE: {
     subject: 'Overdue return — {{asset.name}} ({{asset.asset_tag}})',
     heading: 'An asset return is overdue',
@@ -99,6 +147,10 @@ export const VARIABLE_HELP: { group: string; vars: string[] }[] = [
   {
     group: 'Warranty',
     vars: ['{{warranty.expiry_date}}', '{{warranty.days_remaining}}', '{{warranty.provider}}'],
+  },
+  {
+    group: 'Onboarding',
+    vars: ['{{user.first_name}}', '{{invited_by.name}}', '{{invitation.expiry_date}}'],
   },
   { group: 'Company & system', vars: ['{{company.name}}', '{{system.url}}', '{{notification.date}}', '{{notification.time}}'] },
 ];

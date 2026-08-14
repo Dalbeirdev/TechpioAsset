@@ -15,6 +15,7 @@ import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { MailProvider } from '../providers/mail/mail.provider.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { MfaService } from './mfa.service.js';
 import { PasswordService } from './password.service.js';
 import { TokenService } from './token.service.js';
@@ -50,6 +51,7 @@ export class AuthService {
     private readonly mfa: MfaService,
     private readonly audit: AuditService,
     private readonly mail: MailProvider,
+    private readonly notifications: NotificationsService,
     private readonly config: AppConfig,
   ) {}
 
@@ -400,6 +402,66 @@ export class AuthService {
       entityId: record.userId,
       newValues: { status: 'ACTIVE', note: 'Invitation accepted' },
     });
+
+    // v2.19: welcome the new user and tell the admins the invitation landed.
+    // Best effort - a mail hiccup must never fail the activation itself.
+    try {
+      const detail = await this.prisma.client.user.findUnique({
+        where: { id: record.userId },
+        select: {
+          email: true,
+          profile: { select: { firstName: true, lastName: true } },
+          company: { select: { name: true } },
+        },
+      });
+      const firstName = detail?.profile?.firstName ?? 'there';
+      const fullName = detail?.profile
+        ? `${detail.profile.firstName} ${detail.profile.lastName}`
+        : (detail?.email ?? 'A new user');
+
+      await this.notifications.sendTransactional({
+        companyId: record.user.companyId,
+        type: 'USER_WELCOME',
+        toEmail: record.user.email,
+        toUserId: record.userId,
+        recipientName: firstName,
+        title: 'Welcome to PioAssets',
+        body: 'Your PioAssets account is set up and ready.',
+        linkPath: '/dashboard',
+        vars: {
+          'user.first_name': firstName,
+          'user.email': record.user.email,
+          'company.name': detail?.company?.name ?? 'your company',
+        },
+        emailRows: [
+          ['Sign-in email', record.user.email],
+          ['Workspace', detail?.company?.name ?? '—'],
+        ],
+        entityType: 'User',
+        entityId: record.userId,
+      });
+
+      await this.notifications.notifyRoles(
+        record.user.companyId,
+        {
+          type: 'USER_ACTIVATED',
+          title: 'User account activated',
+          body: `${fullName} accepted their invitation and completed account setup.`,
+          linkPath: `/people/${record.userId}`,
+          vars: { 'subject.name': fullName },
+          emailRows: [
+            ['User', fullName],
+            ['Email', record.user.email],
+            ['Activated', new Date().toISOString().slice(0, 10)],
+          ],
+          entityType: 'User',
+          entityId: record.userId,
+        },
+        { excludeUserIds: [record.userId] },
+      );
+    } catch (error) {
+      this.logger.error(`Post-activation emails failed: ${(error as Error).message}`);
+    }
   }
 
   /**
@@ -407,30 +469,37 @@ export class AuthService {
    * here would leak account existence to anyone with a form.
    */
   async requestPasswordReset(email: string): Promise<{ token?: string }> {
-    const user = await this.prisma.client.user.findFirst({ where: { email } });
+    const user = await this.prisma.client.user.findFirst({
+      where: { email },
+      include: { profile: { select: { firstName: true } } },
+    });
     if (!user) {
       this.logger.log(`Password reset requested for unknown address (suppressed)`);
       return {};
     }
     const token = await this.issueVerificationToken(user.id, 'PASSWORD_RESET');
-    const link = `${this.config.get('WEB_URL')}/reset-password?token=${token}`;
 
-    // Sent through the provider interface: real SMTP in production, an .eml file
-    // on disk in development. A failure must not change the response, or the
-    // difference between "sent" and "not sent" would leak whether the address
-    // exists.
+    // Sent through the notification engine (branded template + email log), but
+    // with no in-app row and no preference gate. A failure must not change the
+    // response, or the difference between "sent" and "not sent" would leak
+    // whether the address exists.
     try {
-      await this.mail.send({
-        to: user.email,
-        subject: 'Reset your PioAssets password',
-        text: [
-          'Someone asked to reset the password for this PioAssets account.',
-          '',
-          `Reset it here: ${link}`,
-          '',
-          'The link is valid for 30 minutes and can be used once.',
-          'If this was not you, no action is needed — the password is unchanged.',
-        ].join('\n'),
+      await this.notifications.sendTransactional({
+        companyId: user.companyId,
+        type: 'PASSWORD_RESET',
+        toEmail: user.email,
+        toUserId: user.id,
+        recipientName: user.profile?.firstName ?? user.email,
+        title: 'Reset your PioAssets password',
+        body: 'Someone asked to reset the password for this PioAssets account.',
+        linkPath: `/reset-password?token=${token}`,
+        vars: { 'user.first_name': user.profile?.firstName ?? '' },
+        emailRows: [
+          ['Account', user.email],
+          ['Link valid for', '30 minutes, single use'],
+        ],
+        entityType: 'User',
+        entityId: user.id,
       });
     } catch (error) {
       this.logger.error(`Password reset email failed to send: ${(error as Error).message}`);
@@ -532,6 +601,25 @@ export class AuthService {
       data: { passwordHash: await this.passwords.hash(newPassword) },
     });
     await this.tokens.revokeAllForUser(userId, 'PASSWORD_CHANGED');
+
+    // v2.19: a password change is a security event the owner must hear about -
+    // if it wasn't them, this email is the only thing that tips them off.
+    try {
+      await this.notifications.notify({
+        companyId: user.companyId,
+        userId,
+        type: 'SECURITY_ALERT',
+        title: 'Your PioAssets password was changed',
+        body: 'The password for your PioAssets account was just changed. If this was you, no action is needed. If not, reset your password immediately and contact your administrator.',
+        linkPath: '/settings/security',
+        emailRows: [
+          ['Account', user.email],
+          ['Changed at', new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC'],
+        ],
+      });
+    } catch (error) {
+      this.logger.error(`Password-change alert failed: ${(error as Error).message}`);
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────

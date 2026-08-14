@@ -252,7 +252,11 @@ describe('approved DAMAGE/REPAIR requests raise a linked work order', () => {
         type: 'DAMAGE',
         businessReason: 'Meeting room chair armrest snapped off completely',
         isReplacement: false,
-        items: [{ description: 'Replace broken chair', quantity: 1 }],
+        // Unique per run: the duplicate-request guard blocks an identical open
+        // item from the same requester, and leftover fixtures stay open.
+        items: [
+          { description: `Replace broken chair ${Math.random().toString(36).slice(2, 8)}`, quantity: 1 },
+        ],
       });
     expect(filed.status).toBe(201);
     const requestId = filed.body.data.id as string;

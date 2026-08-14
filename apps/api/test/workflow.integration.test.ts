@@ -32,7 +32,15 @@ async function createRequest(actor: Session, overrides: Record<string, unknown> 
       priority: 'NORMAL',
       businessReason: 'Current laptop is out of warranty and struggling with builds.',
       estimatedCost: '1699.00',
-      items: [{ description: 'Dell Latitude 7450', quantity: 1, estimatedCost: '1699.00' }],
+      // Unique per call: the duplicate-request guard blocks an identical open
+      // item from the same requester, and leftover fixtures stay open.
+      items: [
+        {
+          description: `Dell Latitude 7450 ${Math.random().toString(36).slice(2, 8)}`,
+          quantity: 1,
+          estimatedCost: '1699.00',
+        },
+      ],
       ...overrides,
     });
   expect(response.status, JSON.stringify(response.body)).toBe(201);
@@ -208,7 +216,13 @@ describe('cost thresholds (spec section 11)', () => {
       type: 'KITCHEN_REQUIREMENT',
       estimatedCost: '45.00',
       businessReason: 'The kettle in the second-floor kitchen has stopped working.',
-      items: [{ description: 'Electric kettle', quantity: 1, estimatedCost: '45.00' }],
+      items: [
+        {
+          description: `Electric kettle ${Math.random().toString(36).slice(2, 8)}`,
+          quantity: 1,
+          estimatedCost: '45.00',
+        },
+      ],
     });
 
     const submitted = await api(app)
@@ -233,7 +247,13 @@ describe('cost thresholds (spec section 11)', () => {
       type: 'KITCHEN_REQUIREMENT',
       estimatedCost: '2199.00',
       businessReason: 'Replacement commercial coffee machine for the main kitchen.',
-      items: [{ description: 'Nespresso Momento', quantity: 1, estimatedCost: '2199.00' }],
+      items: [
+        {
+          description: `Nespresso Momento ${Math.random().toString(36).slice(2, 8)}`,
+          quantity: 1,
+          estimatedCost: '2199.00',
+        },
+      ],
     });
 
     const submitted = await api(app)

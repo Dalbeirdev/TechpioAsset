@@ -15,6 +15,7 @@ import { LenovoWarrantyService } from '../assets/lenovo-warranty.service.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuthService } from '../auth/auth.service.js';
 import { TokenService } from '../auth/token.service.js';
 import { withSpan } from '../observability/tracing.js';
 
@@ -57,6 +58,7 @@ export class AlertSweepService implements OnModuleInit {
     private readonly maintenance: MaintenanceService,
     private readonly assetHealth: AssetHealthService,
     private readonly tokens: TokenService,
+    private readonly auth: AuthService,
     private readonly lenovoWarranty: LenovoWarrantyService,
   ) {}
 
@@ -83,6 +85,7 @@ export class AlertSweepService implements OnModuleInit {
       // so those dates never need a human. Summary is logged by the service.
       void this.lenovoWarranty.sweep();
       void this.runDailyDigest();
+      void this.runInviteSweep();
       // Retention: delete refresh tokens that have been dead for over a week.
       // Nothing ever removed them before, so the table only grew.
       void this.tokens.purgeDeadTokens();
@@ -888,6 +891,116 @@ export class AlertSweepService implements OnModuleInit {
       sent += 1;
     }
     if (sent > 0) this.logger.log(`Daily digest sent for ${sent} company(ies)`);
+    return sent;
+  }
+
+  /**
+   * v2.19 - invitation follow-up. An INVITED account that nobody activates is
+   * either a person who lost the email or an account that should be cleaned up;
+   * both deserve a nudge rather than silence.
+   *
+   * Reminder stages (days since the invite was created) come from the company's
+   * INVITE_REMINDER rule thresholds, default [1, 3, 6]. The count of prior
+   * INVITE_REMINDER email-log rows for the user is the stage cursor, so the
+   * sweep is idempotent across restarts. Each reminder issues a FRESH 7-day
+   * token (replacing the old one), matching the template's wording. Once the
+   * outstanding token has expired and the account is still INVITED, a single
+   * INVITE_EXPIRED notice goes out, guarded by its own email-log row.
+   */
+  async runInviteSweep(now: Date = new Date()): Promise<number> {
+    const invited = await this.prisma.client.user.findMany({
+      where: { status: 'INVITED', deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        companyId: true,
+        createdAt: true,
+        profile: { select: { firstName: true } },
+      },
+      take: SWEEP_BATCH,
+    });
+    if (invited.length === 0) return 0;
+
+    // Stored INVITE_REMINDER rules per company: disabled means no reminders
+    // (and no token churn); thresholds override the default stages.
+    const reminderRules = await this.prisma.client.notificationRule.findMany({
+      where: { type: 'INVITE_REMINDER', companyId: { in: [...new Set(invited.map((u) => u.companyId))] } },
+      select: { companyId: true, enabled: true, thresholds: true },
+    });
+    const ruleByCompany = new Map(reminderRules.map((r) => [r.companyId, r]));
+
+    let sent = 0;
+    for (const user of invited) {
+      const daysSince = Math.floor((now.getTime() - user.createdAt.getTime()) / 86_400_000);
+      // Stale-invite guard: accounts invited over 30 days ago (bulk imports,
+      // forgotten joiners) get neither reminders nor a months-late "expired"
+      // notice - re-engaging them is an explicit Resend, not a 4am surprise.
+      if (daysSince > 30) continue;
+      const rule = ruleByCompany.get(user.companyId);
+      const stages = (rule?.thresholds?.length ? rule.thresholds : [1, 3, 6]).slice().sort((a, b) => a - b);
+      const firstName = user.profile?.firstName ?? user.email;
+
+      const reminderCount = await this.prisma.client.emailLog.count({
+        where: { toUserId: user.id, type: 'INVITE_REMINDER', status: { not: 'FAILED' } },
+      });
+
+      const nextStage = stages[reminderCount];
+      if ((rule?.enabled ?? true) && nextStage !== undefined && daysSince >= nextStage) {
+        const token = await this.auth.issueInviteToken(user.id);
+        const expiry = new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
+        await this.notifications.sendTransactional({
+          companyId: user.companyId,
+          type: 'INVITE_REMINDER',
+          toEmail: user.email,
+          toUserId: user.id,
+          recipientName: firstName,
+          title: 'Reminder: your PioAssets invitation is waiting',
+          body: 'Your PioAssets invitation has not been used yet.',
+          linkPath: `/accept-invite?token=${token}`,
+          vars: {
+            'user.first_name': firstName,
+            'invited_by.name': 'your administrator',
+            'invitation.expiry_date': expiry,
+          },
+          emailRows: [
+            ['Account email', user.email],
+            ['Link expires', expiry],
+          ],
+          entityType: 'User',
+          entityId: user.id,
+        });
+        sent += 1;
+        continue;
+      }
+
+      // Expiry notice: only when every outstanding invite token is dead and we
+      // have not said so already.
+      const liveToken = await this.prisma.client.verificationToken.findFirst({
+        where: { userId: user.id, purpose: 'INVITE', consumedAt: null, expiresAt: { gt: now } },
+        select: { id: true },
+      });
+      if (liveToken) continue;
+      const alreadyTold = await this.prisma.client.emailLog.count({
+        where: { toUserId: user.id, type: 'INVITE_EXPIRED' },
+      });
+      if (alreadyTold > 0) continue;
+
+      await this.notifications.sendTransactional({
+        companyId: user.companyId,
+        type: 'INVITE_EXPIRED',
+        toEmail: user.email,
+        toUserId: user.id,
+        recipientName: firstName,
+        title: 'Your PioAssets invitation has expired',
+        body: 'The invitation link sent to you has expired and can no longer be used.',
+        vars: { 'user.first_name': firstName },
+        emailRows: [['Account email', user.email]],
+        entityType: 'User',
+        entityId: user.id,
+      });
+      sent += 1;
+    }
+    if (sent > 0) this.logger.log(`Invite sweep: ${sent} reminder/expiry email(s)`);
     return sent;
   }
 
