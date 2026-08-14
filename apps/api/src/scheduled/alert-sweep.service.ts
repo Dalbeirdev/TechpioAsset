@@ -948,6 +948,7 @@ export class AlertSweepService implements OnModuleInit {
       if ((rule?.enabled ?? true) && nextStage !== undefined && daysSince >= nextStage) {
         const token = await this.auth.issueInviteToken(user.id);
         const expiry = new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
+        const acceptPath = `/accept-invite?token=${token}`;
         await this.notifications.sendTransactional({
           companyId: user.companyId,
           type: 'INVITE_REMINDER',
@@ -956,11 +957,12 @@ export class AlertSweepService implements OnModuleInit {
           recipientName: firstName,
           title: 'Reminder: your PioAssets invitation is waiting',
           body: 'Your PioAssets invitation has not been used yet.',
-          linkPath: `/accept-invite?token=${token}`,
+          linkPath: acceptPath,
           vars: {
             'user.first_name': firstName,
             'invited_by.name': 'your administrator',
             'invitation.expiry_date': expiry,
+            'invitation.accept_url': `${this.config.get('WEB_URL')}${acceptPath}`,
           },
           emailRows: [
             ['Account email', user.email],

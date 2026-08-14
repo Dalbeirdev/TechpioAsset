@@ -66,13 +66,13 @@ export const DEFAULT_EMAIL_TEMPLATES: Partial<Record<NotificationType, EmailTemp
   USER_INVITED: {
     subject: "You're invited to PioAssets — complete your account setup",
     heading: 'Welcome to PioAssets, {{user.first_name}}',
-    body: "You've been invited by {{invited_by.name}} to join {{company.name}}'s PioAssets workspace — the place where the company's equipment, requests and approvals live.\n\nAccept the invitation to set your password and activate your account. The link is personal, works once, and expires on {{invitation.expiry_date}}.",
+    body: "You've been invited by {{invited_by.name}} to join {{company.name}}'s PioAssets workspace — the place where the company's equipment, requests and approvals live.\n\nAccept the invitation to set your password and activate your account. The link is personal, works once, and expires on {{invitation.expiry_date}}.\n\nIf the button does not work, copy this link into your browser:\n{{invitation.accept_url}}\n\nAfter setup, sign in any time at {{system.url}}/login",
     ctaLabel: 'Accept Invitation & Set Up Account',
   },
   INVITE_REMINDER: {
     subject: 'Reminder: your PioAssets invitation is waiting',
     heading: 'Your PioAssets account is still waiting',
-    body: 'The invitation {{invited_by.name}} sent you has not been used yet. Accept it to set your password and activate your account.\n\nThis fresh link replaces the earlier one and expires on {{invitation.expiry_date}}.',
+    body: 'The invitation {{invited_by.name}} sent you has not been used yet. Accept it to set your password and activate your account.\n\nThis fresh link replaces the earlier one and expires on {{invitation.expiry_date}}.\n\nIf the button does not work, copy this link into your browser:\n{{invitation.accept_url}}',
     ctaLabel: 'Accept Invitation',
   },
   INVITE_EXPIRED: {
@@ -84,8 +84,8 @@ export const DEFAULT_EMAIL_TEMPLATES: Partial<Record<NotificationType, EmailTemp
   USER_WELCOME: {
     subject: 'Welcome to PioAssets, {{user.first_name}}!',
     heading: 'Your account is active',
-    body: 'Your PioAssets account at {{company.name}} is set up and ready. Sign in any time with {{user.email}}.\n\nDepending on your role you can view the equipment assigned to you, raise requests, report issues, and confirm handovers from your phone.',
-    ctaLabel: 'Go to PioAssets',
+    body: 'Your PioAssets account at {{company.name}} is set up and ready.\n\nSign in any time at {{system.url}}/login with your email address {{user.email}} and the password you just created. If you ever forget it, use "Forgot password" on that page to set a new one.\n\nDepending on your role you can view the equipment assigned to you, raise requests, report issues, and confirm handovers from your phone.',
+    ctaLabel: 'Sign In to PioAssets',
   },
   USER_ACTIVATED: {
     subject: 'User account activated — {{subject.name}}',
@@ -150,7 +150,12 @@ export const VARIABLE_HELP: { group: string; vars: string[] }[] = [
   },
   {
     group: 'Onboarding',
-    vars: ['{{user.first_name}}', '{{invited_by.name}}', '{{invitation.expiry_date}}'],
+    vars: [
+      '{{user.first_name}}',
+      '{{invited_by.name}}',
+      '{{invitation.expiry_date}}',
+      '{{invitation.accept_url}}',
+    ],
   },
   { group: 'Company & system', vars: ['{{company.name}}', '{{system.url}}', '{{notification.date}}', '{{notification.time}}'] },
 ];
