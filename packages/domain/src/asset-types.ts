@@ -352,6 +352,19 @@ export const ASSET_TYPES: readonly AssetTypeDef[] = [
       { key: 'ipAddress', label: 'Management IP', kind: 'text', placeholder: '192.168.1.20' },
     ],
   },
+  {
+    key: 'webcam',
+    name: 'Webcam',
+    categoryKey: 'it-assets',
+    tracking: 'INDIVIDUAL',
+    identity: ['serialNumber'],
+    brands: ['Logitech', 'HP', 'Dell', 'Microsoft', 'Anker'],
+    fields: [
+      { key: 'resolution', label: 'Resolution', kind: 'select', options: ['720p', '1080p', '1440p', '4K'] },
+      { key: 'microphone', label: 'Built-in microphone', kind: 'select', options: ['Yes', 'No'] },
+      { key: 'mounting', label: 'Mounting', kind: 'select', options: ['Clip', 'Tripod', 'Built-in'] },
+    ],
+  },
 ] as const;
 
 export const ASSET_TYPES_BY_KEY: Readonly<Record<string, AssetTypeDef>> = Object.fromEntries(

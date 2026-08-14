@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -15,8 +15,12 @@ import {
   Printer,
   Router,
   Server,
+  MoreVertical,
+  Pencil,
   Smartphone,
   Tablet,
+  Trash2,
+  UserMinus,
   type LucideIcon,
 } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
@@ -115,7 +119,10 @@ export function EquipmentKit({
   emptyMessage?: string;
 }) {
   const { can } = useAuth();
+  const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
+  // Editing and removing equipment is a manager's job, not a viewer's.
+  const canManage = can(PERMISSIONS.ASSETS_UPDATE);
 
   const kit = useQuery({
     queryKey: ['equipment-kit', holderId],
@@ -187,6 +194,11 @@ export function EquipmentKit({
                 <th scope="col" className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                   Issued
                 </th>
+                {canManage ? (
+                  <th scope="col" className="px-3 py-2.5">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -224,6 +236,16 @@ export function EquipmentKit({
                     <td className="px-5 py-3 whitespace-nowrap text-[var(--color-content-muted)]">
                       {fmtDate(a.assignmentDate)}
                     </td>
+                    {canManage ? (
+                      <td className="px-3 py-3 text-right">
+                        <RowMenu
+                          asset={a}
+                          onDone={() => {
+                            void queryClient.invalidateQueries({ queryKey: ['equipment-kit', holderId] });
+                          }}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
@@ -251,6 +273,7 @@ export function EquipmentKit({
                       </span>
                     </td>
                     <td className="px-5 py-3 text-[var(--color-content-muted)]">—</td>
+                    {canManage ? <td className="px-3 py-3" /> : null}
                   </tr>
                 );
               })}
@@ -374,6 +397,96 @@ function AddExtraAssetDialog({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Per-row actions. Edit opens the asset's own form - one editor per asset,
+ * wherever you reached it from. "Take back" returns it to the pool, keeping the
+ * record and its history.
+ *
+ * There is deliberately no delete: an asset is never removed, it is retired or
+ * disposed of WITH a record (spec section 7), so the menu links to the asset's
+ * own disposal panel rather than pretending a delete exists.
+ */
+function RowMenu({ asset, onDone }: { asset: KitAsset; onDone: () => void }) {
+  const { can } = useAuth();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const act = useMutation({
+    mutationFn: async (kind: 'return' | 'delete') => {
+      if (kind === 'return') {
+        return apiFetch(`/assets/${asset.id}/return`, {
+          method: 'POST',
+          body: { conditionIn: 'GOOD', resultingStatus: 'AVAILABLE' },
+        });
+      }
+      return apiFetch(`/assets/${asset.id}`, { method: 'DELETE' });
+    },
+    onSuccess: (_r, kind) => {
+      toast.success(kind === 'return' ? 'Taken back into the pool' : 'Asset deleted');
+      setOpen(false);
+      onDone();
+    },
+    onError: (e) => {
+      toast.error(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'That did not work');
+    },
+  });
+
+  const itemCls =
+    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--color-surface-sunken)] disabled:opacity-60';
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        aria-label={`Actions for ${asset.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="grid size-8 place-items-center rounded-lg text-[var(--color-content-muted)] hover:bg-[var(--color-surface-sunken)]"
+      >
+        <MoreVertical aria-hidden="true" className="size-4" />
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-xl"
+        >
+          <Link href={`/assets/${asset.id}/edit`} role="menuitem" className={itemCls}>
+            <Pencil aria-hidden="true" className="size-4" />
+            Edit details
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={act.isPending}
+            onClick={() => act.mutate('return')}
+            className={itemCls}
+          >
+            <UserMinus aria-hidden="true" className="size-4" />
+            Take back
+          </button>
+          {can(PERMISSIONS.ASSETS_DISPOSE) ? (
+            <Link href={`/assets/${asset.id}`} role="menuitem" className={itemCls}>
+              <Trash2 aria-hidden="true" className="size-4" />
+              Retire or dispose…
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
