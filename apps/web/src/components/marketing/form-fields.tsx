@@ -270,7 +270,7 @@ export function PhoneField({
         {label}
       </label>
       <div className="mt-1.5 flex gap-2">
-        <div className="w-[8.5rem] flex-none">
+        <div className="w-[6.75rem] flex-none sm:w-[8rem]">
           <FancySelect
             id={`${idBase}-code`}
             value={code}
