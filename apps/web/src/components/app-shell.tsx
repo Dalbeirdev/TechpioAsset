@@ -186,26 +186,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Explicit user choices per group, layered over the default. The default for
-  // a group is "open if it holds the current page" - but a default only: the
-  // old model OR'd the two, so the group holding the current page IGNORED its
-  // own collapse button (reported as "sometimes the click does not work" -
-  // "sometimes" being exactly "when you are inside that group").
+  // Accordion: at most ONE group is open at a time, so the menu never grows
+  // past a screenful and the page you are on is never pushed below the fold.
+  // `undefined` means "not chosen yet" and falls back to the group holding the
+  // current page; `null` means the user deliberately closed everything.
   //
-  // Empty on first render on purpose: it matches the server's HTML; stored
-  // choices are restored after mount, below.
-  const [navOverrides, setNavOverrides] = useState<Record<string, boolean>>({});
+  // Undefined on first render on purpose: it matches the server's HTML; the
+  // stored choice is restored after mount, below.
+  const [openGroup, setOpenGroup] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(OPEN_GROUPS_KEY);
       if (!stored) return;
       const parsed: unknown = JSON.parse(stored);
-      // The previous format was an array of open keys; carry it forward.
-      if (Array.isArray(parsed)) {
-        setNavOverrides(Object.fromEntries(parsed.map((k: string) => [k, true])));
+      // Two older formats existed - an array of open keys, then a per-group
+      // map. Both could hold several open groups; take the first as the one.
+      if (typeof parsed === 'string') {
+        setOpenGroup(parsed);
+      } else if (Array.isArray(parsed)) {
+        setOpenGroup((parsed as string[])[0] ?? null);
       } else if (parsed && typeof parsed === 'object') {
-        setNavOverrides(parsed as Record<string, boolean>);
+        const firstOpen = Object.entries(parsed as Record<string, boolean>).find(([, v]) => v);
+        setOpenGroup(firstOpen ? firstOpen[0] : null);
       }
     } catch {
       // A corrupt or unavailable localStorage is not worth breaking a menu over.
@@ -213,32 +216,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setGroupOpen = (key: string, open: boolean) => {
-    setNavOverrides((prev) => {
-      const next = { ...prev, [key]: open };
-      try {
-        window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
-      } catch {
-        // Persisting is a nicety; the menu still works without it.
-      }
-      return next;
-    });
+    const next = open ? key : null;
+    setOpenGroup(next);
+    try {
+      window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
+    } catch {
+      // Persisting is a nicety; the menu still works without it.
+    }
   };
 
-  // Navigating INTO a group re-reveals it even if it was collapsed earlier -
-  // auto-reveal wins on navigation, the click wins in place.
+  // Navigating INTO a group opens it and closes whatever else was open, so the
+  // menu always reflects where you actually are.
   useEffect(() => {
-    setNavOverrides((prev) => {
-      const holding = NAV_GROUPS.find((g) => g.items.some((i) => isActive(pathname, i.href)));
-      if (!holding || prev[holding.key] !== false) return prev;
-      const next = { ...prev };
-      delete next[holding.key];
-      try {
-        window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
-      } catch {
-        /* best effort */
-      }
-      return next;
-    });
+    const holding = NAV_GROUPS.find((g) => g.items.some((i) => isActive(pathname, i.href)));
+    if (!holding) return;
+    setOpenGroup((prev) => (prev === holding.key ? prev : holding.key));
+    try {
+      window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(holding.key));
+    } catch {
+      /* best effort */
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -314,7 +311,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         // click through the menu would close the menu around you and there
         // would be nothing on screen saying where you are.
         const holdsCurrentPage = group.items.some((i) => isActive(pathname, i.href));
-        const open = navOverrides[group.key] ?? holdsCurrentPage;
+        const open = openGroup === undefined ? holdsCurrentPage : openGroup === group.key;
         const panelId = `nav-group-${group.key}`;
         return (
           <div key={group.key} className="mt-1">
