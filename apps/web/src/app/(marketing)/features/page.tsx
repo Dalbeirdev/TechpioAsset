@@ -33,6 +33,14 @@ export const metadata: Metadata = {
     url: 'https://pioassets.com/features',
     siteName: 'PioAssets',
     type: 'website',
+    images: [
+      {
+        url: 'https://pioassets.com/marketing/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'PioAssets — track, manage and optimize IT assets',
+      },
+    ],
   },
   alternates: { canonical: 'https://pioassets.com/features' },
 };

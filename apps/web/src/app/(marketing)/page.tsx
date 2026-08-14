@@ -49,6 +49,21 @@ export const metadata: Metadata = {
     url: 'https://pioassets.com',
     siteName: 'PioAssets',
     type: 'website',
+    images: [
+      {
+        url: 'https://pioassets.com/marketing/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'PioAssets — track, manage and optimize IT assets',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'PioAssets | IT Asset Management & Lifecycle Tracking',
+    description:
+      'Know every asset. Control every lifecycle. Discover, track, assign, maintain and retire IT assets in one platform.',
+    images: ['https://pioassets.com/marketing/og-card.jpg'],
   },
   alternates: { canonical: 'https://pioassets.com' },
 };
