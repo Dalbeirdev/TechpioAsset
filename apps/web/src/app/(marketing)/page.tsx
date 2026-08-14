@@ -20,7 +20,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { AssetMascotWave } from '@/components/marketing/asset-mascot';
+import Image from 'next/image';
 import { HeroLifecycleScene, TrustBadge } from '@/components/marketing/hero-visual';
 import { Reveal } from '@/components/marketing/motion';
 import { AnalyticsShowcase, ProductShowcase } from '@/components/marketing/showcase';
@@ -443,6 +443,61 @@ export default function HomePage() {
         </ol>
       </section>
 
+      {/* MEET PIO */}
+      <section aria-label="Meet Pio" className="mx-auto max-w-6xl px-5 pb-20">
+        <Reveal>
+          <div className="grid grid-cols-1 items-center gap-0 overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm md:grid-cols-[0.85fr_1.15fr]">
+            <div className="relative min-w-0 p-6 sm:p-8">
+              <Image
+                src="/marketing/pio-portrait.jpg"
+                alt="Pio, the PioAssets robot assistant, giving a thumbs-up while holding an asset checklist"
+                width={640}
+                height={640}
+                unoptimized
+                className="mx-auto w-full max-w-sm rounded-2xl"
+              />
+            </div>
+            <div className="min-w-0 px-6 pb-10 sm:px-8 md:py-10 md:pr-10">
+              <Kicker>Meet Pio</Kicker>
+              <h2 className="mt-3 text-2xl font-bold tracking-tight text-balance sm:text-3xl">
+                The assistant that never clocks out.
+              </h2>
+              <p className="mt-3 text-[var(--color-content-muted)]">
+                Pio is the automation inside PioAssets. Every night it sweeps your entire asset
+                register and acts before small things become tickets.
+              </p>
+              <ul className="mt-6 grid gap-4">
+                {[
+                  {
+                    icon: RefreshCcw,
+                    text: 'Pulls Lenovo warranty dates straight from the manufacturer — serial in, coverage out, nothing to type.',
+                  },
+                  {
+                    icon: FileClock,
+                    text: 'Watches every warranty and raises alerts at 90, 60, 30, 15 and 7 days — escalating as the date closes in.',
+                  },
+                  {
+                    icon: ClipboardCheck,
+                    text: 'Chases unconfirmed handovers and pending invitations with polite, staged reminders.',
+                  },
+                  {
+                    icon: LineChart,
+                    text: 'Delivers a daily summary of expiries, new assets and open requests to the people who need it.',
+                  },
+                ].map((item) => (
+                  <li key={item.text} className="flex items-start gap-3">
+                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-[var(--color-brand)]/10 text-[var(--color-brand)]">
+                      <item.icon aria-hidden="true" className="size-4" />
+                    </span>
+                    <span className="text-sm leading-relaxed text-[var(--color-content)]">{item.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
       {/* TESTIMONIALS */}
       <section id="feedback" className="scroll-mt-24 border-y border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
         <div className="mx-auto max-w-6xl px-5 py-20">
@@ -553,8 +608,15 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
-          <div className="grid place-items-center p-4">
-            <AssetMascotWave />
+          <div className="grid place-items-center p-6">
+            <Image
+              src="/marketing/pio-portrait.jpg"
+              alt="Pio, the PioAssets robot assistant"
+              width={640}
+              height={640}
+              unoptimized
+              className="w-full max-w-[260px] rounded-2xl shadow-lg"
+            />
           </div>
         </div>
       </section>
