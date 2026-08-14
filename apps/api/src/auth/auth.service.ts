@@ -427,7 +427,7 @@ export class AuthService {
         recipientName: firstName,
         title: 'Welcome to PioAssets',
         body: 'Your PioAssets account is set up and ready.',
-        linkPath: '/dashboard',
+        linkPath: '/login',
         vars: {
           'user.first_name': firstName,
           'user.email': record.user.email,
