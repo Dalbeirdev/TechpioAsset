@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Send, AlertTriangle, Check, Copy, Download, Search, Settings2, UserPlus } from 'lucide-react';
+import { Send, AlertTriangle, Check, Copy, Download, Mail, Search, Settings2, UserPlus } from 'lucide-react';
 import { PERMISSIONS, SYSTEM_ROLES, findSodConflicts } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
@@ -968,6 +968,15 @@ function PeopleTable() {
           <Download aria-hidden="true" className="size-4" />
           Export
         </button>
+        {can(PERMISSIONS.USERS_MANAGE) ? (
+          <Link
+            href="/people/invitations"
+            className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+          >
+            <Mail aria-hidden="true" className="size-4" />
+            Invitations
+          </Link>
+        ) : null}
         {canInvite ? (
           <Button
             variant="secondary"

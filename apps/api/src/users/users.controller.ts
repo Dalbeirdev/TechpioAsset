@@ -72,6 +72,18 @@ export class UsersController {
     return toCsv(columns, rows);
   }
 
+  // Declared before ':id' so the static path wins the route match.
+  @Get('invitations')
+  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @ApiOperation({
+    summary: 'List pending invitations (v2.19)',
+    description:
+      'Every INVITED account with when it was invited, when the current link expires, and how many reminders have gone out.',
+  })
+  invitations(@CurrentUser() actor: AuthUser) {
+    return this.users.listInvitations(actor);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.EMPLOYEES_READ)
   @ApiOperation({

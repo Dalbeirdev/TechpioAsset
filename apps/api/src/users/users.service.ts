@@ -312,6 +312,7 @@ export class UsersService {
         email: true,
         status: true,
         roles: { select: { role: { select: { id: true, key: true } } } },
+        profile: { select: { firstName: true } },
       },
     });
     if (!user) throw AppError.notFound('User', id);
@@ -336,6 +337,9 @@ export class UsersService {
   async setRoles(actor: AuthUser, id: string, input: SetUserRolesInput) {
     const target = await this.loadInScope(actor, id);
     const currentKeys = target.roles.map((r) => r.role.key);
+    const beforeRoleNames = target.roles.map(
+      (r) => (r.role as { name?: string; key: string }).name ?? r.role.key,
+    );
     const nextKeys = [...new Set(input.roleKeys)];
 
     const losingSuperAdmin =
@@ -373,6 +377,38 @@ export class UsersService {
       previousValues: { roles: currentKeys },
       newValues: { roles: nextKeys },
     });
+
+    // v2.19: tell the person their access changed - previous vs new, no
+    // internal permission dump.
+    const changed = await this.prisma.client.user.findUnique({
+      where: { id },
+      select: {
+        email: true,
+        companyId: true,
+        profile: { select: { firstName: true, lastName: true } },
+        roles: { select: { role: { select: { name: true } } } },
+      },
+    });
+    if (changed) {
+      await this.notifications.sendTransactional({
+        companyId: changed.companyId,
+        type: 'ROLE_CHANGED',
+        toEmail: changed.email,
+        toUserId: id,
+        recipientName: changed.profile ? `${changed.profile.firstName} ${changed.profile.lastName}` : changed.email,
+        title: 'Your PioAssets access has been updated',
+        body: 'An administrator updated your role in PioAssets.',
+        linkPath: '/my-assets',
+        emailRows: [
+          ['Previous access', beforeRoleNames.join(', ') || '-'],
+          ['New access', changed.roles.map((r) => r.role.name).join(', ') || '-'],
+          ['Changed by', (await this.displayName(actor.id)) ?? 'Administrator'],
+          ['Effective', new Date().toISOString().slice(0, 10)],
+        ],
+        entityType: 'User',
+        entityId: id,
+      });
+    }
 
     // WS-G — advisory SoD check over the UNION of the new roles: two
     // individually-clean roles can conflict when held together. Warns, never
@@ -425,6 +461,27 @@ export class UsersService {
       newValues: { status: input.status, reason: input.reason ?? null },
     });
 
+    // v2.19: coming back to ACTIVE from any blocked state is news the account
+    // owner should get - it means they can sign in again right now.
+    if (input.status === 'ACTIVE' && target.status !== 'ACTIVE' && target.status !== 'INVITED') {
+      await this.notifications.sendTransactional({
+        companyId: actor.companyId,
+        type: 'USER_REACTIVATED',
+        toEmail: target.email,
+        toUserId: id,
+        recipientName: target.profile?.firstName ?? target.email,
+        title: 'Your PioAssets account has been reactivated',
+        body: 'Your PioAssets account is active again. Sign in with your usual email address.',
+        linkPath: '/login',
+        emailRows: [
+          ['Account', target.email],
+          ['Reactivated', new Date().toISOString().slice(0, 10)],
+        ],
+        entityType: 'User',
+        entityId: id,
+      });
+    }
+
     return this.findOne(actor, id);
   }
 
@@ -454,6 +511,62 @@ export class UsersService {
           'Granting other roles needs user management permission - ask a user manager to change roles after the person joins.',
       });
     }
+  }
+
+  /**
+   * v2.19 - the invitations board: every INVITED account with its timeline.
+   * "expiresAt" is the newest un-consumed INVITE token (reminders re-issue, so
+   * this is the link currently in the person's inbox); null means every link
+   * has expired and the sweep has said so.
+   */
+  async listInvitations(actor: AuthUser) {
+    const invited = await this.prisma.client.user.findMany({
+      where: { companyId: actor.companyId, status: 'INVITED', deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        createdAt: true,
+        profile: { select: { firstName: true, lastName: true } },
+        roles: { select: { role: { select: { name: true, key: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    if (invited.length === 0) return [];
+
+    const ids = invited.map((u) => u.id);
+    const [tokens, reminders] = await Promise.all([
+      this.prisma.client.verificationToken.findMany({
+        where: { userId: { in: ids }, purpose: 'INVITE', consumedAt: null },
+        select: { userId: true, expiresAt: true },
+        orderBy: { expiresAt: 'desc' },
+      }),
+      this.prisma.client.emailLog.groupBy({
+        by: ['toUserId'],
+        where: { toUserId: { in: ids }, type: 'INVITE_REMINDER', status: { not: 'FAILED' } },
+        _count: { _all: true },
+      }),
+    ]);
+    const newestToken = new Map<string, Date>();
+    for (const t of tokens) {
+      if (!newestToken.has(t.userId)) newestToken.set(t.userId, t.expiresAt);
+    }
+    const reminderCount = new Map(reminders.map((r) => [r.toUserId, r._count._all]));
+
+    const now = Date.now();
+    return invited.map((u) => {
+      const expiresAt = newestToken.get(u.id) ?? null;
+      return {
+        id: u.id,
+        email: u.email,
+        name: u.profile ? `${u.profile.firstName} ${u.profile.lastName}` : null,
+        roles: u.roles.map((r) => (r.role as { name?: string; key: string }).name ?? r.role.key),
+        invitedAt: u.createdAt.toISOString(),
+        expiresAt: expiresAt?.toISOString() ?? null,
+        reminders: reminderCount.get(u.id) ?? 0,
+        status: expiresAt && expiresAt.getTime() > now ? 'PENDING' : 'EXPIRED',
+      };
+    });
   }
 
   async invite(actor: AuthUser, input: InviteUserInput) {
@@ -522,7 +635,8 @@ export class UsersService {
       select: { id: true, email: true },
     });
 
-    const inviteUrl = await this.sendInviteLink(user.id, user.email, input.firstName);
+    const inviterName = await this.displayName(actor.id);
+    const inviteUrl = await this.sendInviteLink(user.id, user.email, input.firstName, inviterName);
 
     await this.audit.record({
       companyId: actor.companyId,
@@ -561,6 +675,7 @@ export class UsersService {
       target.id,
       target.email,
       target.profile?.firstName ?? 'Hello',
+      await this.displayName(actor.id),
     );
 
     await this.audit.record({
@@ -616,24 +731,58 @@ export class UsersService {
     return { pending: pending.length, sent, failed };
   }
 
-  /** Issue a fresh invite token (killing any outstanding one) and email the link, best effort. */
-  private async sendInviteLink(userId: string, email: string, firstName: string) {
+  private async displayName(userId: string): Promise<string | undefined> {
+    const row = await this.prisma.client.user.findUnique({
+      where: { id: userId },
+      select: { email: true, profile: { select: { firstName: true, lastName: true } } },
+    });
+    if (!row) return undefined;
+    return row.profile ? `${row.profile.firstName} ${row.profile.lastName}` : row.email;
+  }
+
+  /** Issue a fresh invite token (killing any outstanding one) and email the
+   * branded invitation through the notification engine, best effort. */
+  private async sendInviteLink(userId: string, email: string, firstName: string, invitedBy?: string) {
     const token = await this.auth.issueInviteToken(userId);
     const inviteUrl = `${this.config.get('WEB_URL')}/accept-invite?token=${token}`;
+    const expiry = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+
+    const target = await this.prisma.client.user.findUnique({
+      where: { id: userId },
+      select: {
+        companyId: true,
+        roles: { select: { role: { select: { name: true } } }, take: 3 },
+        profile: { select: { department: { select: { name: true } } } },
+      },
+    });
 
     // Best effort: a mail failure must not lose the invite - the link is
     // returned to the inviter either way.
     try {
-      await this.mail.send({
-        to: email,
-        subject: 'You have been invited to PioAssets',
-        text: [
-          `${firstName}, you have been invited to your company's PioAssets workspace.`,
-          '',
-          `Set your password and sign in here: ${inviteUrl}`,
-          '',
-          'The link is valid for 7 days and can be used once.',
-        ].join('\n'),
+      await this.notifications.sendTransactional({
+        companyId: target?.companyId ?? '',
+        type: 'USER_INVITED',
+        toEmail: email,
+        toUserId: userId,
+        recipientName: firstName,
+        title: "You're invited to PioAssets",
+        body: `${firstName}, you have been invited to your company's PioAssets workspace.`,
+        linkPath: `/accept-invite?token=${token}`,
+        vars: {
+          'user.first_name': firstName,
+          'invited_by.name': invitedBy ?? 'your administrator',
+          'invitation.expiry_date': expiry,
+          'invitation.accept_url': inviteUrl,
+        },
+        emailRows: [
+          ['Account email', email],
+          ['Role', target?.roles.map((r) => r.role.name).join(', ') || 'Registered Employee'],
+          ...(target?.profile?.department?.name ? [['Department', target.profile.department.name] as [string, string]] : []),
+          ['Invited by', invitedBy ?? 'Administrator'],
+          ['Link expires', expiry],
+        ],
+        entityType: 'User',
+        entityId: userId,
       });
     } catch (error) {
       this.logger.error(`Invite email failed to send: ${(error as Error).message}`);

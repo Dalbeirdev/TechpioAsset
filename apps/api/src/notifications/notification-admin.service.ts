@@ -31,6 +31,13 @@ const SAMPLE_VARS: Record<string, string> = {
   'warranty.expiry_date': '2026-09-14',
   'warranty.days_remaining': '30',
   'warranty.provider': 'Manufacturer warranty',
+  // v2.19 onboarding placeholders, so invite/welcome previews render fully.
+  'user.first_name': 'Alex',
+  'user.email': 'alex.morgan@example.com',
+  'company.name': 'Sample Company',
+  'invited_by.name': 'Priya Raman',
+  'invitation.expiry_date': '2026-08-21',
+  'invitation.accept_url': 'https://pioassets.com/accept-invite',
 };
 
 @Injectable()

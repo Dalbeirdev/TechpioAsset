@@ -21,6 +21,7 @@ const DEFAULT_RULE_ROLES: Partial<Record<NotificationType, string[]>> = {
   ASSET_RETURNED: ['IT_ADMIN'],
   ASSET_TRANSFERRED: ['IT_ADMIN'],
   ASSET_MISSING: ['IT_ADMIN', 'SUPER_ADMIN'],
+  USER_ACTIVATED: ['HR', 'IT_ADMIN'],
   // DAILY_DIGEST is deliberately opt-in: no audience until configured.
 };
 
@@ -69,7 +70,8 @@ export interface NotifyInput {
 }
 
 interface SendJobPayload {
-  notificationId: string;
+  /** Absent for transactional sends (invites, resets) with no in-app row. */
+  notificationId?: string;
   companyId: string;
   type: NotificationType;
   userId: string;
@@ -119,10 +121,12 @@ export class NotificationsService implements OnModuleInit {
           ...(payload.html ? { html: payload.html } : {}),
         });
 
-        await this.prisma.client.notification.update({
-          where: { id: payload.notificationId },
-          data: { deliveredAt: new Date(), simulated: result.simulated },
-        });
+        if (payload.notificationId) {
+          await this.prisma.client.notification.update({
+            where: { id: payload.notificationId },
+            data: { deliveredAt: new Date(), simulated: result.simulated },
+          });
+        }
         await this.logEmail(payload, result.simulated ? 'SIMULATED' : 'SENT', null);
       } catch (error) {
         await this.logEmail(payload, 'FAILED', (error as Error).message);
@@ -419,6 +423,56 @@ export class NotificationsService implements OnModuleInit {
     } catch (logError) {
       this.logger.error(`Email log write failed: ${(logError as Error).message}`);
     }
+  }
+
+  /**
+   * v2.19 - transactional account email: rendered through the same template
+   * system and logged, but with NO in-app row and NO preference gate - an
+   * invitation or a password reset is not something to opt out of. Rules can
+   * still disable non-mandatory types company-wide.
+   */
+  async sendTransactional(input: {
+    companyId: string;
+    type: NotificationType;
+    toEmail: string;
+    toUserId?: string;
+    recipientName: string;
+    title: string;
+    body: string;
+    linkPath?: string;
+    vars?: Record<string, string>;
+    emailRows?: [string, string][];
+    entityType?: string;
+    entityId?: string;
+  }): Promise<void> {
+    const definition = NOTIFICATION_CATALOGUE[input.type];
+    const rule = await this.getRule(input.companyId, input.type);
+    if (rule && !rule.enabled && !definition.mandatory) return;
+
+    const rendered = await this.renderEmail(
+      {
+        companyId: input.companyId,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        linkPath: input.linkPath,
+        vars: input.vars,
+        emailRows: input.emailRows,
+      },
+      { name: input.recipientName, email: input.toEmail },
+    );
+
+    await this.queue.enqueue<SendJobPayload>(SEND_NOTIFICATION_JOB, {
+      companyId: input.companyId,
+      type: input.type,
+      userId: input.toUserId ?? '',
+      entityType: input.entityType,
+      entityId: input.entityId,
+      email: input.toEmail,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html,
+    });
   }
 
   /** Fan-out helper; one row per recipient so read state is per-user. */
