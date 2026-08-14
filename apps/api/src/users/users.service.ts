@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { AuditAction } from '@prisma/client';
+import { AuditAction, Prisma } from '@prisma/client';
 import type {
   AdminUpdateProfileInput, InviteUserInput, SetUserRolesInput, SetUserStatusInput, UserListQuery } from '@techpioasset/contracts';
 import type { AuthUser } from '@techpioasset/contracts';
@@ -19,7 +19,26 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { StorageProvider } from '../providers/storage/storage.provider.js';
 import { validateUpload } from '../providers/storage/file-validation.js';
 
-const SORTABLE = ['email', 'createdAt', 'lastLoginAt', 'status'] as const;
+const SORTABLE = ['email', 'createdAt', 'lastLoginAt', 'status', 'name', 'department'] as const;
+
+/**
+ * v2.21 - name and department live on the profile relation, so they cannot go
+ * through the flat buildOrderBy. Sorting by name means first name then last,
+ * which is how the column reads. Role is deliberately absent: a person can hold
+ * several, so "sorted by role" would have no single honest answer.
+ */
+function userOrderBy(
+  sort: string | undefined,
+  order: 'asc' | 'desc',
+): Prisma.UserOrderByWithRelationInput | Prisma.UserOrderByWithRelationInput[] {
+  if (sort === 'name') {
+    return [{ profile: { firstName: order } }, { profile: { lastName: order } }];
+  }
+  if (sort === 'department') {
+    return { profile: { department: { name: order } } };
+  }
+  return buildOrderBy(sort, order, SORTABLE, 'createdAt');
+}
 
 @Injectable()
 export class UsersService {
@@ -76,7 +95,7 @@ export class UsersService {
           where,
           skip,
           take,
-          orderBy: buildOrderBy(query.sort, query.order, SORTABLE, 'createdAt'),
+          orderBy: userOrderBy(query.sort, query.order),
           select: {
             id: true,
             email: true,

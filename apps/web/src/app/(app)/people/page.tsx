@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Send, AlertTriangle, Check, Copy, Download, Mail, Search, Settings2, UserPlus } from 'lucide-react';
+import { Send, AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Download, Mail, Search, Settings2, UserPlus } from 'lucide-react';
 import { PERMISSIONS, SYSTEM_ROLES, findSodConflicts } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
@@ -40,6 +40,46 @@ const STATUS_TONE: Record<string, string> = {
 
 function statusLabel(status: string): string {
   return status.charAt(0) + status.slice(1).toLowerCase();
+}
+
+/** Columns the API can order by. Role is absent - see toggleSort. */
+type SortField = 'name' | 'email' | 'department' | 'status';
+
+function SortableHeader({
+  label,
+  field,
+  sort,
+  order,
+  onSort,
+}: {
+  label: string;
+  field: SortField;
+  sort: SortField | null;
+  order: 'asc' | 'desc';
+  onSort: (f: SortField) => void;
+}) {
+  const active = sort === field;
+  return (
+    <th scope="col" className="px-4 py-2.5 font-medium" aria-sort={active ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className="inline-flex items-center gap-1 hover:text-[var(--color-brand)]"
+      >
+        {label}
+        {active ? (
+          order === 'asc' ? (
+            <ArrowUp aria-hidden="true" className="size-3.5" />
+          ) : (
+            <ArrowDown aria-hidden="true" className="size-3.5" />
+          )
+        ) : (
+          <ArrowUpDown aria-hidden="true" className="size-3.5 opacity-40" />
+        )}
+        <span className="sr-only">{active ? `, sorted ${order === 'asc' ? 'ascending' : 'descending'}` : ', click to sort'}</span>
+      </button>
+    </th>
+  );
 }
 
 function roleLabel(key: string): string {
@@ -802,6 +842,8 @@ function PeopleTable() {
   const [q, setQ] = useState(initialQ);
   const [role, setRole] = useState('');
   const [view, setView] = useState<'active' | 'deactivated'>('active');
+  const [sort, setSort] = useState<SortField | null>(null);
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [managing, setManaging] = useState<UserRow | null>(null);
   const [autoManaged, setAutoManaged] = useState(false);
   const [inviting, setInviting] = useState(false);
@@ -832,12 +874,28 @@ function PeopleTable() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // v2.21 - click a heading to sort by it, click again to reverse. Role is not
+  // sortable: a person can hold several, so there is no single value to order by.
+  const toggleSort = (field: SortField) => {
+    if (sort === field) {
+      setOrder(order === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSort(field);
+      setOrder('asc');
+    }
+    setPage(1);
+  };
+
   const query = new URLSearchParams({ page: String(page), pageSize: '25', view });
   if (q) query.set('q', q);
   if (role) query.set('role', role);
+  if (sort) {
+    query.set('sort', sort);
+    query.set('order', order);
+  }
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['people', q, role, view, page],
+    queryKey: ['people', q, role, view, page, sort, order],
     queryFn: () => apiFetchPage<UserRow>(`/users?${query.toString()}`),
   });
 
@@ -1025,21 +1083,13 @@ function PeopleTable() {
               </caption>
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left">
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Name
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Email
-                  </th>
+                  <SortableHeader label="Name" field="name" sort={sort} order={order} onSort={toggleSort} />
+                  <SortableHeader label="Email" field="email" sort={sort} order={order} onSort={toggleSort} />
                   <th scope="col" className="px-4 py-2.5 font-medium">
                     Role
                   </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Department
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Status
-                  </th>
+                  <SortableHeader label="Department" field="department" sort={sort} order={order} onSort={toggleSort} />
+                  <SortableHeader label="Status" field="status" sort={sort} order={order} onSort={toggleSort} />
                   {canManage ? (
                     <th scope="col" className="px-4 py-2.5 text-right font-medium">
                       <span className="sr-only">Actions</span>
