@@ -21,6 +21,15 @@ const ASSET_OPTIONS: SelectOption[] = [
   { value: 'OVER_1000', label: '1,000+' },
 ];
 
+const INTEREST_OPTIONS: SelectOption[] = [
+  { value: 'ASSET_MANAGEMENT', label: 'Asset Management' },
+  { value: 'HARDWARE_TRACKING', label: 'Hardware Tracking' },
+  { value: 'WARRANTY_MANAGEMENT', label: 'Warranty Management' },
+  { value: 'SOFTWARE_LICENSES', label: 'Software & License Management' },
+  { value: 'IT_INVENTORY', label: 'IT Inventory' },
+  { value: 'OTHER', label: 'Other' },
+];
+
 const inputCls =
   'h-11 w-full rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3.5 text-sm outline-none transition-colors focus:border-[var(--color-brand)]';
 const labelCls = 'text-sm font-medium';
@@ -38,6 +47,7 @@ export function DemoForm() {
       phoneCountry: '+91',
       phone: '',
       assetCount: 'UNDER_100',
+      interest: 'ASSET_MANAGEMENT',
       message: '',
       website: '',
     },
@@ -125,6 +135,24 @@ export function DemoForm() {
                   onChange={field.onChange}
                   options={ASSET_OPTIONS}
                   ariaLabel="Number of assets"
+                />
+              )}
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="df-interest" className={labelCls}>What do you need help with?</label>
+          <div className="mt-1.5">
+            <Controller
+              control={form.control}
+              name="interest"
+              render={({ field }) => (
+                <FancySelect
+                  id="df-interest"
+                  value={field.value ?? 'ASSET_MANAGEMENT'}
+                  onChange={field.onChange}
+                  options={INTEREST_OPTIONS}
+                  ariaLabel="What do you need help with?"
                 />
               )}
             />

@@ -14,6 +14,12 @@ const LABELS: Record<string, string> = {
   FROM_100_TO_500: '100-500',
   FROM_500_TO_1000: '500-1,000',
   OVER_1000: '1,000+',
+  ASSET_MANAGEMENT: 'Asset Management',
+  HARDWARE_TRACKING: 'Hardware Tracking',
+  WARRANTY_MANAGEMENT: 'Warranty Management',
+  SOFTWARE_LICENSES: 'Software & License Management',
+  IT_INVENTORY: 'IT Inventory',
+  OTHER: 'Other',
 };
 
 @ApiTags('Marketing')
@@ -43,6 +49,7 @@ export class MarketingController {
       `Company:    ${body.company}`,
       `Phone:      ${body.phoneCountry} ${body.phone}`,
       `Assets:     ${body.assetCount ? LABELS[body.assetCount] : '-'}`,
+      `Interest:   ${body.interest ? LABELS[body.interest] : '-'}`,
       '',
       body.message || '(no message)',
     ];
