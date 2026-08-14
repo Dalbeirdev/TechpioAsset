@@ -307,6 +307,19 @@ export class RequestsService {
     subjectId: string,
     input: { type: RequestType; targetAssetId: string | null; itemDescriptions: string[] },
   ) {
+    // v2.21 - with no asset and no named item there is nothing to be a
+    // duplicate OF, so the guard stands down rather than matching on nothing.
+    const named = input.itemDescriptions.filter((d) => d.trim().length > 0);
+    if (!input.targetAssetId && named.length === 0) return null;
+    return this.findOpenDuplicateInner(companyId, subjectId, input, named);
+  }
+
+  private async findOpenDuplicateInner(
+    companyId: string,
+    subjectId: string,
+    input: { type: RequestType; targetAssetId: string | null; itemDescriptions: string[] },
+    named: string[],
+  ) {
     const since = new Date(Date.now() - 10 * 86_400_000);
     return this.prisma.client.assetRequest.findFirst({
       where: {
@@ -322,9 +335,9 @@ export class RequestsService {
           : {
               items: {
                 some: {
-                  OR: input.itemDescriptions
-                    .filter((d) => d.trim().length > 0)
-                    .map((d) => ({ description: { equals: d.trim(), mode: 'insensitive' as const } })),
+                  OR: named.map((d) => ({
+                    description: { equals: d.trim(), mode: 'insensitive' as const },
+                  })),
                 },
               },
             }),

@@ -94,7 +94,13 @@ export const createRequestSchema = z.object({
   officeId: z.string().optional().nullable(),
   departmentId: z.string().optional().nullable(),
   notes: z.string().trim().max(2000).optional().nullable(),
-  items: z.array(requestItemSchema).min(1, 'Add at least one item').max(50),
+  /**
+   * v2.21 - optional. Asset-linked requests (repair, damage, loss, upgrade)
+   * are ABOUT an existing asset, so listing an item was noise; and the
+   * mandatory business reason already says what is wanted. A row that IS added
+   * still has to name the equipment - a blank row is worse than no row.
+   */
+  items: z.array(requestItemSchema).max(50).default([]),
 });
 export type CreateRequestInput = z.infer<typeof createRequestSchema>;
 

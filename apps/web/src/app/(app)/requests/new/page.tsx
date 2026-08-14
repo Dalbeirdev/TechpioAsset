@@ -117,7 +117,7 @@ const requestSchema = z
           referenceUrl: z.string().optional(),
         }),
       )
-      .min(1, 'Add at least one item'),
+      .max(50),
   })
   .superRefine((v, ctx) => {
     const linked = (ASSET_LINKED_REQUEST_TYPES as readonly string[]).includes(v.type);
@@ -230,9 +230,14 @@ function NewRequestForm() {
       priority: issue?.priority ?? 'NORMAL',
       businessReason: '',
       requiredBy: '',
-      items: [
-        { description: prefillAbout, quantity: 1, estimatedCost: '', notes: '', categoryId: '', isUncatalogued: false, manufacturer: '', model: '', referenceUrl: '' },
-      ],
+      // v2.21 - no empty row up front. An item list is optional, so the table
+      // only exists once somebody asks for it. A prefilled item (raised from an
+      // issue) still opens with its row, because there the item is the point.
+      items: prefillAbout
+        ? [
+            { description: prefillAbout, quantity: 1, estimatedCost: '', notes: '', categoryId: '', isUncatalogued: false, manufacturer: '', model: '', referenceUrl: '' },
+          ]
+        : [],
     },
   });
 
@@ -356,7 +361,10 @@ function NewRequestForm() {
                   : {}),
               }
             : {}),
-          items: values.items.map((item) => ({
+          items: values.items
+            // A row somebody opened and left empty is not an item.
+            .filter((item) => item.description.trim().length > 0)
+            .map((item) => ({
             description: item.description,
             quantity: item.quantity,
             ...(canEnterCost && item.estimatedCost ? { estimatedCost: item.estimatedCost } : {}),
@@ -789,6 +797,12 @@ function NewRequestForm() {
                 </Button>
               </div>
 
+              {fields.length === 0 ? (
+                <p className="rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] px-4 py-6 text-center text-sm text-[var(--color-content-muted)]">
+                  Optional. Use <span className="font-medium">Add Item</span> to list specific
+                  equipment; otherwise the reason above is what approvers read.
+                </p>
+              ) : (
               <div className="rounded-[var(--radius-control)] border border-[var(--color-border)]">
                 <div
                   className={`hidden gap-3 rounded-t-[var(--radius-control)] border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-xs font-medium text-[var(--color-content-subtle)] sm:grid ${
@@ -896,7 +910,6 @@ function NewRequestForm() {
                     <button
                       type="button"
                       aria-label={`Remove item ${index + 1}`}
-                      disabled={fields.length === 1}
                       onClick={() => remove(index)}
                       className="grid size-9 place-items-center justify-self-end rounded-[var(--radius-control)] disabled:opacity-40"
                       style={{
@@ -910,11 +923,15 @@ function NewRequestForm() {
                 ))}
               </div>
 
-              <p className="text-xs text-[var(--color-content-subtle)]">
-                {canEnterCost
-                  ? 'Estimated cost decides whether finance approval is needed.'
-                  : 'No prices here on purpose — procurement and finance attach costs during approval.'}
-              </p>
+              )}
+
+              {fields.length > 0 ? (
+                <p className="text-xs text-[var(--color-content-subtle)]">
+                  {canEnterCost
+                    ? 'Estimated cost decides whether finance approval is needed.'
+                    : 'No prices here on purpose — procurement and finance attach costs during approval.'}
+                </p>
+              ) : null}
             </Card>
 
             {duplicate ? (
