@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Image from 'next/image';
+import { HeroAccent, HeroBackdrop, HeroBadge } from '@/components/marketing/hero-backdrop';
 import { HeroLifecycleScene } from '@/components/marketing/hero-visual';
 import { Reveal } from '@/components/marketing/motion';
 import { AnalyticsShowcase, ProductShowcase } from '@/components/marketing/showcase';
@@ -197,53 +198,15 @@ export default function HomePage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
 
       {/* HERO */}
-      <section
-        className="relative overflow-hidden"
-        style={{
-          background:
-            'linear-gradient(135deg, #0a1633 0%, #10265c 38%, #1d4ed8 78%, #2563eb 100%)',
-        }}
-      >
-        {/* glow orbs + dot grid, echoing the blue/orange brand palette */}
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-          <div
-            className="absolute -top-24 right-[8%] h-96 w-96 rounded-full opacity-30 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #f97316, transparent 65%)' }}
-          />
-          <div
-            className="absolute -bottom-32 left-[-6%] h-[28rem] w-[28rem] rounded-full opacity-25 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #8b5cf6, transparent 65%)' }}
-          />
-          <div
-            className="absolute top-1/3 left-[30%] h-72 w-72 rounded-full opacity-20 blur-3xl"
-            style={{ background: 'radial-gradient(circle, #38bdf8, transparent 65%)' }}
-          />
-          <div
-            className="absolute inset-0 opacity-40"
-            style={{
-              backgroundImage:
-                'radial-gradient(circle, rgba(255,255,255,0.10) 1px, transparent 1px)',
-              backgroundSize: '26px 26px',
-              maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9), transparent 85%)',
-              WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9), transparent 85%)',
-            }}
-          />
-        </div>
+      <section className="relative overflow-hidden">
+        <HeroBackdrop />
         <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-16 sm:py-20 md:grid-cols-2 md:gap-10 lg:py-24">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-sky-100 backdrop-blur">
-              <span className="size-1.5 rounded-full bg-orange-400" aria-hidden="true" />
-              IT Asset Lifecycle Management
-            </span>
+            <HeroBadge>IT Asset Lifecycle Management</HeroBadge>
             <h1 className="mt-5 text-4xl font-bold tracking-tight text-balance text-white sm:text-5xl lg:text-[3.5rem] lg:leading-[1.04]">
               Know Every Asset.
               <br />
-              <span
-                className="bg-clip-text text-transparent"
-                style={{ backgroundImage: 'linear-gradient(90deg, #fb923c, #fbbf24 60%, #38bdf8 115%)' }}
-              >
-                Control Every Lifecycle.
-              </span>
+              <HeroAccent>Control Every Lifecycle.</HeroAccent>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-white/80">
               PioAssets gives businesses complete visibility into their IT assets — from purchase
@@ -270,12 +233,6 @@ export default function HomePage() {
           </div>
           <HeroLifecycleScene />
         </div>
-        {/* soft fade into the page background */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
-          style={{ background: 'linear-gradient(to bottom, transparent, rgba(2,6,23,0.18))' }}
-        />
       </section>
 
       {/* VALUE STRIP */}

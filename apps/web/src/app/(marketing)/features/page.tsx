@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Workflow,
 } from 'lucide-react';
+import { HeroAccent, HeroBackdrop, HeroBadge } from '@/components/marketing/hero-backdrop';
 import { Reveal } from '@/components/marketing/motion';
 import {
   AlertsStrip,
@@ -69,27 +70,29 @@ export default function FeaturesPage() {
   return (
     <>
       {/* ── 1 · HERO ─────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden border-b border-[var(--color-border)]">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{ background: 'radial-gradient(44rem 26rem at 88% -8%, color-mix(in srgb, var(--color-brand) 13%, transparent), transparent 64%)' }}
-        />
+      <section className="relative overflow-hidden">
+        <HeroBackdrop />
         <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-16 sm:py-20 lg:grid-cols-2 lg:py-24">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">PioAssets Features</p>
-            <h1 className="mt-5 text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:leading-[1.05]">
-              Everything you need to manage your <span className="text-[var(--color-brand)]">IT assets.</span>
+            <HeroBadge>PioAssets Features</HeroBadge>
+            <h1 className="mt-5 text-4xl font-bold tracking-tight text-balance text-white sm:text-5xl lg:leading-[1.05]">
+              Everything you need to manage your <HeroAccent>IT assets.</HeroAccent>
             </h1>
-            <p className="mt-5 max-w-xl text-lg text-[var(--color-content-muted)]">
+            <p className="mt-5 max-w-xl text-lg text-white/80">
               From discovery and assignment to maintenance, warranty, reporting and retirement,
               PioAssets brings the complete asset lifecycle into one connected platform.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href="/login" className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-brand)] px-6 text-sm font-semibold text-[var(--color-brand-contrast)] transition-colors hover:bg-[var(--color-brand-hover)]">
+              <Link
+                href="/login"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-[#1d4ed8] shadow-lg shadow-blue-950/30 transition-all hover:bg-[#eef3ff] hover:shadow-xl"
+              >
                 Get Started <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
-              <Link href="/#demo" className="inline-flex h-12 items-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 text-sm font-semibold transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]">
+              <Link
+                href="/#demo"
+                className="inline-flex h-12 items-center rounded-full border border-white/35 px-6 text-sm font-semibold text-white transition-colors hover:border-white/70 hover:bg-white/10"
+              >
                 Book a Demo
               </Link>
             </div>

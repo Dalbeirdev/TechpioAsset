@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, Mail } from 'lucide-react';
+import { HeroAccent, HeroBackdrop, HeroBadge } from '@/components/marketing/hero-backdrop';
 import { Reveal } from '@/components/marketing/motion';
 import { AboutContactForm, AssetMap, AssetTree } from '@/components/marketing/about-visuals';
 
@@ -80,42 +81,33 @@ export default function AboutPage() {
   return (
     <>
       {/* ── 1 · HERO ──────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden border-b border-[var(--color-border)]">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(38rem 24rem at 92% 8%, color-mix(in srgb, var(--color-brand) 9%, transparent), transparent 62%)',
-          }}
-        />
+      <section className="relative overflow-hidden">
+        <HeroBackdrop />
         <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-5 py-20 sm:py-24 lg:grid-cols-[1.05fr_0.95fr] lg:py-28">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--color-brand)]">
-              About PioAssets
-            </p>
-            <h1 className="mt-6 text-4xl font-bold leading-[1.06] tracking-tight text-balance sm:text-5xl lg:text-[3.6rem]">
+            <HeroBadge>About PioAssets</HeroBadge>
+            <h1 className="mt-6 text-4xl font-bold leading-[1.06] tracking-tight text-balance text-white sm:text-5xl lg:text-[3.6rem]">
               Built around a simple belief: IT should be easier to{' '}
-              <span className="text-[var(--color-brand)]">account for.</span>
+              <HeroAccent>account for.</HeroAccent>
             </h1>
-            <p className="mt-7 max-w-xl text-lg leading-relaxed text-[var(--color-content-muted)]">
+            <p className="mt-7 max-w-xl text-lg leading-relaxed text-white/80">
               PioAssets was created with a straightforward idea: businesses should be able to trust
               the information they have about their technology.
             </p>
-            <p className="mt-4 max-w-xl leading-relaxed text-[var(--color-content-muted)]">
+            <p className="mt-4 max-w-xl leading-relaxed text-white/70">
               As IT environments grow, knowing what exists, where it is, who is responsible for it
               and what happens to it over time becomes increasingly important.
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-4">
               <Link
                 href="/"
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-brand)] px-6 text-sm font-semibold text-[var(--color-brand-contrast)] transition-colors hover:bg-[var(--color-brand-hover)]"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-[#1d4ed8] shadow-lg shadow-blue-950/30 transition-all hover:bg-[#eef3ff] hover:shadow-xl"
               >
                 Meet the Product <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
               <Link
                 href="#conversation"
-                className="text-sm font-semibold text-[var(--color-content-muted)] underline-offset-4 transition-colors hover:text-[var(--color-brand)] hover:underline"
+                className="text-sm font-semibold text-sky-100 underline-offset-4 transition-colors hover:text-white hover:underline"
               >
                 Talk to Us
               </Link>
