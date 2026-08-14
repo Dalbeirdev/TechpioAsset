@@ -2,10 +2,14 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  createDepartmentSchema,
   createOfficeSchema,
+  updateDepartmentSchema,
   updateOfficeSchema,
   type AuthUser,
+  type CreateDepartmentInput,
   type CreateOfficeInput,
+  type UpdateDepartmentInput,
   type UpdateOfficeInput,
 } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
@@ -87,6 +91,34 @@ export class OrgController {
   @ApiOperation({ summary: 'Departments' })
   departments(@CurrentUser() actor: AuthUser) {
     return this.org.departments(actor);
+  }
+
+  @Get('departments/manage')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'All departments, inactive included, for the management page' })
+  departmentsForManagement(@CurrentUser() actor: AuthUser) {
+    return this.org.departmentsForManagement(actor);
+  }
+
+  @Post('departments')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Create a department (v2.21)' })
+  createDepartment(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(createDepartmentSchema)) body: CreateDepartmentInput,
+  ) {
+    return this.org.createDepartment(actor, body);
+  }
+
+  @Patch('departments/:id')
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @ApiOperation({ summary: 'Update or deactivate a department (v2.21)' })
+  updateDepartment(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(updateDepartmentSchema)) body: UpdateDepartmentInput,
+  ) {
+    return this.org.updateDepartment(actor, id, body);
   }
 
   @Get('categories')

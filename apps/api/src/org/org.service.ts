@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { AuditAction } from '@prisma/client';
-import type { AuthUser, CreateOfficeInput, UpdateOfficeInput } from '@techpioasset/contracts';
+import type {
+  AuthUser,
+  CreateDepartmentInput,
+  CreateOfficeInput,
+  UpdateDepartmentInput,
+  UpdateOfficeInput,
+} from '@techpioasset/contracts';
 import { AppError } from '../common/errors/app-error.js';
 import { tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -202,6 +208,90 @@ export class OrgService {
     return this.cache.wrap(`departments:${actor.companyId}`, this.ttl, () =>
       this.loadDepartments(actor),
     );
+  }
+
+  /** All departments, inactive included, for the management page. */
+  departmentsForManagement(actor: AuthUser) {
+    return this.prisma.client.department.findMany({
+      where: { ...tenantFilter(actor), deletedAt: null },
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        parentId: true,
+        officeId: true,
+        costCentre: true,
+        headId: true,
+        isActive: true,
+        _count: { select: { profiles: true } },
+      },
+    });
+  }
+
+  async createDepartment(actor: AuthUser, input: CreateDepartmentInput) {
+    const code = input.code.toUpperCase();
+    const clash = await this.prisma.client.department.findFirst({
+      where: { companyId: actor.companyId, code, deletedAt: null },
+      select: { id: true },
+    });
+    if (clash) throw new AppError('CONFLICT', `A department with code ${code} already exists`);
+
+    const department = await this.prisma.client.department.create({
+      data: { ...input, code, companyId: actor.companyId, createdById: actor.id },
+      select: { id: true, code: true, name: true, isActive: true },
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Department',
+      entityId: department.id,
+      newValues: { ...department, edited: 'department created' },
+    });
+    await this.cache.del(`departments:${actor.companyId}`);
+    return department;
+  }
+
+  async updateDepartment(actor: AuthUser, departmentId: string, input: UpdateDepartmentInput) {
+    const before = await this.prisma.client.department.findFirst({
+      where: { id: departmentId, ...tenantFilter(actor), deletedAt: null },
+      select: { id: true, code: true, name: true, isActive: true },
+    });
+    if (!before) throw new AppError('NOT_FOUND', 'Department not found');
+
+    const code = input.code ? input.code.toUpperCase() : undefined;
+    if (code && code !== before.code) {
+      const clash = await this.prisma.client.department.findFirst({
+        where: { companyId: actor.companyId, code, deletedAt: null, id: { not: departmentId } },
+        select: { id: true },
+      });
+      if (clash) throw new AppError('CONFLICT', `A department with code ${code} already exists`);
+    }
+    // A department cannot be its own parent, and a two-step loop is just as bad.
+    if (input.parentId && input.parentId === departmentId) {
+      throw new AppError('VALIDATION_FAILED', 'A department cannot report to itself');
+    }
+
+    const after = await this.prisma.client.department.update({
+      where: { id: departmentId },
+      data: { ...input, ...(code ? { code } : {}), updatedById: actor.id },
+      select: { id: true, code: true, name: true, isActive: true },
+    });
+    await this.audit.recordChange(
+      {
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.SETTING_CHANGED,
+        entityType: 'Department',
+        entityId: departmentId,
+      },
+      before as unknown as Record<string, unknown>,
+      after as unknown as Record<string, unknown>,
+      ['code', 'name', 'isActive'],
+    );
+    await this.cache.del(`departments:${actor.companyId}`);
+    return after;
   }
 
   private loadDepartments(actor: AuthUser) {

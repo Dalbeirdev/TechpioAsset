@@ -16,6 +16,30 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((v) => (v ? v : null));
 
+/**
+ * v2.21 - departments were readable but never creatable: the model, the picker
+ * on a person and the approval routing all existed, with no way to add one, so
+ * the dropdown said "No department" forever.
+ */
+export const createDepartmentSchema = z.object({
+  /** Short unique handle, e.g. ENG. Uppercased server-side. */
+  code: trimmed(20),
+  name: trimmed(120),
+  /** Parent department, for a nested org structure. */
+  parentId: z.string().min(1).optional().nullable(),
+  /** Where the department mainly sits. */
+  officeId: z.string().min(1).optional().nullable(),
+  costCentre: optionalText(40),
+  /** Who signs for it - feeds DEPARTMENT_HEAD approvals. */
+  headId: z.string().min(1).optional().nullable(),
+});
+export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>;
+
+export const updateDepartmentSchema = createDepartmentSchema.partial().extend({
+  isActive: z.boolean().optional(),
+});
+export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>;
+
 export const createOfficeSchema = z
   .object({
     /** Short unique handle, e.g. BLR-HQ. Uppercased server-side. */
