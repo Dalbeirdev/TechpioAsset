@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Clock, Mail, MapPin, Send } from 'lucide-react';
+import { HeroAccent, HeroBackdrop, HeroBadge } from '@/components/marketing/hero-backdrop';
 
 const CONTACT_EMAIL = 'proapps@techpio.com';
 
@@ -40,21 +41,24 @@ export default function ContactPage() {
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-5 py-20">
-      <div className="max-w-2xl">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-brand)]">
-          Contact
-        </p>
-        <h1 className="mt-3 text-4xl font-bold tracking-tight text-balance sm:text-5xl">
-          Let’s talk about your asset register.
-        </h1>
-        <p className="mt-5 text-lg text-[var(--color-content-muted)]">
-          Questions, a walkthrough, or help importing your existing data — tell us what you need and
-          we’ll get back to you.
-        </p>
+    <>
+    <section className="relative overflow-hidden">
+      <HeroBackdrop />
+      <div className="relative mx-auto max-w-6xl px-5 py-16 sm:py-20">
+        <div className="max-w-2xl">
+          <HeroBadge>Contact</HeroBadge>
+          <h1 className="mt-4 text-4xl font-bold tracking-tight text-balance text-white sm:text-5xl">
+            Let’s talk about your <HeroAccent>asset register.</HeroAccent>
+          </h1>
+          <p className="mt-5 text-lg text-white/80">
+            Questions, a walkthrough, or help importing your existing data — tell us what you need
+            and we’ll get back to you.
+          </p>
+        </div>
       </div>
-
-      <div className="mt-12 grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
+    </section>
+    <section className="mx-auto max-w-6xl px-5 py-14">
+      <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
         {/* Form */}
         <form onSubmit={submit} noValidate className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -154,6 +158,7 @@ export default function ContactPage() {
         </aside>
       </div>
     </section>
+    </>
   );
 }
 
