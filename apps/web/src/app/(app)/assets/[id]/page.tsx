@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { CustodyPanel } from '@/components/assets/custody-panel';
+import { EquipmentKit } from '@/components/assets/equipment-kit';
 import { DisposalPanel, type DisposalDto } from '@/components/assets/disposal-panel';
 import { TransferPanel, type OpenTransferDto } from '@/components/assets/transfer-panel';
 import {
@@ -400,6 +401,17 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
           status={data.status}
           holderName={holderName}
           holderId={data.assignedUser?.id ?? null}
+        />
+      ) : null}
+
+      {/* v2.21 - what else this person was given. Only shown when the asset has
+          a holder: with nobody holding it there is no kit to speak of. */}
+      {tab === 'overview' && data.assignedUser ? (
+        <EquipmentKit
+          holderId={data.assignedUser.id}
+          holderName={holderName}
+          excludeAssetId={id}
+          emptyMessage={`${holderName ?? 'This person'} holds no other equipment.`}
         />
       ) : null}
 

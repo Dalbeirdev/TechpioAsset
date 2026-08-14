@@ -3,12 +3,13 @@
 import { use } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Laptop, Mail, Phone, ShieldCheck, ShieldOff } from 'lucide-react';
-import { ASSET_STATUS_TOKENS, REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
-import type { AssetStatus } from '@techpioasset/domain';
+import { Mail, Phone, ShieldCheck, ShieldOff } from 'lucide-react';
+import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
+
 import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { StatusBadge } from '@/components/status-badge';
+import { EquipmentKit } from '@/components/assets/equipment-kit';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 
 /**
@@ -43,14 +44,6 @@ interface PersonDetail {
   roles: { role: { key: string; name: string } }[];
 }
 
-interface HeldAsset {
-  id: string;
-  assetTag: string;
-  name: string;
-  status: AssetStatus;
-  serialNumber: string | null;
-}
-
 interface PersonRequest {
   id: string;
   requestNumber: string;
@@ -77,10 +70,6 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
   const person = useQuery({
     queryKey: ['person', id],
     queryFn: () => apiFetch<PersonDetail>(`/users/${id}`),
-  });
-  const assets = useQuery({
-    queryKey: ['person-assets', id],
-    queryFn: () => apiFetchPage<HeldAsset>(`/assets?assignedUserId=${id}&pageSize=50`),
   });
   const requests = useQuery({
     queryKey: ['person-requests', id],
@@ -157,44 +146,15 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
         </dl>
       </Card>
 
-      <Card className="p-0">
-        <div className="border-b border-[var(--color-border)] px-5 py-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <Laptop aria-hidden="true" className="size-4 text-[var(--color-content-subtle)]" />
-            Equipment held
-            {assets.data ? (
-              <span className="font-normal text-[var(--color-content-subtle)]">
-                {assets.data.data.length}
-              </span>
-            ) : null}
-          </h2>
-        </div>
-        {assets.isPending ? (
-          <div className="grid gap-2 p-4">
-            <Skeleton className="h-9" />
-            <Skeleton className="h-9" />
-          </div>
-        ) : (assets.data?.data.length ?? 0) === 0 ? (
-          <EmptyState title="Nothing assigned" description="No equipment is currently issued to this person." />
-        ) : (
-          <ul className="divide-y divide-[var(--color-border)]">
-            {assets.data!.data.map((a) => (
-              <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
-                <div className="min-w-0">
-                  <Link href={`/assets/${a.id}`} className="text-sm font-medium hover:underline">
-                    {a.name}
-                  </Link>
-                  <p className="text-xs text-[var(--color-content-subtle)]">
-                    {a.assetTag}
-                    {a.serialNumber ? ` · SN ${a.serialNumber}` : ''}
-                  </p>
-                </div>
-                <StatusBadge token={ASSET_STATUS_TOKENS[a.status]} size="sm" />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      {/* v2.21 - the whole kit in one table: laptop, screen, phone, keyboard,
+          cable. Every row is the asset itself, so serial, warranty and custody
+          history stay attached rather than being retyped here. */}
+      <EquipmentKit
+        holderId={id}
+        holderName={name}
+        title="Equipment issued"
+        emptyMessage="No equipment is currently issued to this person."
+      />
 
       <Card className="p-0">
         <div className="border-b border-[var(--color-border)] px-5 py-3">
