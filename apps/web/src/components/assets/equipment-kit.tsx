@@ -87,6 +87,16 @@ function identifierOf(a: KitAsset): { label: string; value: string } | null {
   return null;
 }
 
+/** A consumable the person holds: counted, not serialised. */
+interface HeldConsumable {
+  inventoryItemId: string;
+  quantity: number;
+  sku: string;
+  name: string;
+  unit: string;
+  subcategory: { key: string; name: string } | null;
+}
+
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
@@ -115,13 +125,24 @@ export function EquipmentKit({
 
   const rows = (kit.data?.data ?? []).filter((a) => a.id !== excludeAssetId);
 
+  // v2.21 - cables and spare mice are stock, not serialised assets. They are
+  // held by the same person, so they belong in the same table; the ledger is
+  // the source, so the count cannot disagree with the movements behind it.
+  const consumables = useQuery({
+    queryKey: ['held-consumables', holderId],
+    queryFn: () => apiFetch<HeldConsumable[]>(`/stock/held-by/${holderId}`),
+    enabled: Boolean(holderId),
+  });
+  const stockRows = consumables.data ?? [];
+  const totalItems = rows.length + stockRows.length;
+
   return (
     <Card className="min-w-0 overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] px-5 py-4">
         <h2 className="text-base font-semibold">{title}</h2>
         {kit.isPending ? null : (
           <span className="rounded-full bg-[var(--color-surface-sunken)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-content-muted)]">
-            {rows.length} {rows.length === 1 ? 'item' : 'items'}
+            {totalItems} {totalItems === 1 ? 'item' : 'items'}
           </span>
         )}
         {can(PERMISSIONS.ASSETS_ASSIGN) ? (
@@ -138,18 +159,21 @@ export function EquipmentKit({
             <Skeleton key={i} className="h-10" />
           ))}
         </div>
-      ) : rows.length === 0 ? (
+      ) : totalItems === 0 ? (
         <EmptyState title="Nothing else issued" description={emptyMessage} />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">
-              Equipment issued to {holderName ?? 'this person'}, {rows.length} items
+              Equipment issued to {holderName ?? 'this person'}, {totalItems} items
             </caption>
             <thead>
               <tr className="border-b border-[var(--color-border)] text-left">
                 <th scope="col" className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                   Asset type
+                </th>
+                <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                  Qty
                 </th>
                 <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                   Brand
@@ -184,6 +208,7 @@ export function EquipmentKit({
                         </div>
                       </div>
                     </td>
+                    <td className="px-3 py-3 tabular-nums">1</td>
                     <td className="px-3 py-3">{a.brand ?? '—'}</td>
                     <td className="px-3 py-3">{a.model ?? '—'}</td>
                     <td className="px-3 py-3">
@@ -199,6 +224,33 @@ export function EquipmentKit({
                     <td className="px-5 py-3 whitespace-nowrap text-[var(--color-content-muted)]">
                       {fmtDate(a.assignmentDate)}
                     </td>
+                  </tr>
+                );
+              })}
+              {stockRows.map((c) => {
+                const Icon = typeIcon(c.subcategory?.key);
+                return (
+                  <tr key={c.inventoryItemId} className="border-b border-[var(--color-border)] last:border-0">
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="grid size-8 flex-none place-items-center rounded-lg bg-[var(--color-surface-sunken)] text-[var(--color-content-muted)]">
+                          <Icon aria-hidden="true" className="size-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-medium">{c.subcategory?.name ?? 'Consumable'}</p>
+                          <p className="truncate text-xs text-[var(--color-content-muted)]">{c.name}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 tabular-nums font-medium">{c.quantity}</td>
+                    <td className="px-3 py-3 text-[var(--color-content-subtle)]">—</td>
+                    <td className="px-3 py-3 text-[var(--color-content-subtle)]">{c.sku}</td>
+                    <td className="px-3 py-3">
+                      <span className="text-xs text-[var(--color-content-subtle)]">
+                        Stock item · not serialised
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-[var(--color-content-muted)]">—</td>
                   </tr>
                 );
               })}

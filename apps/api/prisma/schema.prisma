@@ -2904,6 +2904,8 @@ enum GrnLineIntake {
 enum StockMovementType {
   RECEIPT
   ISSUE
+  /// v2.21 - a consumable handed back by the person who was issued it.
+  RETURN
   ADJUST_UP
   ADJUST_DOWN
   TRANSFER_IN

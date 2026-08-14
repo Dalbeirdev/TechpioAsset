@@ -8,6 +8,7 @@ import {
   countCorrectionSchema,
   createStockLocationSchema,
   issueStockSchema,
+  returnStockSchema,
   reserveStockSchema,
   stockMovementQuerySchema,
   transferStockSchema,
@@ -20,6 +21,7 @@ import {
   type CountCorrectionInput,
   type CreateStockLocationInput,
   type IssueStockInput,
+  type ReturnStockInput,
   type ReserveStockInput,
   type StockMovementQuery,
   type TransferStockInput,
@@ -125,6 +127,29 @@ export class StockController {
   @ApiOperation({ summary: 'Issue stock out (guarded: never below reservations)' })
   issue(@CurrentUser() actor: AuthUser, @Body(zodBody(issueStockSchema)) body: IssueStockInput) {
     return this.stock.issue(actor, body);
+  }
+
+  @Post('return')
+  @RequirePermissions(PERMISSIONS.INVENTORY_ADJUST)
+  @ApiOperation({
+    summary: 'Take a consumable back from the person it was issued to (v2.21)',
+    description: 'Refuses to take back more than that person is recorded as holding.',
+  })
+  returnFromUser(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(returnStockSchema)) body: ReturnStockInput,
+  ) {
+    return this.stock.returnFromUser(actor, body);
+  }
+
+  @Get('held-by/:userId')
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  @ApiOperation({
+    summary: 'Consumables a person currently holds (v2.21)',
+    description: 'Summed from the movement ledger - issues minus returns - so it cannot drift.',
+  })
+  heldBy(@CurrentUser() actor: AuthUser, @Param('userId') userId: string) {
+    return this.stock.heldBy(actor, userId);
   }
 
   @Post('adjust')

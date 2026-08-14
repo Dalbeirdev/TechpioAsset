@@ -37,6 +37,13 @@ export const issueStockSchema = z.object({
   quantity: qty,
   reason: z.string().trim().max(500).optional().nullable(),
   /**
+   * v2.21 - who walked away with it. Consumables were leaving the shelf with no
+   * record of the recipient, so "what does this person actually hold" could not
+   * include the cable or the spare mouse. Optional: stock issued to a room or a
+   * job still has no person attached.
+   */
+  issuedToUserId: z.string().min(1).optional().nullable(),
+  /**
    * v2.9 C4 - permission to fall back on expired stock, never an instruction to
    * reach for it. Usable lots are always consumed first, and the reason is
    * recorded on the movement and the audit log.
@@ -51,6 +58,15 @@ export const issueStockSchema = z.object({
     .nullable(),
 });
 export type IssueStockInput = z.infer<typeof issueStockSchema>;
+
+/** v2.21 - hand a consumable back, so a person's holding can go down again. */
+export const returnStockSchema = z.object({
+  ...itemAtLocation,
+  quantity: qty,
+  returnedByUserId: z.string().min(1),
+  reason: z.string().trim().max(500).optional().nullable(),
+});
+export type ReturnStockInput = z.infer<typeof returnStockSchema>;
 
 export const adjustStockSchema = z.object({
   ...itemAtLocation,

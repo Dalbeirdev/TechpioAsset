@@ -497,6 +497,10 @@ export class AlertSweepService implements OnModuleInit {
   private static readonly MOVEMENT_SIGN: Readonly<Record<string, 1 | -1>> = {
     RECEIPT: 1,
     ISSUE: -1,
+    // v2.21 - a consumable handed back puts stock on the shelf exactly as a
+    // receipt does. Omitting it here would have counted every return as zero
+    // and reported permanent drift against a perfectly correct level.
+    RETURN: 1,
     ADJUST_UP: 1,
     ADJUST_DOWN: -1,
     TRANSFER_IN: 1,

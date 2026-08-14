@@ -9,6 +9,7 @@ import type {
   CountCorrectionInput,
   CreateStockLocationInput,
   IssueStockInput,
+  ReturnStockInput,
   ReserveStockInput,
   StockMovementQuery,
   TransferStockInput,
@@ -243,13 +244,90 @@ export class StockService {
       ...input,
       movementType: 'ISSUE',
       reason: input.reason ?? null,
-      refType: null,
-      refId: null,
+      // v2.21 - the recipient IS the reference, so the movement ledger can
+      // answer "what consumables does this person hold" without a second table.
+      refType: input.issuedToUserId ? 'User' : null,
+      refId: input.issuedToUserId ?? null,
       bumpGlobal: true,
     });
     await this.auditMovement(actor, input.inventoryItemId, 'ISSUE', input.quantity, input.reason);
     await this.maybeLowStockAlert(actor, input.inventoryItemId, input.stockLocationId);
     return this.levelOf(input.inventoryItemId, input.stockLocationId);
+  }
+
+  /**
+   * v2.21 - a consumable comes back. The mirror of issue(): stock returns to
+   * the shelf and the person's holding drops, both from the same ledger.
+   */
+  async returnFromUser(actor: AuthUser, input: ReturnStockInput) {
+    await this.assertRefs(actor, input.inventoryItemId, input.stockLocationId);
+    const held = await this.heldBy(actor, input.returnedByUserId);
+    const current = held.find((h) => h.inventoryItemId === input.inventoryItemId);
+    if (!current || current.quantity < input.quantity) {
+      throw new AppError('VALIDATION_FAILED', 'That is more than this person is holding', {
+        detail: `They currently hold ${current?.quantity ?? 0}.`,
+      });
+    }
+
+    await this.addStock(actor, {
+      inventoryItemId: input.inventoryItemId,
+      stockLocationId: input.stockLocationId,
+      quantity: input.quantity,
+      movementType: 'RETURN',
+      reason: input.reason ?? null,
+      refType: 'User',
+      refId: input.returnedByUserId,
+      bumpGlobal: true,
+    });
+    await this.auditMovement(actor, input.inventoryItemId, 'RETURN', input.quantity, input.reason);
+    return this.levelOf(input.inventoryItemId, input.stockLocationId);
+  }
+
+  /**
+   * What a person is currently holding, summed from the movement ledger:
+   * issues add to their holding, returns take it away. Derived rather than
+   * stored, so it can never disagree with the movements behind it.
+   */
+  async heldBy(actor: AuthUser, userId: string) {
+    const rows = await this.prisma.client.stockMovement.groupBy({
+      by: ['inventoryItemId', 'type'],
+      where: {
+        companyId: actor.companyId,
+        refType: 'User',
+        refId: userId,
+        type: { in: ['ISSUE', 'RETURN'] },
+      },
+      _sum: { quantity: true },
+    });
+
+    const net = new Map<string, number>();
+    for (const r of rows) {
+      const q = Number(r._sum.quantity ?? 0);
+      net.set(r.inventoryItemId, (net.get(r.inventoryItemId) ?? 0) + (r.type === 'ISSUE' ? q : -q));
+    }
+
+    const outstanding = [...net.entries()].filter(([, q]) => q > 0);
+    if (outstanding.length === 0) return [];
+
+    const items = await this.prisma.client.inventoryItem.findMany({
+      where: { id: { in: outstanding.map(([id]) => id) } },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        unit: true,
+        category: { select: { name: true } },
+        subcategory: { select: { key: true, name: true } },
+      },
+    });
+    const byId = new Map(items.map((i) => [i.id, i]));
+
+    return outstanding
+      .map(([inventoryItemId, quantity]) => {
+        const item = byId.get(inventoryItemId);
+        return item ? { inventoryItemId, quantity, ...item } : null;
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
   }
 
   /** Manual correction, up or down, always with a reason. */
@@ -801,7 +879,7 @@ export class StockService {
       inventoryItemId: string;
       stockLocationId: string;
       quantity: number;
-      movementType: 'ADJUST_UP';
+      movementType: 'ADJUST_UP' | 'RETURN';
       reason: string | null;
       refType: string | null;
       refId: string | null;
