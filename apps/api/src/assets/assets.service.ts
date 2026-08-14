@@ -136,6 +136,9 @@ export class AssetsService {
         take: 1,
         select: {
           id: true,
+          // v2.21 - the exact moment, not just the day: two handovers on the
+          // same afternoon are otherwise indistinguishable in the kit table.
+          assignedAt: true,
           acknowledgedAt: true,
           expectedReturnAt: true,
           // Who handed the device over - accountability the holder should see.

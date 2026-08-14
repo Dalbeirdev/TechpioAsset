@@ -56,6 +56,11 @@ interface KitAsset {
   assignmentDate: string | null;
   category: { name: string } | null;
   subcategory: { key: string; name: string } | null;
+  /** The open assignment, when there is one - who handed it over and when. */
+  assignments?: {
+    assignedAt: string | null;
+    assignedBy: { profile: { firstName: string; lastName: string } | null } | null;
+  }[];
 }
 
 /** Type key -> glyph. Unknown types fall back to a generic box, never blank. */
@@ -103,6 +108,20 @@ interface HeldConsumable {
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+/** Time of day beneath the date: two handovers on one afternoon differ. */
+const fmtTime = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : null;
+
+/**
+ * Who performed the handover. Blank for the assets brought in from the
+ * spreadsheet - nobody issued those inside the system, and inventing a name
+ * would be worse than an honest dash.
+ */
+function issuedBy(a: KitAsset): string | null {
+  const p = a.assignments?.[0]?.assignedBy?.profile;
+  return p ? `${p.firstName} ${p.lastName}` : null;
+}
 
 export function EquipmentKit({
   holderId,
@@ -194,6 +213,9 @@ export function EquipmentKit({
                 <th scope="col" className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                   Issued
                 </th>
+                <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                  Issued by
+                </th>
                 {canManage ? (
                   <th scope="col" className="px-3 py-2.5">
                     <span className="sr-only">Actions</span>
@@ -234,7 +256,17 @@ export function EquipmentKit({
                       )}
                     </td>
                     <td className="px-5 py-3 whitespace-nowrap text-[var(--color-content-muted)]">
-                      {fmtDate(a.assignmentDate)}
+                      {fmtDate(a.assignments?.[0]?.assignedAt ?? a.assignmentDate)}
+                      {fmtTime(a.assignments?.[0]?.assignedAt ?? a.assignmentDate) ? (
+                        <span className="block text-xs text-[var(--color-content-subtle)]">
+                          {fmtTime(a.assignments?.[0]?.assignedAt ?? a.assignmentDate)}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      {issuedBy(a) ?? (
+                        <span className="text-[var(--color-content-subtle)]">—</span>
+                      )}
                     </td>
                     {canManage ? (
                       <td className="px-3 py-3 text-right">
@@ -273,6 +305,7 @@ export function EquipmentKit({
                       </span>
                     </td>
                     <td className="px-5 py-3 text-[var(--color-content-muted)]">—</td>
+                    <td className="px-3 py-3 text-[var(--color-content-subtle)]">—</td>
                     {canManage ? <td className="px-3 py-3" /> : null}
                   </tr>
                 );
