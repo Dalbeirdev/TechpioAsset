@@ -7,14 +7,6 @@ import { z } from 'zod';
  */
 
 export const DEMO_ASSET_COUNTS = ['UNDER_100', 'FROM_100_TO_500', 'FROM_500_TO_1000', 'OVER_1000'] as const;
-export const DEMO_INTERESTS = [
-  'ASSET_MANAGEMENT',
-  'HARDWARE_TRACKING',
-  'WARRANTY_MANAGEMENT',
-  'SOFTWARE_LICENSES',
-  'IT_INVENTORY',
-  'OTHER',
-] as const;
 
 export const demoRequestSchema = z.object({
   fullName: z.string().trim().min(2, 'Enter your name').max(120),
@@ -38,7 +30,6 @@ export const demoRequestSchema = z.object({
   /** Optional so the About page's compact contact form shares this endpoint
    * without inventing values the visitor never chose. */
   assetCount: z.enum(DEMO_ASSET_COUNTS).optional(),
-  interest: z.enum(DEMO_INTERESTS).optional(),
   message: z.string().trim().max(2000).optional().or(z.literal('')),
   /** Honeypot - must remain empty. */
   website: z.literal('').optional(),

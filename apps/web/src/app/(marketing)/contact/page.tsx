@@ -3,18 +3,9 @@
 import { useState } from 'react';
 import { Clock, Mail, MapPin, Send } from 'lucide-react';
 import { HeroAccent, HeroBackdrop, HeroBadge } from '@/components/marketing/hero-backdrop';
-import { FancySelect, PhoneField, type SelectOption } from '@/components/marketing/form-fields';
+import { PhoneField } from '@/components/marketing/form-fields';
 
 const CONTACT_EMAIL = 'proapps@techpio.com';
-
-const INTEREST_OPTIONS: SelectOption[] = [
-  { value: 'Asset Management', label: 'Asset Management' },
-  { value: 'Hardware Tracking', label: 'Hardware Tracking' },
-  { value: 'Warranty Management', label: 'Warranty Management' },
-  { value: 'Software & License Management', label: 'Software & License Management' },
-  { value: 'IT Inventory', label: 'IT Inventory' },
-  { value: 'Other', label: 'Other' },
-];
 
 /**
  * Contact form. With no public inbox endpoint, submitting composes a pre-filled
@@ -27,7 +18,6 @@ export default function ContactPage() {
   const [company, setCompany] = useState('');
   const [phoneCountry, setPhoneCountry] = useState('+91');
   const [phone, setPhone] = useState('');
-  const [interest, setInterest] = useState('Asset Management');
   const [message, setMessage] = useState('');
   const [opened, setOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +40,6 @@ export default function ContactPage() {
       `Email: ${email.trim()}`,
       `Phone: ${phoneCountry} ${phone.trim()}`,
       company.trim() ? `Company: ${company.trim()}` : null,
-      `Needs help with: ${interest}`,
       '',
       message.trim(),
     ]
@@ -120,24 +109,12 @@ export default function ContactPage() {
               onNumberChange={setPhone}
             />
           </div>
-          <div>
-            <span className="text-sm font-medium">What do you need help with?</span>
-            <div className="mt-1.5">
-              <FancySelect
-                id="ct-interest"
-                value={interest}
-                onChange={setInterest}
-                options={INTEREST_OPTIONS}
-                ariaLabel="What do you need help with?"
-              />
-            </div>
-          </div>
           <Field label="How can we help?">
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              rows={5}
-              className={`${inputCls} resize-y`}
+              rows={10}
+              className={`${inputCls} min-h-56 resize-y`}
               placeholder="Tell us a little about your team and what you’re tracking today…"
             />
           </Field>

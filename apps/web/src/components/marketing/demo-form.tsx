@@ -21,15 +21,6 @@ const ASSET_OPTIONS: SelectOption[] = [
   { value: 'OVER_1000', label: '1,000+' },
 ];
 
-const INTEREST_OPTIONS: SelectOption[] = [
-  { value: 'ASSET_MANAGEMENT', label: 'Asset Management' },
-  { value: 'HARDWARE_TRACKING', label: 'Hardware Tracking' },
-  { value: 'WARRANTY_MANAGEMENT', label: 'Warranty Management' },
-  { value: 'SOFTWARE_LICENSES', label: 'Software & License Management' },
-  { value: 'IT_INVENTORY', label: 'IT Inventory' },
-  { value: 'OTHER', label: 'Other' },
-];
-
 const inputCls =
   'h-11 w-full rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3.5 text-sm outline-none transition-colors focus:border-[var(--color-brand)]';
 const labelCls = 'text-sm font-medium';
@@ -47,7 +38,6 @@ export function DemoForm() {
       phoneCountry: '+91',
       phone: '',
       assetCount: 'UNDER_100',
-      interest: 'ASSET_MANAGEMENT',
       message: '',
       website: '',
     },
@@ -140,29 +130,11 @@ export function DemoForm() {
             />
           </div>
         </div>
-        <div>
-          <label htmlFor="df-interest" className={labelCls}>What do you need help with?</label>
-          <div className="mt-1.5">
-            <Controller
-              control={form.control}
-              name="interest"
-              render={({ field }) => (
-                <FancySelect
-                  id="df-interest"
-                  value={field.value ?? 'ASSET_MANAGEMENT'}
-                  onChange={field.onChange}
-                  options={INTEREST_OPTIONS}
-                  ariaLabel="What do you need help with?"
-                />
-              )}
-            />
-          </div>
-        </div>
       </div>
 
       <div>
         <label htmlFor="df-message" className={labelCls}>Message <span className="text-[var(--color-content-subtle)]">(optional)</span></label>
-        <textarea id="df-message" rows={4} className={`${inputCls} mt-1.5 h-auto py-2.5`} {...form.register('message')} />
+        <textarea id="df-message" rows={7} className={`${inputCls} mt-1.5 h-auto py-2.5`} {...form.register('message')} />
       </div>
 
       {/* Honeypot: visually hidden, never announced; humans skip it, bots fill it. */}
