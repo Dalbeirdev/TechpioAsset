@@ -25,9 +25,9 @@ export function MarketingFooter() {
           links={[
             { href: '/', label: 'Overview' },
             { href: '/features', label: 'Features' },
-            { href: '/#how-it-works', label: 'How It Works' },
+            { href: '/how-it-works', label: 'How It Works' },
+            { href: '/feedback', label: 'Client Feedback' },
             { href: '/#security', label: 'Security' },
-            { href: '/#demo', label: 'Contact' },
           ]}
         />
         <FooterCol
