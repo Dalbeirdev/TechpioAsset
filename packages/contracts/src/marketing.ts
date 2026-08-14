@@ -20,7 +20,21 @@ export const demoRequestSchema = z.object({
   fullName: z.string().trim().min(2, 'Enter your name').max(120),
   email: z.string().trim().email('Enter a valid business email').max(200),
   company: z.string().trim().min(2, 'Enter your company name').max(160),
-  phone: z.string().trim().max(40).optional().or(z.literal('')),
+  /**
+   * Phone is required as of 2026-08: a lead we can only email is a lead that
+   * waits on an inbox. Code and number are kept apart so the country is a
+   * choice rather than something to remember to type.
+   */
+  phoneCountry: z
+    .string()
+    .trim()
+    .regex(/^\+\d{1,4}$/, 'Choose a country code'),
+  phone: z
+    .string()
+    .trim()
+    .min(6, 'Enter your phone number')
+    .max(20, 'That number looks too long')
+    .regex(/^[\d\s()-]+$/, 'Digits, spaces and dashes only'),
   /** Optional so the About page's compact contact form shares this endpoint
    * without inventing values the visitor never chose. */
   assetCount: z.enum(DEMO_ASSET_COUNTS).optional(),

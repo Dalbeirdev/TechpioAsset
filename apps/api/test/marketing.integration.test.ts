@@ -22,9 +22,9 @@ const VALID = {
   fullName: 'Test Visitor',
   email: 'visitor@example.com',
   company: 'Example Corp',
-  phone: '',
+  phoneCountry: '+91',
+  phone: '98765 43210',
   assetCount: 'FROM_100_TO_500',
-  interest: 'WARRANTY_MANAGEMENT',
   message: 'Please show me warranty tracking.',
   website: '',
 };
@@ -47,6 +47,20 @@ describe('POST /marketing/demo-request', () => {
     const res = await api(app)
       .post('/api/v1/marketing/demo-request')
       .send({ ...VALID, assetCount: 'MILLIONS' });
+    expect(res.status).toBe(422);
+  });
+
+  it('rejects a lead with no phone number (required since 2026-08)', async () => {
+    const res = await api(app)
+      .post('/api/v1/marketing/demo-request')
+      .send({ ...VALID, phone: '' });
+    expect(res.status).toBe(422);
+  });
+
+  it('rejects a phone number with no country code', async () => {
+    const res = await api(app)
+      .post('/api/v1/marketing/demo-request')
+      .send({ ...VALID, phoneCountry: '91' });
     expect(res.status).toBe(422);
   });
 

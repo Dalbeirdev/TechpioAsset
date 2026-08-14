@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowRight, CheckCircle2, Mail } from 'lucide-react';
 import { demoRequestSchema, type DemoRequestInput } from '@techpioasset/contracts';
 import { apiFetch } from '@/lib/api-client';
+import { FancySelect, PhoneField, type SelectOption } from './form-fields';
 
 /**
  * Lead form for pioassets.com. Validates with the same zod schema the API
@@ -13,21 +14,21 @@ import { apiFetch } from '@/lib/api-client';
  * dalbeir@techpio.com. The hidden `website` field is the bot honeypot.
  */
 
-const ASSET_OPTIONS = [
-  ['UNDER_100', 'Under 100'],
-  ['FROM_100_TO_500', '100–500'],
-  ['FROM_500_TO_1000', '500–1,000'],
-  ['OVER_1000', '1,000+'],
-] as const;
+const ASSET_OPTIONS: SelectOption[] = [
+  { value: 'UNDER_100', label: 'Under 100' },
+  { value: 'FROM_100_TO_500', label: '100–500' },
+  { value: 'FROM_500_TO_1000', label: '500–1,000' },
+  { value: 'OVER_1000', label: '1,000+' },
+];
 
-const INTEREST_OPTIONS = [
-  ['ASSET_MANAGEMENT', 'Asset Management'],
-  ['HARDWARE_TRACKING', 'Hardware Tracking'],
-  ['WARRANTY_MANAGEMENT', 'Warranty Management'],
-  ['SOFTWARE_LICENSES', 'Software & License Management'],
-  ['IT_INVENTORY', 'IT Inventory'],
-  ['OTHER', 'Other'],
-] as const;
+const INTEREST_OPTIONS: SelectOption[] = [
+  { value: 'ASSET_MANAGEMENT', label: 'Asset Management' },
+  { value: 'HARDWARE_TRACKING', label: 'Hardware Tracking' },
+  { value: 'WARRANTY_MANAGEMENT', label: 'Warranty Management' },
+  { value: 'SOFTWARE_LICENSES', label: 'Software & License Management' },
+  { value: 'IT_INVENTORY', label: 'IT Inventory' },
+  { value: 'OTHER', label: 'Other' },
+];
 
 const inputCls =
   'h-11 w-full rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3.5 text-sm outline-none transition-colors focus:border-[var(--color-brand)]';
@@ -43,6 +44,7 @@ export function DemoForm() {
       fullName: '',
       email: '',
       company: '',
+      phoneCountry: '+91',
       phone: '',
       assetCount: 'UNDER_100',
       interest: 'ASSET_MANAGEMENT',
@@ -100,25 +102,61 @@ export function DemoForm() {
           <input id="df-company" autoComplete="organization" className={`${inputCls} mt-1.5`} {...form.register('company')} />
           {form.formState.errors.company ? <p className={errCls}>{form.formState.errors.company.message}</p> : null}
         </div>
-        <div>
-          <label htmlFor="df-phone" className={labelCls}>Phone number <span className="text-[var(--color-content-subtle)]">(optional)</span></label>
-          <input id="df-phone" type="tel" autoComplete="tel" className={`${inputCls} mt-1.5`} {...form.register('phone')} />
-        </div>
+        <Controller
+          control={form.control}
+          name="phoneCountry"
+          render={({ field: codeField }) => (
+            <Controller
+              control={form.control}
+              name="phone"
+              render={({ field: numberField }) => (
+                <PhoneField
+                  idBase="df-phone"
+                  code={codeField.value ?? '+91'}
+                  onCodeChange={codeField.onChange}
+                  number={numberField.value ?? ''}
+                  onNumberChange={numberField.onChange}
+                  error={form.formState.errors.phone?.message ?? form.formState.errors.phoneCountry?.message}
+                />
+              )}
+            />
+          )}
+        />
         <div>
           <label htmlFor="df-assets" className={labelCls}>Number of assets</label>
-          <select id="df-assets" className={`${inputCls} mt-1.5`} {...form.register('assetCount')}>
-            {ASSET_OPTIONS.map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
-            ))}
-          </select>
+          <div className="mt-1.5">
+            <Controller
+              control={form.control}
+              name="assetCount"
+              render={({ field }) => (
+                <FancySelect
+                  id="df-assets"
+                  value={field.value ?? 'UNDER_100'}
+                  onChange={field.onChange}
+                  options={ASSET_OPTIONS}
+                  ariaLabel="Number of assets"
+                />
+              )}
+            />
+          </div>
         </div>
         <div>
           <label htmlFor="df-interest" className={labelCls}>What do you need help with?</label>
-          <select id="df-interest" className={`${inputCls} mt-1.5`} {...form.register('interest')}>
-            {INTEREST_OPTIONS.map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
-            ))}
-          </select>
+          <div className="mt-1.5">
+            <Controller
+              control={form.control}
+              name="interest"
+              render={({ field }) => (
+                <FancySelect
+                  id="df-interest"
+                  value={field.value ?? 'ASSET_MANAGEMENT'}
+                  onChange={field.onChange}
+                  options={INTEREST_OPTIONS}
+                  ariaLabel="What do you need help with?"
+                />
+              )}
+            />
+          </div>
         </div>
       </div>
 

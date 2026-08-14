@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { demoRequestSchema, type DemoRequestInput } from '@techpioasset/contracts';
 import { apiFetch } from '@/lib/api-client';
+import { PhoneField } from './form-fields';
 
 /**
  * About-page visuals (2026-08): the "digital asset map" hero and the compact
@@ -113,7 +114,15 @@ export function AboutContactForm() {
   const [failed, setFailed] = useState(false);
   const form = useForm<DemoRequestInput>({
     resolver: zodResolver(demoRequestSchema),
-    defaultValues: { fullName: '', email: '', company: '', phone: '', message: '', website: '' },
+    defaultValues: {
+      fullName: '',
+      email: '',
+      company: '',
+      phoneCountry: '+91',
+      phone: '',
+      message: '',
+      website: '',
+    },
   });
 
   async function onSubmit(values: DemoRequestInput) {
@@ -160,6 +169,26 @@ export function AboutContactForm() {
         <input id="ac-company" placeholder="Company" autoComplete="organization" className={inputCls} {...form.register('company')} />
         {form.formState.errors.company ? <p className="mt-1 text-xs text-[var(--tone-critical-fg)]">{form.formState.errors.company.message}</p> : null}
       </div>
+      <Controller
+        control={form.control}
+        name="phoneCountry"
+        render={({ field: codeField }) => (
+          <Controller
+            control={form.control}
+            name="phone"
+            render={({ field: numberField }) => (
+              <PhoneField
+                idBase="ac-phone"
+                code={codeField.value ?? '+91'}
+                onCodeChange={codeField.onChange}
+                number={numberField.value ?? ''}
+                onNumberChange={numberField.onChange}
+                error={form.formState.errors.phone?.message ?? form.formState.errors.phoneCountry?.message}
+              />
+            )}
+          />
+        )}
+      />
       <div>
         <label htmlFor="ac-message" className="sr-only">Message</label>
         <textarea id="ac-message" rows={4} placeholder="What are you trying to improve?" className={`${inputCls} h-auto py-2.5`} {...form.register('message')} />

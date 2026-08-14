@@ -47,7 +47,7 @@ export class MarketingController {
       `Name:       ${body.fullName}`,
       `Email:      ${body.email}`,
       `Company:    ${body.company}`,
-      `Phone:      ${body.phone || '-'}`,
+      `Phone:      ${body.phoneCountry} ${body.phone}`,
       `Assets:     ${body.assetCount ? LABELS[body.assetCount] : '-'}`,
       `Interest:   ${body.interest ? LABELS[body.interest] : '-'}`,
       '',
