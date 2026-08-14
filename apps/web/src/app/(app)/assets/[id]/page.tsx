@@ -12,7 +12,8 @@ import {
   AVAILABILITY_STATE_TOKENS,
   OWNERSHIP_TYPE_TOKENS,
 } from '@techpioasset/ui-tokens';
-import { warrantySource,
+import {
+  ASSET_TYPES_BY_KEY, warrantySource,
   PERMISSIONS,
   type AssetCondition,
   type AssetStatus,
@@ -48,6 +49,9 @@ interface AssetDetail {
   brand: string | null;
   model: string | null;
   serialNumber: string | null;
+  macAddress: string | null;
+  imei: string | null;
+  specs: Record<string, string> | null;
   status: AssetStatus;
   condition: AssetCondition;
   lifecycleState: LifecycleState | null;
@@ -63,7 +67,7 @@ interface AssetDetail {
   purchaseCost?: string | null;
   currency?: string | null;
   category: { name: string } | null;
-  subcategory: { name: string } | null;
+  subcategory: { key: string; name: string } | null;
   office: { id: string; name: string } | null;
   assignedUser: {
     id: string;
@@ -191,6 +195,16 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     ? `${holder.profile.firstName} ${holder.profile.lastName}`
     : (holder?.email ?? null);
 
+  // v2.20 - render the stored specification in the type's own field order, so
+  // two monitors always read the same way round, and label it from the shared
+  // catalogue rather than showing raw keys.
+  const typeDef = data.subcategory ? ASSET_TYPES_BY_KEY[data.subcategory.key] : undefined;
+  const specRows: [string, string][] = typeDef
+    ? typeDef.fields
+        .filter((f) => data.specs?.[f.key])
+        .map((f) => [f.unit ? `${f.label} (${f.unit})` : f.label, data.specs![f.key]!])
+    : Object.entries(data.specs ?? {});
+
   return (
     <div className="mx-auto grid max-w-3xl gap-4">
       <div>
@@ -299,6 +313,12 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
             <Row label="Office" value={data.office?.name} />
             <Row label="Brand" value={data.brand} />
             <Row label="Model" value={data.model} />
+            {/* v2.20 - shown only when the asset carries one, so a monitor's
+                card is not padded with blank network rows. */}
+            {data.imei ? <Row label="IMEI" value={<span className="font-mono text-xs">{data.imei}</span>} /> : null}
+            {data.macAddress ? (
+              <Row label="MAC address" value={<span className="font-mono text-xs">{data.macAddress}</span>} />
+            ) : null}
             <Row
               label="Condition"
               value={
@@ -355,6 +375,21 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
             <p className="mt-4 border-t border-[var(--color-border)] pt-3 text-sm text-[var(--color-content-muted)]">
               {data.notes}
             </p>
+          ) : null}
+
+          {/* v2.20 - whatever the type declared, labelled from the same
+              catalogue the form used. Nothing recorded, nothing shown. */}
+          {specRows.length > 0 ? (
+            <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
+                {typeDef?.name ?? 'Specification'}
+              </p>
+              <dl className="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                {specRows.map(([label, value]) => (
+                  <Row key={label} label={label} value={value} />
+                ))}
+              </dl>
+            </div>
           ) : null}
         </Card>
       ) : null}
