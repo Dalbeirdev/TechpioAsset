@@ -14,6 +14,7 @@ import {
   TONE_PALETTE_DARK,
   TONE_PALETTE_LIGHT,
 } from '@techpioasset/ui-tokens';
+import { MAX_PAGE_SIZE } from '@techpioasset/contracts';
 import { useSession } from '../../src/providers/session';
 import { useTheme, statusColor, statusLabel } from '../../src/theme';
 import { Card, Chevron, EmptyState, Field, IconBadge, StatusPill } from '../../src/components/ui';
@@ -42,13 +43,21 @@ export default function AssetsScreen() {
 
   const [rows, setRows] = useState<AssetRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [q, setQ] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.request<AssetRow[]>('/assets?pageSize=200');
+      // The page size comes from the contract the server validates against.
+      // Asking for 200 was rejected as 422 and, with nothing catching it, the
+      // list rendered its empty state - so the tab looked like a company with
+      // no assets rather than a request that never succeeded.
+      const data = await api.request<AssetRow[]>(`/assets?pageSize=${MAX_PAGE_SIZE}`);
       setRows(data ?? []);
+      setFailed(false);
+    } catch {
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -83,7 +92,13 @@ export default function AssetsScreen() {
         </View>
       }
       ListEmptyComponent={
-        loading ? null : (
+        loading ? null : failed ? (
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Could not load assets"
+            message="Pull down to try again."
+          />
+        ) : (
           <EmptyState
             icon="cube-outline"
             title={q ? 'No matches' : 'No assets yet'}

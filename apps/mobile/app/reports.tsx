@@ -1,27 +1,49 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, Text, View } from 'react-native';
+import { MAX_PAGE_SIZE } from '@techpioasset/contracts';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
 import type { AssetStatus, RequestStatus } from '@techpioasset/domain';
 import { useSession } from '../src/providers/session';
 import { useTheme, statusLabel } from '../src/theme';
 import { Card, Screen, SectionTitle, StatCard } from '../src/components/ui';
 
+interface Overview {
+  assetsByStatus: Record<string, number>;
+  totals: { assets: number };
+}
+
+/**
+ * Asset figures come from /analytics/overview, which counts in the database.
+ *
+ * They used to be tallied from a page of rows the screen fetched itself, asking
+ * for 500 of them - past the 100 the contract allows, so the request 422'd, the
+ * .catch swallowed it, and every number on the page read zero. Counting rows
+ * would have been wrong even when it worked: with 1,634 assets, a page of them
+ * labelled "Total assets" is a sample presented as a total.
+ *
+ * Requests have no aggregate endpoint, so that breakdown is still counted from
+ * rows - and says so, rather than implying it covers everything.
+ */
 export default function ReportsScreen() {
   const { api } = useSession();
   const { c, spacing } = useTheme();
-  const [assets, setAssets] = useState<{ status: AssetStatus }[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [requests, setRequests] = useState<{ status: RequestStatus }[]>([]);
+  const [requestTotal, setRequestTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [a, r] = await Promise.all([
-        api.request<{ status: AssetStatus }[]>('/assets?pageSize=500').catch(() => []),
-        api.request<{ status: RequestStatus }[]>('/requests?pageSize=500').catch(() => []),
+      const [o, r] = await Promise.all([
+        api.request<Overview>('/analytics/overview').catch(() => null),
+        api
+          .request<{ status: RequestStatus }[]>(`/requests?pageSize=${MAX_PAGE_SIZE}`)
+          .catch(() => []),
       ]);
-      setAssets(a ?? []);
+      setOverview(o);
       setRequests(r ?? []);
+      setRequestTotal((r ?? []).length);
     } finally {
       setLoading(false);
     }
@@ -34,22 +56,40 @@ export default function ReportsScreen() {
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   };
 
+  const assetRows = Object.entries(overview?.assetsByStatus ?? {}).sort((a, b) => b[1] - a[1]) as [
+    AssetStatus,
+    number,
+  ][];
+
   return (
     <Screen scroll refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <View style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.xl }}>
-        <StatCard icon="cube-outline" value={assets.length} label="Total assets" />
-        <StatCard icon="document-text-outline" value={requests.length} label="Total requests" />
+        <StatCard icon="cube-outline" value={overview?.totals.assets ?? 0} label="Total assets" />
+        <StatCard
+          icon="document-text-outline"
+          value={requestTotal ?? 0}
+          label={`Recent requests${requestTotal === MAX_PAGE_SIZE ? ` (latest ${MAX_PAGE_SIZE})` : ''}`}
+        />
       </View>
 
       <SectionTitle>Assets by status</SectionTitle>
       <Card style={{ padding: 0, marginBottom: spacing.xl }}>
-        {tally(assets).map(([status, n], i, arr) => (
-          <BreakdownRow key={status} label={statusLabel(status)} count={n} last={i === arr.length - 1} />
+        {assetRows.map(([status, n], i) => (
+          <BreakdownRow
+            key={status}
+            label={statusLabel(status)}
+            count={n}
+            last={i === assetRows.length - 1}
+          />
         ))}
-        {assets.length === 0 ? <Empty /> : null}
+        {assetRows.length === 0 ? <Empty /> : null}
       </Card>
 
-      <SectionTitle>Requests by status</SectionTitle>
+      <SectionTitle>
+        {requestTotal === MAX_PAGE_SIZE
+          ? `Requests by status (latest ${MAX_PAGE_SIZE})`
+          : 'Requests by status'}
+      </SectionTitle>
       <Card style={{ padding: 0, marginBottom: spacing.xl }}>
         {tally(requests).map(([status, n], i, arr) => (
           <BreakdownRow
