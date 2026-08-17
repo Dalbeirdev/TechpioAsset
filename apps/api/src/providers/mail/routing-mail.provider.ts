@@ -59,6 +59,10 @@ export class RoutingMailProvider extends MailProvider {
               filename: a.filename,
               content: a.content,
               contentType: a.contentType,
+              ...(a.encoding ? { encoding: a.encoding } : {}),
+              // A cid part is part of the body, so it must not also be offered
+              // as a saveable file - hence the explicit inline disposition.
+              ...(a.cid ? { cid: a.cid, contentDisposition: 'inline' as const } : {}),
             })),
           }
         : {}),
