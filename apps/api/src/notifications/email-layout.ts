@@ -24,6 +24,17 @@ export interface BrandedEmailInput {
   /** Absolute product URL for the footer link. */
   productUrl: string;
   footerNote?: string;
+  /**
+   * The header logo, when the sender is also attaching it as an inline part
+   * with this cid. Omitted, the header falls back to a styled text wordmark.
+   */
+  logo?: EmailLogo;
+}
+
+export interface EmailLogo {
+  cid: string;
+  width: number;
+  height: number;
 }
 
 const TONES: Record<EmailBadge['tone'], { bg: string; fg: string }> = {
@@ -39,20 +50,31 @@ const esc = (s: string) =>
 /**
  * The wordmark, on the white header band the artwork is drawn for.
  *
- * Mail clients block remote images by default often enough that the header has
- * to survive it, so the `alt` carries the brand name and is styled to read as
- * the wordmark when the image never arrives. If WEB_URL is not an absolute URL
- * there is nothing to point an <img> at, and the styled text is all there is.
+ * The image is addressed by Content-ID, not by URL. Outlook and Gmail refuse to
+ * fetch a remote image from a sender the reader has not trusted, so a linked
+ * logo arrives as a broken box; a part carried inside the message is not a
+ * fetch, so it renders. The caller supplies the cid and attaches the matching
+ * part - when it does not, the styled text is the header, which is also what a
+ * reader sees if their client blocks inline images too.
  */
-function brandHeader(productUrl: string): string {
+function brandHeader(productUrl: string, logo?: EmailLogo): string {
   const base = /^https?:\/\//i.test(productUrl) ? productUrl.replace(/\/+$/, '') : null;
-  const wordmark =
-    '<span style="font-size:20px;font-weight:800;color:#001858;letter-spacing:-.01em;">Pio<span style="color:#0038a8;">Assets</span></span>';
-  if (!base) return wordmark;
-  return `<a href="${esc(base)}" style="text-decoration:none;">
-            <img src="${esc(base)}/brand/pioassets-lockup@2x.png" alt="PioAssets"
-                 width="196" height="51" style="display:block;border:0;outline:none;width:196px;height:51px;font-size:20px;font-weight:800;color:#001858;letter-spacing:-.01em;text-decoration:none;"/>
-          </a>`;
+  const inner = logo
+    ? `<img src="cid:${esc(logo.cid)}" alt="PioAssets" width="${logo.width}" height="${logo.height}" style="display:block;border:0;outline:none;width:${logo.width}px;height:${logo.height}px;font-size:20px;font-weight:800;color:#001858;letter-spacing:-.01em;text-decoration:none;"/>`
+    : '<span style="font-size:20px;font-weight:800;color:#001858;letter-spacing:-.01em;">Pio<span style="color:#0038a8;">Assets</span></span>';
+  return base ? `<a href="${esc(base)}" style="text-decoration:none;">${inner}</a>` : inner;
+}
+
+/**
+ * The footer's product link. A misconfigured WEB_URL used to render an anchor
+ * with an empty href - a link that looks clickable and goes nowhere - so the
+ * name is plain text unless there is somewhere real to send the reader.
+ */
+function productLink(productUrl: string): string {
+  const name = '<strong style="font-weight:600;">PioAssets</strong>';
+  return /^https?:\/\//i.test(productUrl)
+    ? `<a href="${esc(productUrl.replace(/\/+$/, ''))}" style="color:#1d4ed8;text-decoration:none;font-weight:600;">PioAssets</a>`
+    : name;
 }
 
 export function renderBrandedEmail(input: BrandedEmailInput): string {
@@ -90,7 +112,7 @@ export function renderBrandedEmail(input: BrandedEmailInput): string {
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
         <tr><td style="background:#ffffff;padding:20px 28px 16px;border-bottom:1px solid #e2e8f0;">
-          ${brandHeader(input.productUrl)}
+          ${brandHeader(input.productUrl, input.logo)}
         </td></tr>
         <tr><td style="padding:28px;">
           ${badge ? `${badge}<div style="height:12px;"></div>` : ''}
@@ -102,7 +124,7 @@ export function renderBrandedEmail(input: BrandedEmailInput): string {
         <tr><td style="padding:18px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;">
           <p style="margin:0;font-size:12px;color:#64748b;line-height:1.6;">
             ${esc(input.footerNote ?? 'You are receiving this because of your role in PioAssets. Manage your notification preferences in the app.')}<br/>
-            <a href="${esc(input.productUrl)}" style="color:#1d4ed8;text-decoration:none;font-weight:600;">PioAssets</a> · ${esc(input.companyName)} · IT Asset Management
+            ${productLink(input.productUrl)} · ${esc(input.companyName)} · IT Asset Management
           </p>
         </td></tr>
       </table>

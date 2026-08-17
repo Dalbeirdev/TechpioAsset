@@ -12,6 +12,15 @@ export interface MailAttachment {
   /** Text content; reports are CSV/SpreadsheetML strings (v2.6 A2). */
   content: string;
   contentType: string;
+  /** Set for binary content carried as base64, e.g. the inline brand logo. */
+  encoding?: 'base64';
+  /**
+   * Content-ID. Set it to reference the part from the HTML body as
+   * `<img src="cid:...">`, which is how an image reaches the reader without a
+   * remote fetch their mail client will block. A part with a cid is inline: it
+   * belongs to the body, and is not offered as a file to save.
+   */
+  cid?: string;
 }
 
 export interface MailMessage {

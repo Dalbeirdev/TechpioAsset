@@ -3,7 +3,78 @@ import path from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { AppConfig } from '../../config/config.module.js';
-import { MailProvider, type MailMessage, type MailResult } from './mail.provider.js';
+import {
+  MailProvider,
+  type MailAttachment,
+  type MailMessage,
+  type MailResult,
+} from './mail.provider.js';
+
+/**
+ * Assemble the MIME body, nesting only the levels the message actually needs.
+ *
+ * The shape matters: an inline image is addressed by Content-ID from the HTML,
+ * and a reader only resolves that when the image sits beside the body inside a
+ * multipart/related. Put it in multipart/mixed instead and the image arrives as
+ * a file to save while the HTML shows a broken box. So:
+ *
+ *   mixed     - only when there are files to save
+ *     related - only when there are inline parts
+ *       alternative - only when there is HTML beside the text
+ */
+function buildBody(message: MailMessage): { contentType: string; body: string } {
+  const inline = (message.attachments ?? []).filter((a) => a.cid);
+  const files = (message.attachments ?? []).filter((a) => !a.cid);
+
+  const encode = (attachment: MailAttachment): string =>
+    attachment.encoding === 'base64'
+      ? attachment.content.replace(/(.{76})/g, '$1\r\n')
+      : Buffer.from(attachment.content, 'utf8').toString('base64');
+
+  const part = (attachment: MailAttachment): string[] => [
+    `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
+    'Content-Transfer-Encoding: base64',
+    ...(attachment.cid
+      ? [`Content-ID: <${attachment.cid}>`, `Content-Disposition: inline; filename="${attachment.filename}"`]
+      : [`Content-Disposition: attachment; filename="${attachment.filename}"`]),
+    '',
+    encode(attachment),
+  ];
+
+  const wrap = (
+    subtype: string,
+    sections: string[][],
+  ): { contentType: string; body: string } => {
+    const boundary = `----techpioasset-${ulid()}`;
+    const lines: string[] = [];
+    for (const section of sections) lines.push(`--${boundary}`, ...section);
+    lines.push(`--${boundary}--`, '');
+    return { contentType: `multipart/${subtype}; boundary="${boundary}"`, body: lines.join('\r\n') };
+  };
+
+  const textPart = ['Content-Type: text/plain; charset=UTF-8', '', message.text];
+
+  let current: { contentType: string; body: string } = message.html
+    ? wrap('alternative', [
+        textPart,
+        ['Content-Type: text/html; charset=UTF-8', '', message.html],
+      ])
+    : { contentType: 'text/plain; charset=UTF-8', body: `${message.text}\r\n` };
+
+  if (inline.length) {
+    current = wrap('related', [
+      [`Content-Type: ${current.contentType}`, '', current.body],
+      ...inline.map(part),
+    ]);
+  }
+  if (files.length) {
+    current = wrap('mixed', [
+      [`Content-Type: ${current.contentType}`, '', current.body],
+      ...files.map(part),
+    ]);
+  }
+  return current;
+}
 
 /**
  * Writes each message as an RFC 5322 .eml file under .local-mail.
@@ -44,49 +115,8 @@ export class LocalMailProvider extends MailProvider {
       'X-TechpioAsset-Simulated: true',
     ];
 
-    let body: string;
-    if (message.attachments?.length) {
-      // multipart/mixed so the .eml opens with real, saveable attachments —
-      // a scheduled report you cannot open cannot be verified (v2.6 A2).
-      const boundary = `----techpioasset-${ulid()}`;
-      headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-      const parts = [
-        `--${boundary}`,
-        'Content-Type: text/plain; charset=UTF-8',
-        '',
-        message.text,
-      ];
-      for (const attachment of message.attachments) {
-        parts.push(
-          `--${boundary}`,
-          `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
-          'Content-Transfer-Encoding: base64',
-          `Content-Disposition: attachment; filename="${attachment.filename}"`,
-          '',
-          Buffer.from(attachment.content, 'utf8').toString('base64'),
-        );
-      }
-      parts.push(`--${boundary}--`, '');
-      body = parts.join('\r\n');
-    } else if (message.html) {
-      const boundary = `----techpioasset-${ulid()}`;
-      headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
-      body = [
-        `--${boundary}`,
-        'Content-Type: text/plain; charset=UTF-8',
-        '',
-        message.text,
-        `--${boundary}`,
-        'Content-Type: text/html; charset=UTF-8',
-        '',
-        message.html,
-        `--${boundary}--`,
-        '',
-      ].join('\r\n');
-    } else {
-      headers.push('Content-Type: text/plain; charset=UTF-8');
-      body = `${message.text}\r\n`;
-    }
+    const { contentType, body } = buildBody(message);
+    headers.push(`Content-Type: ${contentType}`);
 
     await writeFile(filePath, `${headers.join('\r\n')}\r\n\r\n${body}`, 'utf8');
 

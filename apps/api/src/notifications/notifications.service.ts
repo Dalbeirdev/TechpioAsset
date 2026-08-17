@@ -12,6 +12,14 @@ import { PushProvider } from '../providers/push/push.provider.js';
 import { QueueProvider } from '../providers/queue/queue.provider.js';
 import { NOTIFICATION_CATALOGUE, isMandatory } from './notification-catalogue.js';
 import { interpolate, renderBrandedEmail } from './email-layout.js';
+import {
+  BRAND_LOGO_BASE64,
+  BRAND_LOGO_CID,
+  BRAND_LOGO_CONTENT_TYPE,
+  BRAND_LOGO_FILENAME,
+  BRAND_LOGO_HEIGHT,
+  BRAND_LOGO_WIDTH,
+} from './brand-logo.generated.js';
 import { DEFAULT_EMAIL_TEMPLATES } from './email-template-defaults.js';
 
 export /** Fallback audiences until an admin stores a rule. Keys are system roles. */
@@ -97,6 +105,18 @@ interface ChatJobPayload {
   linkPath?: string;
 }
 
+/**
+ * One shared attachment object - the bytes never change, so it is built once
+ * rather than per message.
+ */
+const BRAND_LOGO_ATTACHMENT = {
+  filename: BRAND_LOGO_FILENAME,
+  content: BRAND_LOGO_BASE64,
+  contentType: BRAND_LOGO_CONTENT_TYPE,
+  encoding: 'base64' as const,
+  cid: BRAND_LOGO_CID,
+};
+
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
@@ -118,7 +138,12 @@ export class NotificationsService implements OnModuleInit {
           to: payload.email,
           subject: payload.subject,
           text: payload.text,
-          ...(payload.html ? { html: payload.html } : {}),
+          // The logo is attached here rather than carried in the job payload:
+          // it is the same 9KB on every message, and the queue should not be
+          // storing a copy of it per queued email.
+          ...(payload.html
+            ? { html: payload.html, attachments: [BRAND_LOGO_ATTACHMENT] }
+            : {}),
         });
 
         if (payload.notificationId) {
@@ -399,6 +424,7 @@ export class NotificationsService implements OnModuleInit {
       cta: { label: template.ctaLabel ?? 'Open PioAssets', url },
       companyName: company,
       productUrl: this.config.get('WEB_URL'),
+      logo: { cid: BRAND_LOGO_CID, width: BRAND_LOGO_WIDTH, height: BRAND_LOGO_HEIGHT },
     });
     const rowsText = (input.emailRows ?? []).map(([k, v]) => `${k}: ${v}`).join('\n');
     const text = [paragraphs.join('\n\n'), rowsText, url].filter(Boolean).join('\n\n');
