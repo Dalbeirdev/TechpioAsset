@@ -7,7 +7,7 @@ import { Download, Plus, Search } from 'lucide-react';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
 import { REQUEST_TYPES } from '@techpioasset/contracts';
 import { PERMISSIONS, REQUEST_STATUSES, type RequestStatus } from '@techpioasset/domain';
-import { apiFetchPage } from '@/lib/api-client';
+import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { downloadCsv } from '@/lib/download-csv';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -67,6 +67,14 @@ function RequestsTable() {
     queryFn: () => apiFetchPage<RequestRow>(`/requests?${params.toString()}`),
   });
 
+  // v2.22 - the company request policy plus any exception on this account.
+  // Cheap, cached, and answered by the same code the server enforces with.
+  const canCreate = useQuery({
+    queryKey: ['can-create-request'],
+    queryFn: () => apiFetch<{ allowed: boolean; reason?: string }>('/requests/can-create'),
+    staleTime: 60_000,
+  });
+
   const canApprove = can(PERMISSIONS.REQUESTS_APPROVE);
   const hasFilters = q !== '' || status !== '' || type !== '';
 
@@ -112,15 +120,23 @@ function RequestsTable() {
             </div>
           ) : null}
 
-          {/* A link, not a button with a navigation handler: middle-click and
-              "open in new tab" should work. */}
-          <Link
-            href="/requests/new"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-medium text-[var(--color-brand-contrast)] hover:bg-[var(--color-brand-hover)]"
-          >
-            <Plus aria-hidden="true" className="size-4" />
-            New request
-          </Link>
+          {/* v2.22 - the button follows the same rule the server enforces, and
+              when it is off it says why and who to ask rather than vanishing. */}
+          {canCreate.data && !canCreate.data.allowed ? (
+            <p className="max-w-sm rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3.5 py-2.5 text-sm text-[var(--color-content-muted)]">
+              {canCreate.data.reason}
+            </p>
+          ) : (
+            /* A link, not a button with a navigation handler: middle-click and
+               "open in new tab" should work. */
+            <Link
+              href="/requests/new"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 text-sm font-medium text-[var(--color-brand-contrast)] hover:bg-[var(--color-brand-hover)]"
+            >
+              <Plus aria-hidden="true" className="size-4" />
+              New request
+            </Link>
+          )}
         </div>
       </header>
 

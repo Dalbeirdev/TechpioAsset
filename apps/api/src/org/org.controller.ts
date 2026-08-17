@@ -12,7 +12,7 @@ import {
   type UpdateDepartmentInput,
   type UpdateOfficeInput,
 } from '@techpioasset/contracts';
-import { PERMISSIONS } from '@techpioasset/domain';
+import { PERMISSIONS, REQUEST_CREATION_POLICIES } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { OrgService } from './org.service.js';
@@ -23,6 +23,8 @@ const updateCompanySchema = z
     name: z.string().trim().min(2).max(120).optional(),
     baseCurrency: z.string().trim().length(3).toUpperCase().optional(),
     timezone: z.string().trim().max(64).optional(),
+    /** v2.22 - who may raise a request across the whole tenant. */
+    requestPolicy: z.enum(REQUEST_CREATION_POLICIES).optional(),
   })
   .strict();
 type UpdateCompanyInput = z.infer<typeof updateCompanySchema>;

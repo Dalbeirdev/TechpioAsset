@@ -110,6 +110,7 @@ export class UsersService {
                 displayName: true,
                 jobTitle: true,
                 employeeNumber: true,
+                canRaiseRequests: true,
                 avatarKey: true,
                 department: { select: { id: true, name: true } },
                 office: { select: { id: true, name: true } },
@@ -239,6 +240,7 @@ export class UsersService {
       ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
       ...(input.dateFormat !== undefined ? { dateFormat: input.dateFormat } : {}),
       ...(input.departmentId !== undefined ? { departmentId: input.departmentId } : {}),
+      ...(input.canRaiseRequests !== undefined ? { canRaiseRequests: input.canRaiseRequests } : {}),
       ...(input.officeId !== undefined ? { officeId: input.officeId } : {}),
       ...(input.employeeNumber !== undefined ? { employeeNumber: input.employeeNumber } : {}),
     };

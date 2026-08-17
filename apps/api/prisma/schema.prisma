@@ -43,6 +43,14 @@ enum VerificationPurpose {
   INVITE
 }
 
+/// v2.22 - who may raise a request, company-wide.
+enum RequestCreationPolicy {
+  /// Anyone holding requests:create, which is every employee by default.
+  EVERYONE
+  /// Only people who raise on behalf of others (HR, IT) and settings managers.
+  ADMINS_ONLY
+}
+
 enum TrackingType {
   INDIVIDUAL
   QUANTITY
@@ -485,6 +493,8 @@ enum PhysicalInventoryScanResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Company {
+  /// v2.22 - request-raising policy for the whole tenant.
+  requestPolicy RequestCreationPolicy @default(EVERYONE)
   id           String  @id @default(cuid())
   name         String
   legalName    String?
@@ -626,6 +636,9 @@ model User {
 }
 
 model UserProfile {
+  /// v2.22 - per-person override of the company request policy.
+  /// null follows the policy; true always allows; false always blocks.
+  canRaiseRequests Boolean?
   id     String @id @default(cuid())
   userId String @unique
 

@@ -88,6 +88,17 @@ export class RequestsController {
     return this.requests.types();
   }
 
+  @Get('can-create')
+  @ApiOperation({
+    summary: 'May the caller raise a request right now? (v2.22)',
+    description:
+      'The company policy and any per-person exception, resolved. The form asks this so the ' +
+      'button and the server give the same answer; the server enforces it regardless.',
+  })
+  canCreate(@CurrentUser() actor: AuthUser) {
+    return this.requests.canCreate(actor);
+  }
+
   @Get('eligible-assets')
   @RequirePermissions(PERMISSIONS.REQUESTS_CREATE)
   @ApiOperation({

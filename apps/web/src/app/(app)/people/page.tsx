@@ -6,7 +6,12 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Send, AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Download, Mail, Search, Settings2, UserPlus } from 'lucide-react';
-import { PERMISSIONS, SYSTEM_ROLES, findSodConflicts } from '@techpioasset/domain';
+import {
+  PERMISSIONS,
+  REQUEST_OVERRIDE_LABELS,
+  SYSTEM_ROLES,
+  findSodConflicts,
+} from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -25,6 +30,8 @@ interface UserRow {
     lastName: string;
     jobTitle: string | null;
     employeeNumber: string | null;
+    /** v2.22 - null follows the company policy; true allows; false blocks. */
+    canRaiseRequests?: boolean | null;
     department: { id: string; name: string } | null;
     office: { id: string; name: string } | null;
   } | null;
@@ -200,6 +207,13 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     employeeNumber: user.profile?.employeeNumber ?? '',
     departmentId: user.profile?.department?.id ?? '',
     officeId: user.profile?.office?.id ?? '',
+    // '' means inherit the company setting; 'allow' and 'block' are exceptions.
+    requests:
+      user.profile?.canRaiseRequests === true
+        ? 'allow'
+        : user.profile?.canRaiseRequests === false
+          ? 'block'
+          : '',
   });
   const departments = useQuery({
     queryKey: ['departments'],
@@ -225,6 +239,8 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
           employeeNumber: details.employeeNumber.trim() || null,
           ...(details.departmentId ? { departmentId: details.departmentId } : {}),
           ...(details.officeId ? { officeId: details.officeId } : {}),
+          canRaiseRequests:
+            details.requests === 'allow' ? true : details.requests === 'block' ? false : null,
         },
       }),
     onSuccess: () => {
@@ -366,6 +382,19 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                       {o.name}
                     </option>
                   ))}
+                </select>
+                {/* v2.22 - the per-person exception to the company's request
+                    policy. Most people inherit; this is for the individual
+                    cases the company setting cannot express. */}
+                <select
+                  aria-label="Can raise requests"
+                  value={details.requests}
+                  onChange={(e) => setDetails((d) => ({ ...d, requests: e.target.value }))}
+                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm sm:col-span-2"
+                >
+                  <option value="">Requests: {REQUEST_OVERRIDE_LABELS.inherit}</option>
+                  <option value="allow">Requests: {REQUEST_OVERRIDE_LABELS.allow}</option>
+                  <option value="block">Requests: {REQUEST_OVERRIDE_LABELS.block}</option>
                 </select>
               </div>
               <Button

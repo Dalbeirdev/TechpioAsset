@@ -8,6 +8,8 @@ import {
   requestStatusMachine,
   PERMISSIONS,
   type RequestStatus,
+  decideRequestCreation,
+  type RequestCreationPolicy,
 } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
@@ -298,6 +300,47 @@ export class RequestsService {
   }
 
   /**
+   * v2.22 - may this person raise a request at all?
+   *
+   * `requests:create` is the floor and the guard on the route already enforced
+   * it; this is the company policy on top, plus any per-person exception. The
+   * refusal carries the reason, because "403" tells somebody nothing about who
+   * to ask.
+   */
+  /** The same decision assertMayRaise() enforces, for the UI to read. */
+  async canCreate(actor: AuthUser) {
+    return this.decideRaise(actor);
+  }
+
+  private async assertMayRaise(actor: AuthUser): Promise<void> {
+    const decision = await this.decideRaise(actor);
+    if (!decision.allowed) {
+      throw new AppError('FORBIDDEN', 'You cannot raise a request', { detail: decision.reason });
+    }
+  }
+
+  private async decideRaise(actor: AuthUser) {
+    const [company, profile] = await Promise.all([
+      this.prisma.client.company.findUnique({
+        where: { id: actor.companyId },
+        select: { requestPolicy: true },
+      }),
+      this.prisma.client.userProfile.findUnique({
+        where: { userId: actor.id },
+        select: { canRaiseRequests: true },
+      }),
+    ]);
+
+    const decision = decideRequestCreation({
+      policy: (company?.requestPolicy ?? 'EVERYONE') as RequestCreationPolicy,
+      override: profile?.canRaiseRequests ?? null,
+      hasCreatePermission: actor.permissions.includes(PERMISSIONS.REQUESTS_CREATE),
+      raisesOnBehalf: actor.permissions.includes(PERMISSIONS.REQUESTS_CREATE_ON_BEHALF),
+    });
+    return decision;
+  }
+
+  /**
    * The open ticket that makes a new one a duplicate, if any: same subject,
    * same type, same asset (or an identical item), still in flight, younger
    * than 10 days. DRAFTs never block - an abandoned half-form is not a ticket.
@@ -515,6 +558,11 @@ export class RequestsService {
       });
       if (!beneficiary) throw AppError.notFound('User', input.beneficiaryId);
     }
+
+    // v2.22 - the company's request policy, and any exception recorded against
+    // this person. Checked here rather than only in the UI: hiding a button is
+    // a courtesy, this is the rule.
+    await this.assertMayRaise(actor);
 
     const beneficiaryId = input.beneficiaryId ?? actor.id;
     const beneficiaryProfile = await this.prisma.client.userProfile.findUnique({

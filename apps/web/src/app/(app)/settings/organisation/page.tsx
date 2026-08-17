@@ -3,6 +3,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2 } from 'lucide-react';
+import {
+  REQUEST_CREATION_POLICIES,
+  REQUEST_POLICY_LABELS,
+  type RequestCreationPolicy,
+} from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Field, Input, Skeleton } from '@/components/ui';
@@ -20,6 +25,8 @@ interface CompanySettings {
   baseCurrency: string;
   timezone: string;
   locale: string;
+  /** v2.22 - who may raise a request across the whole company. */
+  requestPolicy: RequestCreationPolicy;
 }
 
 const CURRENCIES: [string, string][] = [
@@ -45,11 +52,16 @@ export default function OrganisationSettingsPage() {
     queryFn: () => apiFetch<CompanySettings>('/company'),
   });
 
-  const [form, setForm] = useState<{ name: string; baseCurrency: string } | null>(null);
+  const [form, setForm] = useState<{
+    name: string;
+    baseCurrency: string;
+    requestPolicy: RequestCreationPolicy;
+  } | null>(null);
   const current = settings.data;
   const draft = form ?? {
     name: current?.name ?? '',
     baseCurrency: current?.baseCurrency ?? 'USD',
+    requestPolicy: current?.requestPolicy ?? 'EVERYONE',
   };
   const set = (patch: Partial<typeof draft>) => setForm({ ...draft, ...patch });
 
@@ -57,7 +69,11 @@ export default function OrganisationSettingsPage() {
     mutationFn: () =>
       apiFetch<CompanySettings>('/company', {
         method: 'PATCH',
-        body: { name: draft.name.trim(), baseCurrency: draft.baseCurrency },
+        body: {
+          name: draft.name.trim(),
+          baseCurrency: draft.baseCurrency,
+          requestPolicy: draft.requestPolicy,
+        },
       }),
     onSuccess: () => {
       toast.success('Organisation settings saved');
@@ -123,6 +139,30 @@ export default function OrganisationSettingsPage() {
           <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
             Labels new estimates and prices. Existing figures keep the currency they were recorded
             in — nothing is converted.
+          </p>
+        </div>
+
+        {/* v2.22 - the company-wide half of "who may raise a request". The
+            per-person exception lives on the person, under People > Manage. */}
+        <div className="max-w-sm border-t border-[var(--color-border)] pt-4">
+          <Field label="Who can raise requests" htmlFor="orp">
+            <select
+              id="orp"
+              value={draft.requestPolicy}
+              onChange={(e) => set({ requestPolicy: e.target.value as RequestCreationPolicy })}
+              className={selectCls}
+            >
+              {REQUEST_CREATION_POLICIES.map((policy) => (
+                <option key={policy} value={policy}>
+                  {REQUEST_POLICY_LABELS[policy]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+            {draft.requestPolicy === 'EVERYONE'
+              ? 'Any employee can raise a request for themselves.'
+              : 'Employees cannot raise their own requests; IT and HR raise them on their behalf. Individual people can still be allowed under People \u203a Manage.'}
           </p>
         </div>
 

@@ -41,13 +41,13 @@ export class OrgService {
   async companySettings(actor: AuthUser) {
     return this.prisma.client.company.findUniqueOrThrow({
       where: { id: actor.companyId },
-      select: { name: true, legalName: true, baseCurrency: true, timezone: true, locale: true },
+      select: { name: true, legalName: true, baseCurrency: true, timezone: true, locale: true, requestPolicy: true },
     });
   }
 
   async updateCompanySettings(
     actor: AuthUser,
-    input: { name?: string; baseCurrency?: string; timezone?: string },
+    input: { name?: string; baseCurrency?: string; timezone?: string; requestPolicy?: 'EVERYONE' | 'ADMINS_ONLY' },
   ) {
     const before = await this.companySettings(actor);
     const after = await this.prisma.client.company.update({
@@ -56,8 +56,9 @@ export class OrgService {
         ...(input.name ? { name: input.name } : {}),
         ...(input.baseCurrency ? { baseCurrency: input.baseCurrency } : {}),
         ...(input.timezone ? { timezone: input.timezone } : {}),
+        ...(input.requestPolicy ? { requestPolicy: input.requestPolicy } : {}),
       },
-      select: { name: true, legalName: true, baseCurrency: true, timezone: true, locale: true },
+      select: { name: true, legalName: true, baseCurrency: true, timezone: true, locale: true, requestPolicy: true },
     });
     await this.audit.record({
       companyId: actor.companyId,

@@ -85,5 +85,10 @@ export const adminUpdateProfileSchema = updateMyProfileSchema.extend({
   departmentId: z.string().optional().nullable(),
   officeId: z.string().optional().nullable(),
   employeeNumber: z.string().trim().max(40).optional().nullable(),
+  /**
+   * v2.22 - per-person exception to the company's request policy. null follows
+   * the company setting; true always allows; false blocks this account.
+   */
+  canRaiseRequests: z.boolean().optional().nullable(),
 });
 export type AdminUpdateProfileInput = z.infer<typeof adminUpdateProfileSchema>;
