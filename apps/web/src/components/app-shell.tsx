@@ -40,7 +40,7 @@ import { ProfileMenu } from './profile-menu';
 import { NotificationBell } from './notification-bell';
 import { ThemeToggle } from './theme-toggle';
 import { RouteGuard, canViewRoute } from './route-guard';
-import { BrandLockup } from '@/components/brand';
+import { BrandLockup, BrandMark } from '@/components/brand';
 
 interface NavItem {
   href: string;
@@ -374,8 +374,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Menu aria-hidden="true" className="size-5" />
         </button>
 
-        <Link href="/dashboard" className="inline-flex items-center">
-          <BrandLockup markSize={24} />
+        {/* The wordmark needs ~140px it cannot have next to the search field on a
+            phone, so the square mark stands in below sm. */}
+        <Link href="/dashboard" className="inline-flex shrink-0 items-center" aria-label="PioAssets home">
+          <BrandMark size={26} className="sm:hidden" />
+          <BrandLockup height={26} className="hidden sm:inline-flex" />
         </Link>
 
         <div className="ml-auto flex items-center gap-2">

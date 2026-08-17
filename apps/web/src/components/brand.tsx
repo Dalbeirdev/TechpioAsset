@@ -1,27 +1,40 @@
 /**
- * PioAssets brand (2026-08): the Stack mark — three inventory layers, top one
- * checked off. Colours ride the theme tokens, so the mark adapts to light and
- * dark for free; the favicon (app/icon.svg) is the same geometry with fixed
- * colours because a standalone file cannot read CSS variables.
+ * PioAssets brand (2026-08): the wordmark artwork itself.
+ *
+ * The lockup is a raster because the artwork is a raster - hand-drawn lettering
+ * with two gradients, not something a font plus a shape can stand in for. Both
+ * the light and the dark rendering are shipped and swapped with the `dark`
+ * variant rather than a filter, because the only thing that has to change on a
+ * dark ground is the navy; the blue gradient and the orange stay as drawn.
+ * Every file here is cut from one master by design/brand/build-brand-assets.py.
+ *
+ * BrandMark is the square "o + check" device, for the places that are square by
+ * nature. It is vector because it is also the favicon, and a favicon has to be
+ * crisp at 16px. Its colours are fixed: a logo does not re-tint per theme, and
+ * the white tile is what keeps the navy ring legible on a dark surface.
  */
 
-export function BrandMark({ size = 24 }: { size?: number }) {
+import { cn } from '@/lib/cn';
+
+const WORDMARK_RATIO = 1836 / 337; // measured off the master artwork
+
+export function BrandMark({ size = 24, className = '' }: { size?: number; className?: string }) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 48 48"
+      viewBox="0 0 64 64"
+      fill="none"
       aria-hidden="true"
       focusable="false"
+      className={className}
     >
-      <rect x="7" y="30" width="34" height="9" rx="3.5" fill="var(--color-brand)" fillOpacity="0.35" />
-      <rect x="7" y="19" width="34" height="9" rx="3.5" fill="var(--color-brand)" fillOpacity="0.65" />
-      <rect x="7" y="8" width="34" height="9" rx="3.5" fill="var(--color-brand)" />
+      <rect width="64" height="64" rx="14" fill="#ffffff" />
+      <circle cx="32" cy="32" r="19.3" stroke="#001858" strokeWidth="9.4" />
       <path
-        d="M18 12.5 l2.8 2.8 5.6 -5.6"
-        stroke="var(--color-surface-raised)"
-        strokeWidth="3"
-        fill="none"
+        d="M24.1 34.7 L31.8 39.9 L52 20.4"
+        stroke="#f88808"
+        strokeWidth="6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -29,13 +42,43 @@ export function BrandMark({ size = 24 }: { size?: number }) {
   );
 }
 
-export function BrandLockup({ markSize = 24, textClass = '' }: { markSize?: number; textClass?: string }) {
+/**
+ * The wordmark. `height` is the rendered height in px; width follows the art.
+ *
+ * The tagline version of the artwork is not offered here - at the sizes a page
+ * header gives a logo it is unreadable. It is used where there is room for it:
+ * the email header and the social card.
+ */
+export function BrandLockup({
+  height = 24,
+  className = '',
+}: {
+  height?: number;
+  className?: string;
+}) {
+  const width = Math.round(height * WORDMARK_RATIO);
+  const common = { width, height, alt: 'PioAssets', decoding: 'async' as const };
+
   return (
-    <span className="inline-flex items-center gap-2">
-      <BrandMark size={markSize} />
-      <span className={`font-semibold tracking-tight ${textClass}`.trim()}>
-        Pio<span className="text-[var(--color-brand)]">Assets</span>
-      </span>
+    <span className={cn('inline-flex items-center', className)}>
+      {/* Plain <img>, not next/image: fixed-size static art already cut to its
+          display sizes, so the optimiser has nothing left to do. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        {...common}
+        src={'/brand/pioassets-wordmark.png'}
+        srcSet={'/brand/pioassets-wordmark.png 1x, /brand/pioassets-wordmark@2x.png 2x'}
+        className="block dark:hidden"
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        {...common}
+        src={'/brand/pioassets-wordmark-dark.png'}
+        srcSet={'/brand/pioassets-wordmark-dark.png 1x, /brand/pioassets-wordmark-dark@2x.png 2x'}
+        className="hidden dark:block"
+        aria-hidden="true"
+        alt=""
+      />
     </span>
   );
 }

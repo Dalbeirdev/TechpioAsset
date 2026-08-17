@@ -88,8 +88,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <h1 className="text-xl">
-              <BrandLockup markSize={30} textClass="text-xl" />
+            <h1>
+              <BrandLockup height={34} />
             </h1>
             <p className="mt-1 text-sm text-[var(--color-content-muted)]">
               Manage Assets. Control Costs. Simplify Operations.

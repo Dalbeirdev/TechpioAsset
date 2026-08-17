@@ -1,6 +1,6 @@
 /**
  * Branded HTML email layout (v2.18). One renderer for every outgoing
- * notification: PioAssets wordmark bar, optional status badge, intro copy,
+ * notification: PioAssets wordmark header, optional status badge, intro copy,
  * a key-value card, CTA button, footer. Table-based with inline styles so it
  * renders in Outlook and Gmail alike; plain-text remains the sibling body on
  * every message, composed by the caller.
@@ -36,6 +36,25 @@ const TONES: Record<EmailBadge['tone'], { bg: string; fg: string }> = {
 const esc = (s: string) =>
   s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
+/**
+ * The wordmark, on the white header band the artwork is drawn for.
+ *
+ * Mail clients block remote images by default often enough that the header has
+ * to survive it, so the `alt` carries the brand name and is styled to read as
+ * the wordmark when the image never arrives. If WEB_URL is not an absolute URL
+ * there is nothing to point an <img> at, and the styled text is all there is.
+ */
+function brandHeader(productUrl: string): string {
+  const base = /^https?:\/\//i.test(productUrl) ? productUrl.replace(/\/+$/, '') : null;
+  const wordmark =
+    '<span style="font-size:20px;font-weight:800;color:#001858;letter-spacing:-.01em;">Pio<span style="color:#0038a8;">Assets</span></span>';
+  if (!base) return wordmark;
+  return `<a href="${esc(base)}" style="text-decoration:none;">
+            <img src="${esc(base)}/brand/pioassets-lockup@2x.png" alt="PioAssets"
+                 width="196" height="51" style="display:block;border:0;outline:none;width:196px;height:51px;font-size:20px;font-weight:800;color:#001858;letter-spacing:-.01em;text-decoration:none;"/>
+          </a>`;
+}
+
 export function renderBrandedEmail(input: BrandedEmailInput): string {
   const badge = input.badge
     ? `<span style="display:inline-block;padding:4px 12px;border-radius:999px;background:${TONES[input.badge.tone].bg};color:${TONES[input.badge.tone].fg};font-size:12px;font-weight:700;letter-spacing:.02em;">${esc(input.badge.label)}</span>`
@@ -70,8 +89,8 @@ export function renderBrandedEmail(input: BrandedEmailInput): string {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 12px;">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
-        <tr><td style="background:#1d4ed8;padding:18px 28px;">
-          <span style="font-size:18px;font-weight:800;color:#ffffff;letter-spacing:-.01em;">Pio<span style="color:#bfdbfe;">Assets</span></span>
+        <tr><td style="background:#ffffff;padding:20px 28px 16px;border-bottom:1px solid #e2e8f0;">
+          ${brandHeader(input.productUrl)}
         </td></tr>
         <tr><td style="padding:28px;">
           ${badge ? `${badge}<div style="height:12px;"></div>` : ''}
