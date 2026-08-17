@@ -41,6 +41,23 @@ export default function RequestsScreen() {
   const [item, setItem] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // v2.22 - the company can restrict who raises requests, and an individual can
+  // be excepted either way. Ask before offering the form: filling one in and
+  // being refused at the end is a worse way to find out.
+  const [raiseBlockedReason, setRaiseBlockedReason] = useState<string | null>(null);
+
+  const loadPolicy = useCallback(async () => {
+    try {
+      const decision = await api.request<{ allowed: boolean; reason?: string }>(
+        '/requests/can-create',
+      );
+      setRaiseBlockedReason(decision.allowed ? null : (decision.reason ?? 'You cannot raise requests.'));
+    } catch {
+      // If the check itself fails, leave the form up: the server still enforces
+      // the rule, so the worst case is the old behaviour, not a false block.
+      setRaiseBlockedReason(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,7 +71,8 @@ export default function RequestsScreen() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadPolicy();
+  }, [load, loadPolicy]);
 
   async function submit() {
     // Validate with a clear message instead of a silently disabled button.
@@ -104,23 +122,31 @@ export default function RequestsScreen() {
         <View style={{ marginBottom: spacing.xl }}>
           <Card>
             <Text style={{ color: c.text, fontWeight: '700', fontSize: 16, marginBottom: spacing.md }}>
-              New request
+              {raiseBlockedReason ? 'Raising requests' : 'New request'}
             </Text>
-            <Field label="What do you need?" placeholder="e.g. Laptop docking station" value={item} onChangeText={setItem} />
-            <Field
-              label="Business reason"
-              placeholder="Why do you need it? (at least 10 characters)"
-              value={reason}
-              onChangeText={(t) => {
-                setReason(t);
-                if (formError) setFormError(null);
-              }}
-              multiline
-            />
-            {formError ? (
-              <Text style={{ color: c.danger, fontSize: 13, marginBottom: spacing.md }}>{formError}</Text>
-            ) : null}
-            <Button label="Submit request" icon="send" onPress={submit} loading={submitting} />
+            {raiseBlockedReason ? (
+              <Text style={{ color: c.muted, fontSize: 14, lineHeight: 20 }}>
+                {raiseBlockedReason}
+              </Text>
+            ) : (
+              <>
+                <Field label="What do you need?" placeholder="e.g. Laptop docking station" value={item} onChangeText={setItem} />
+                <Field
+                  label="Business reason"
+                  placeholder="Why do you need it? (at least 10 characters)"
+                  value={reason}
+                  onChangeText={(t) => {
+                    setReason(t);
+                    if (formError) setFormError(null);
+                  }}
+                  multiline
+                />
+                {formError ? (
+                  <Text style={{ color: c.danger, fontSize: 13, marginBottom: spacing.md }}>{formError}</Text>
+                ) : null}
+                <Button label="Submit request" icon="send" onPress={submit} loading={submitting} />
+              </>
+            )}
           </Card>
           <View style={{ height: spacing.xl }} />
           <SectionTitle>Your requests</SectionTitle>

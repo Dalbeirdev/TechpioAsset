@@ -68,7 +68,7 @@ export default function LoginScreen() {
           >
             <Ionicons name="cube" size={32} color={c.brandText} />
           </View>
-          <Text style={{ color: c.text, fontSize: 26, fontWeight: '800' }}>TechpioAsset</Text>
+          <Text style={{ color: c.text, fontSize: 26, fontWeight: '800' }}>PioAssets</Text>
           <Text style={{ color: c.muted, marginTop: 4, textAlign: 'center' }}>
             Manage Assets. Control Costs. Simplify Operations.
           </Text>
