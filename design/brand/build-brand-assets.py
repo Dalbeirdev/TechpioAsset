@@ -229,9 +229,12 @@ def main() -> None:
     print("mobile icons")
     # iOS/legacy Android want an opaque square; the launcher applies its own mask.
     save(rounded(draw_mark(1024, inset=0.75), 0.0, white), MOBILE_OUT / "icon.png")
-    # Adaptive icon foreground: Android crops to a circle, so the art sits well
-    # inside the safe zone and the white ground is supplied by backgroundColor.
-    save(draw_mark(1024, inset=0.48), MOBILE_OUT / "adaptive-icon.png")
+    # Adaptive icon foreground. Android draws 108dp and masks all but the middle
+    # 66dp, so anything past ~61% of the canvas can be cropped by a launcher's
+    # mask. The mark is a circle, so it goes right up to that limit - any smaller
+    # and it reads as a stamp floating in space on the home screen. The white
+    # ground behind it comes from adaptiveIcon.backgroundColor.
+    save(draw_mark(1024, inset=0.58), MOBILE_OUT / "adaptive-icon.png")
     save(rounded(draw_mark(48, inset=0.75), 0.22, white), MOBILE_OUT / "favicon.png")
     save(scaled(wordmark, 720), MOBILE_OUT / "wordmark.png", colors=192)
     save(scaled(to_dark(wordmark), 720), MOBILE_OUT / "wordmark-dark.png", colors=192)
