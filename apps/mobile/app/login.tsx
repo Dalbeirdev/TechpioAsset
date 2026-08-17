@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSession } from '../src/providers/session';
 import { useTheme } from '../src/theme';
@@ -15,7 +15,7 @@ import { Button, Card, Field } from '../src/components/ui';
 export default function LoginScreen() {
   const router = useRouter();
   const { login, unlockWithBiometrics, status } = useSession();
-  const { c, spacing } = useTheme();
+  const { c, spacing, scheme } = useTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -55,20 +55,18 @@ export default function LoginScreen() {
         style={{ flex: 1, justifyContent: 'center', padding: spacing.xl }}
       >
         <View style={{ alignItems: 'center', marginBottom: spacing.xxl }}>
-          <View
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 18,
-              backgroundColor: c.brand,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: spacing.lg,
-            }}
-          >
-            <Ionicons name="cube" size={32} color={c.brandText} />
-          </View>
-          <Text style={{ color: c.text, fontSize: 26, fontWeight: '800' }}>PioAssets</Text>
+          {/* The wordmark is the brand here - the navy in it disappears on a dark
+              background, so the dark rendering is a separate file, not a tint. */}
+          <Image
+            source={
+              scheme === 'dark'
+                ? require('../assets/wordmark-dark.png')
+                : require('../assets/wordmark.png')
+            }
+            style={{ width: 218, height: 40, marginBottom: spacing.sm }}
+            resizeMode="contain"
+            accessibilityLabel="PioAssets"
+          />
           <Text style={{ color: c.muted, marginTop: 4, textAlign: 'center' }}>
             Manage Assets. Control Costs. Simplify Operations.
           </Text>

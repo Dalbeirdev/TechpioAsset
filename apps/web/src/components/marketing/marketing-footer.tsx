@@ -7,7 +7,7 @@ export function MarketingFooter() {
     <footer className="border-t border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:grid-cols-2 lg:grid-cols-5">
         <div className="sm:col-span-2">
-          <BrandLockup markSize={24} />
+          <BrandLockup height={30} />
           <p className="mt-3 max-w-xs text-sm font-medium">
             Know every asset. Control every lifecycle.
           </p>

@@ -50,8 +50,10 @@ export function MarketingHeader() {
           scrolled ? 'h-14' : 'h-[4.25rem]',
         )}
       >
-        <Link href="/" className="inline-flex items-center" aria-label="PioAssets home">
-          <BrandLockup markSize={scrolled ? 22 : 26} />
+        {/* Sized to clear the actions on a 375px screen - at 32px tall the
+            wordmark is exactly one pixel too wide and flex squeezes it. */}
+        <Link href="/" className="inline-flex shrink-0 items-center" aria-label="PioAssets home">
+          <BrandLockup height={scrolled ? 24 : 28} />
         </Link>
 
         <nav aria-label="Primary" className="ml-4 hidden items-center gap-0.5 lg:flex">
