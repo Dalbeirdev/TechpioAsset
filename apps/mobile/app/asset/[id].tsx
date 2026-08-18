@@ -16,7 +16,9 @@ import {
   TONE_PALETTE_DARK,
   TONE_PALETTE_LIGHT,
 } from '@techpioasset/ui-tokens';
+import { PERMISSIONS } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
+import { HandoverSheet, type HandoverMode } from '../../src/components/handover-sheet';
 import { useTheme, statusColor, statusLabel } from '../../src/theme';
 import { Button, Card, IconBadge, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
 
@@ -57,7 +59,7 @@ type MobileAssetTab = 'info' | 'history';
 /** Asset detail — the screen a QR scan opens (spec section 15). */
 export default function AssetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { api } = useSession();
+  const { api, user } = useSession();
   const { c, scheme, spacing } = useTheme();
 
   const [asset, setAsset] = useState<AssetDetail | null>(null);
@@ -74,6 +76,17 @@ export default function AssetDetailScreen() {
   }, [load]);
 
   const openAssignment = asset?.assignments.find((a) => a.returnedAt === null);
+  const holderName = openAssignment?.user
+    ? [openAssignment.user.profile?.firstName, openAssignment.user.profile?.lastName]
+        .filter(Boolean)
+        .join(' ') || openAssignment.user.email
+    : null;
+
+  // The API enforces these regardless; this only decides what is worth showing.
+  const can = (permission: string) => user?.permissions.includes(permission) ?? false;
+  const mayAssign = can(PERMISSIONS.ASSETS_ASSIGN);
+  const mayReturn = can(PERMISSIONS.ASSETS_RETURN);
+  const [handover, setHandover] = useState<HandoverMode | null>(null);
 
   async function confirmReceipt() {
     if (!openAssignment) return;
@@ -193,12 +206,59 @@ export default function AssetDetailScreen() {
               style={{ marginBottom: spacing.md }}
             />
           ) : null}
+
+          {/* Handing kit over is the job you do standing next to it, so the
+              action lives here rather than only on the web. Which of the three
+              is offered depends on whether the asset has a holder right now. */}
+          {openAssignment ? (
+            <>
+              {mayReturn ? (
+                <Button
+                  label="Take back"
+                  icon="arrow-undo-outline"
+                  variant="secondary"
+                  onPress={() => setHandover('return')}
+                  disabled={busy}
+                  style={{ marginBottom: spacing.md }}
+                />
+              ) : null}
+              {mayAssign && mayReturn ? (
+                <Button
+                  label="Hand to someone else"
+                  icon="swap-horizontal-outline"
+                  variant="secondary"
+                  onPress={() => setHandover('reassign')}
+                  disabled={busy}
+                  style={{ marginBottom: spacing.md }}
+                />
+              ) : null}
+            </>
+          ) : mayAssign ? (
+            <Button
+              label="Assign to someone"
+              icon="person-add-outline"
+              onPress={() => setHandover('assign')}
+              disabled={busy}
+              style={{ marginBottom: spacing.md }}
+            />
+          ) : null}
+
           <Button
             label="Report damage"
             icon="warning-outline"
             variant="danger"
             onPress={reportDamage}
             disabled={busy}
+          />
+
+          <HandoverSheet
+            visible={handover !== null}
+            mode={handover ?? 'assign'}
+            assetId={asset.id}
+            assetName={asset.name}
+            holderName={holderName}
+            onClose={() => setHandover(null)}
+            onDone={load}
           />
         </>
       ) : (
