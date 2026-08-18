@@ -222,23 +222,31 @@ export function StatCard({
 }) {
   const { c, radius, elevation } = useTheme();
   const accent = tint ?? c.brand;
+  // Icon beside the number rather than stacked above it. Eight of these open
+  // the Home screen, and at 130px each they filled the phone before a single
+  // asset was visible; this reads the same and takes about a third less height.
   const body = (
     <>
-      <View
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: c.brandSoft,
-          marginBottom: 10,
-        }}
-      >
-        <Ionicons name={icon} size={20} color={accent} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 9,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: c.brandSoft,
+          }}
+        >
+          <Ionicons name={icon} size={18} color={accent} />
+        </View>
+        <Text style={{ color: c.text, fontSize: 22, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
+          {value}
+        </Text>
       </View>
-      <Text style={{ color: c.text, fontSize: 24, fontWeight: '800' }}>{value}</Text>
-      <Text style={{ color: c.muted, fontSize: 12, marginTop: 2 }}>{label}</Text>
+      <Text style={{ color: c.muted, fontSize: 12, marginTop: 8 }} numberOfLines={2}>
+        {label}
+      </Text>
     </>
   );
   const base: ViewStyle = {
@@ -247,7 +255,7 @@ export function StatCard({
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: c.border,
-    padding: 14,
+    padding: 12,
     ...elevation(1),
   };
   return onPress ? (
