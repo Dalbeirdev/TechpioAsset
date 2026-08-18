@@ -71,20 +71,54 @@ function AssetsTable() {
   const [lifecycle, setLifecycle] = useState<string>('');
   const [availability, setAvailability] = useState<string>('');
   const [ownership, setOwnership] = useState<string>('');
+  /**
+   * v2.23 - "type" is one control covering two filters. Every asset in a fleet
+   * can share a category ("IT Assets"), so category alone narrows nothing; but
+   * "everything in this category" is still a thing people ask for. The value is
+   * prefixed so one <select> can mean either: `sub:<id>` for a type, `cat:<id>`
+   * for a whole category.
+   */
+  const [type, setType] = useState<string>('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>('');
   const q = params.get('q') ?? '';
 
-  const query = new URLSearchParams({ page: String(page), pageSize: '25' });
-  if (q) query.set('q', q);
-  if (status) query.set('status', status);
-  if (lifecycle) query.set('lifecycleState', lifecycle);
-  if (availability) query.set('availabilityState', availability);
-  if (ownership) query.set('ownershipType', ownership);
+  /**
+   * One place that turns the filter controls into query parameters, used for
+   * both the table and the export. They were built separately, and the export
+   * only ever sent q and status - so filtering to monitors and pressing Export
+   * downloaded the whole fleet.
+   */
+  const filterParams = () => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (status) p.set('status', status);
+    if (lifecycle) p.set('lifecycleState', lifecycle);
+    if (availability) p.set('availabilityState', availability);
+    if (ownership) p.set('ownershipType', ownership);
+    if (type.startsWith('sub:')) p.set('subcategoryId', type.slice(4));
+    if (type.startsWith('cat:')) p.set('categoryId', type.slice(4));
+    return p;
+  };
+
+  const query = filterParams();
+  query.set('page', String(page));
+  query.set('pageSize', '25');
+
+  // Types come from the company's own catalogue rather than the domain list, so
+  // the dropdown offers what this company actually has.
+  const { data: categories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () =>
+      apiFetch<{ id: string; name: string; subcategories: { id: string; name: string }[] }[]>(
+        '/categories',
+      ),
+    staleTime: 5 * 60_000,
+  });
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['assets', q, status, lifecycle, availability, ownership, page],
+    queryKey: ['assets', q, status, lifecycle, availability, ownership, type, page],
     queryFn: () => apiFetchPage<AssetRow>(`/assets?${query.toString()}`),
   });
 
@@ -164,6 +198,30 @@ function AssetsTable() {
 
         <div className="flex flex-wrap items-end gap-2">
           <label className="grid gap-1 text-xs">
+            <span className="font-medium text-[var(--color-content-muted)]">Type</span>
+            <select
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                setPage(1);
+              }}
+              className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+            >
+              <option value="">All types</option>
+              <option value="sub:none">No type set</option>
+              {(categories ?? []).map((c) => (
+                <optgroup key={c.id} label={c.name}>
+                  <option value={`cat:${c.id}`}>All {c.name}</option>
+                  {c.subcategories.map((sub) => (
+                    <option key={sub.id} value={`sub:${sub.id}`}>
+                      {sub.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs">
             <span className="font-medium text-[var(--color-content-muted)]">Status</span>
             <select
               value={status}
@@ -238,9 +296,7 @@ function AssetsTable() {
           <button
             type="button"
             onClick={async () => {
-              const params = new URLSearchParams();
-              if (q) params.set('q', q);
-              if (status) params.set('status', status);
+              const params = filterParams();
               const ok = await downloadCsv(
                 `/assets/export${params.toString() ? `?${params}` : ''}`,
                 'assets.csv',
