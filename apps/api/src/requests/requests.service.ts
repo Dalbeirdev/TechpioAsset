@@ -236,8 +236,14 @@ export class RequestsService {
           where: this.canSeeInternalComments(actor) ? {} : { isInternal: false },
           // Newest 100, then re-ordered oldest-first below for reading. A
           // long-running request accumulates comments without bound.
+          //
+          // The id breaks ties. Comments posted in the same millisecond - which
+          // a script, an import or a busy thread all manage - otherwise leave
+          // "the newest 100" undefined, so the cap could drop the most recent
+          // comment and keep an older one. Ids are cuids, which carry their
+          // creation time, so this orders the tie the way it happened.
           take: 100,
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           select: {
             id: true,
             body: true,
@@ -255,7 +261,7 @@ export class RequestsService {
         attachments: {
           where: { deletedAt: null },
           take: 50,
-          orderBy: { createdAt: 'asc' },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
             originalName: true,
