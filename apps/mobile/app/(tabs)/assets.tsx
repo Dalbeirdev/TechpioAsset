@@ -8,17 +8,12 @@ import type {
   AvailabilityState,
   OwnershipType,
 } from '@techpioasset/domain';
-import {
-  LIFECYCLE_STATE_TOKENS,
-  AVAILABILITY_STATE_TOKENS,
-  TONE_PALETTE_DARK,
-  TONE_PALETTE_LIGHT,
-} from '@techpioasset/ui-tokens';
 import { Ionicons } from '@expo/vector-icons';
 import { MAX_PAGE_SIZE } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
+import { assetPills } from '../../src/asset-pills';
 import { useSession } from '../../src/providers/session';
-import { useTheme, statusColor, statusLabel } from '../../src/theme';
+import { useTheme } from '../../src/theme';
 import { Card, Chevron, EmptyState, Field, IconBadge, StatusPill } from '../../src/components/ui';
 
 interface AssetRow {
@@ -41,7 +36,6 @@ export default function AssetsScreen() {
   const { api, user } = useSession();
   const router = useRouter();
   const { c, scheme, spacing } = useTheme();
-  const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
 
   const [rows, setRows] = useState<AssetRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +106,6 @@ export default function AssetsScreen() {
         )
       }
       renderItem={({ item }) => {
-        const tone = statusColor(item.status, scheme);
         const holder = item.assignedUser?.profile?.displayName;
         return (
           <Card
@@ -132,31 +125,9 @@ export default function AssetsScreen() {
               <View
                 style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
               >
-                <StatusPill label={statusLabel(item.status)} bg={tone.bg} fg={tone.fg} />
-                {item.lifecycleState
-                  ? (() => {
-                      const t = palette[LIFECYCLE_STATE_TOKENS[item.lifecycleState].tone];
-                      return (
-                        <StatusPill
-                          label={LIFECYCLE_STATE_TOKENS[item.lifecycleState].label}
-                          bg={t.bg}
-                          fg={t.fg}
-                        />
-                      );
-                    })()
-                  : null}
-                {item.availabilityState
-                  ? (() => {
-                      const t = palette[AVAILABILITY_STATE_TOKENS[item.availabilityState].tone];
-                      return (
-                        <StatusPill
-                          label={AVAILABILITY_STATE_TOKENS[item.availabilityState].label}
-                          bg={t.bg}
-                          fg={t.fg}
-                        />
-                      );
-                    })()
-                  : null}
+                {assetPills(item, scheme).map((p) => (
+                  <StatusPill key={p.label} label={p.label} bg={p.bg} fg={p.fg} />
+                ))}
               </View>
             </View>
             <Chevron />

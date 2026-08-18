@@ -9,17 +9,11 @@ import type {
   AvailabilityState,
   OwnershipType,
 } from '@techpioasset/domain';
-import {
-  LIFECYCLE_STATE_TOKENS,
-  AVAILABILITY_STATE_TOKENS,
-  OWNERSHIP_TYPE_TOKENS,
-  TONE_PALETTE_DARK,
-  TONE_PALETTE_LIGHT,
-} from '@techpioasset/ui-tokens';
 import { PERMISSIONS } from '@techpioasset/domain';
+import { assetPills } from '../../src/asset-pills';
 import { useSession } from '../../src/providers/session';
 import { HandoverSheet, type HandoverMode } from '../../src/components/handover-sheet';
-import { useTheme, statusColor, statusLabel } from '../../src/theme';
+import { useTheme } from '../../src/theme';
 import { Button, Card, IconBadge, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
 
 interface AssetDetail {
@@ -125,8 +119,6 @@ export default function AssetDetailScreen() {
     );
   }
 
-  const tone = statusColor(asset.status, scheme);
-  const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
   const historyEvents = buildHistory(asset);
 
   return (
@@ -142,28 +134,9 @@ export default function AssetDetailScreen() {
         <View
           style={{ marginTop: spacing.md, flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
         >
-          <StatusPill label={statusLabel(asset.status)} bg={tone.bg} fg={tone.fg} />
-          {asset.lifecycleState ? (
-            <StatusPill
-              label={LIFECYCLE_STATE_TOKENS[asset.lifecycleState].label}
-              bg={palette[LIFECYCLE_STATE_TOKENS[asset.lifecycleState].tone].bg}
-              fg={palette[LIFECYCLE_STATE_TOKENS[asset.lifecycleState].tone].fg}
-            />
-          ) : null}
-          {asset.availabilityState ? (
-            <StatusPill
-              label={AVAILABILITY_STATE_TOKENS[asset.availabilityState].label}
-              bg={palette[AVAILABILITY_STATE_TOKENS[asset.availabilityState].tone].bg}
-              fg={palette[AVAILABILITY_STATE_TOKENS[asset.availabilityState].tone].fg}
-            />
-          ) : null}
-          {asset.ownershipType ? (
-            <StatusPill
-              label={OWNERSHIP_TYPE_TOKENS[asset.ownershipType].label}
-              bg={palette[OWNERSHIP_TYPE_TOKENS[asset.ownershipType].tone].bg}
-              fg={palette[OWNERSHIP_TYPE_TOKENS[asset.ownershipType].tone].fg}
-            />
-          ) : null}
+          {assetPills(asset, scheme, { includeOwnership: true }).map((p) => (
+            <StatusPill key={p.label} label={p.label} bg={p.bg} fg={p.fg} />
+          ))}
         </View>
       </Card>
 

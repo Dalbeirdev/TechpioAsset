@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, Redirect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ComponentProps } from 'react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
@@ -20,6 +21,7 @@ const icon =
 export default function TabsLayout() {
   const { status, user } = useSession();
   const { c } = useTheme();
+  const insets = useSafeAreaInsets();
 
   if (status !== 'authenticated' || !user) return <Redirect href="/login" />;
 
@@ -34,14 +36,21 @@ export default function TabsLayout() {
         headerTintColor: c.text,
         headerTitleStyle: { fontWeight: '700', fontSize: 18 },
         headerShadowVisible: false,
+        // The bar was a flat 60 with no inset. Measured: that left the tab item
+        // 35px, the icon took 28, and the label was squeezed into 5px with
+        // overflow:hidden - so every label was sliced in half. It also ignored
+        // the home indicator entirely. 72 leaves room for a 28px icon, its 2px
+        // gap and a 14px label, and the inset keeps all of it clear of the
+        // indicator on phones that have one.
         tabBarStyle: {
           backgroundColor: c.tabBar,
           borderTopColor: c.border,
-          height: 60,
-          paddingBottom: 8,
+          height: 72 + insets.bottom,
+          paddingBottom: insets.bottom + 6,
           paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarItemStyle: { paddingVertical: 0 },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
         tabBarActiveTintColor: c.tabActive,
         tabBarInactiveTintColor: c.tabInactive,
         sceneStyle: { backgroundColor: c.background },
