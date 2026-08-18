@@ -16,6 +16,16 @@ interface Item {
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
+    // First, and permission-free: an employee holds none of the permissions
+    // below, so before this the menu opened onto little but Profile.
+    title: 'Yours',
+    items: [
+      { icon: 'cube-outline', label: 'My equipment', href: '/my-equipment' },
+      { icon: 'ribbon-outline', label: 'My licenses', href: '/my-licenses' },
+      { icon: 'help-circle-outline', label: 'Help', href: '/help' },
+    ],
+  },
+  {
     title: 'Capture',
     items: [
       { icon: 'scan-outline', label: 'Scan a code', href: '/(tabs)/scan', perm: PERMISSIONS.ASSETS_READ },
@@ -29,7 +39,6 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { icon: 'cube-outline', label: 'Receive orders', href: '/purchase-orders', perm: PERMISSIONS.PROCUREMENT_RECEIVE },
       { icon: 'layers-outline', label: 'Stock', href: '/stock', perm: PERMISSIONS.INVENTORY_READ },
       { icon: 'key-outline', label: 'Licenses', href: '/licenses', perm: PERMISSIONS.LICENSES_READ },
-      { icon: 'ribbon-outline', label: 'My licenses', href: '/my-licenses' },
       { icon: 'document-attach-outline', label: 'Invoices', href: '/invoices', perm: PERMISSIONS.INVOICES_READ },
       { icon: 'build-outline', label: 'My work orders', href: '/work-orders', perm: PERMISSIONS.MAINTENANCE_MANAGE },
       { icon: 'construct-outline', label: 'Maintenance', href: '/maintenance', perm: PERMISSIONS.MAINTENANCE_READ },

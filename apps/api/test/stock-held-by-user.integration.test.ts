@@ -120,6 +120,22 @@ describe('consumables held by a person', () => {
     expect(held.body.data[0].quantity).toBe(4);
   });
 
+  it('lets a person read their own holdings without inventory:read', async () => {
+    // The employee holds the stock issued above but has no inventory permission;
+    // before v2.23 the route asked for inventory:read, so the one person who
+    // most needs to know what is in their name was the one who could not see it.
+    const mine = await api(app).get(`/api/v1/stock/held-by/${holderId}`).set(auth(s.employee));
+    expect(mine.status).toBe(200);
+    expect(mine.body.data[0].quantity).toBe(4);
+  });
+
+  it("still refuses to show one employee another person's holdings", async () => {
+    const other = await api(app)
+      .get(`/api/v1/stock/held-by/${s.itAdmin.user.id}`)
+      .set(auth(s.employee));
+    expect(other.status).toBe(403);
+  });
+
   it('refuses to take back more than the person holds', async () => {
     const res = await api(app)
       .post('/api/v1/stock/return')

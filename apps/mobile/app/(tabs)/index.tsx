@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, Text, View } from 'react-native';
+import { Pressable, RefreshControl, Text, View } from 'react-native';
 import type { AssetStatus, AssetCondition } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
 import { useTheme, statusColor, statusLabel } from '../../src/theme';
@@ -118,7 +118,14 @@ export default function HomeScreen() {
         })}
       </View>
 
-      <SectionTitle>My assets</SectionTitle>
+      {/* Home lists assets only; consumables live on My equipment, and an
+          employee who never opens the More menu would not find them. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <SectionTitle>My assets</SectionTitle>
+        <Pressable onPress={() => router.push('/my-equipment')} hitSlop={8}>
+          <Text style={{ color: c.brand, fontSize: 13, fontWeight: '700' }}>See all</Text>
+        </Pressable>
+      </View>
       {assets.length === 0 && !loading ? (
         <Card>
           <EmptyState

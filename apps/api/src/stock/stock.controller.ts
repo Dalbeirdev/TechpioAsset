@@ -143,10 +143,12 @@ export class StockController {
   }
 
   @Get('held-by/:userId')
-  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   @ApiOperation({
     summary: 'Consumables a person currently holds (v2.21)',
-    description: 'Summed from the movement ledger - issues minus returns - so it cannot drift.',
+    description:
+      'Summed from the movement ledger - issues minus returns - so it cannot drift. ' +
+      'No permission is required to read your own holdings; reading anyone else’s needs ' +
+      'inventory:read. Enforced in the service, which is why the guard is absent here.',
   })
   heldBy(@CurrentUser() actor: AuthUser, @Param('userId') userId: string) {
     return this.stock.heldBy(actor, userId);
