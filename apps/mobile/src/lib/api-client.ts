@@ -96,13 +96,22 @@ export class ApiClient {
        * runtime writes the correct boundary. */
       formData?: FormData;
       skipRefresh?: boolean;
+      /**
+       * Send the stored refresh token, identifying which session is this one.
+       * Only for the two endpoints that need it - listing sessions, and signing
+       * the others out - because it is a long-lived credential and has no
+       * business travelling with every request.
+       */
+      identifySession?: boolean;
     } = {},
   ): Promise<T> {
+    const sessionToken = options.identifySession ? await this.options.tokenStore.getRefreshToken() : null;
     const response = await fetch(`${this.base}${path}`, {
       method: options.method ?? (options.formData ? 'POST' : 'GET'),
       headers: {
         ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
+        ...(sessionToken ? { 'X-Refresh-Token': sessionToken } : {}),
       },
       ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
       ...(options.formData ? { body: options.formData } : {}),
