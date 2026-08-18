@@ -67,8 +67,12 @@ async function main() {
   const companyIds = [...new Set(matched.map((a) => a.companyId))];
   const laptopByCompany = new Map();
   for (const companyId of companyIds) {
+    // A subcategory belongs to a category, and the category carries the company.
     const sub = await prisma.subcategory.findFirst({
-      where: { companyId, OR: [{ key: 'laptop' }, { name: { equals: 'Laptop', mode: 'insensitive' } }] },
+      where: {
+        category: { companyId },
+        OR: [{ key: 'laptop' }, { name: { equals: 'Laptop', mode: 'insensitive' } }],
+      },
       select: { id: true, name: true },
     });
     if (!sub) {
