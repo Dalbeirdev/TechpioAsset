@@ -263,8 +263,13 @@ export class AssetsController {
   }
 
   @Post(':id/status')
-  @RequirePermissions(PERMISSIONS.ASSETS_UPDATE)
-  @ApiOperation({ summary: 'Change status, validated against the state machine' })
+  @ApiOperation({
+    summary: 'Change status, validated against the state machine',
+    description:
+      'Needs assets:update, with one narrow exception enforced in the service: the person ' +
+      'currently holding an asset may report it DAMAGED without it. That is why there is no ' +
+      'guard here - the rule depends on who holds the asset, which a decorator cannot see.',
+  })
   changeStatus(
     @CurrentUser() actor: AuthUser,
     @Param('id') id: string,
