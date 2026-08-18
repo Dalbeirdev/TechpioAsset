@@ -43,14 +43,24 @@ const TILE_ICON: Record<string, IconName> = {
   Wrench: 'construct-outline',
   KeyRound: 'key-outline',
 };
-// Tile key → mobile route (my-assets stays on Home).
+/**
+ * Tile key -> mobile route. The keys are the ones dashboard.service.ts emits;
+ * the API also sends an href, but it is the web's route and several have no
+ * mobile equivalent, so the mapping is kept here.
+ *
+ * A key missing from this map renders a tile that cannot be tapped, and says
+ * nothing about why - which is how "My assets" and "Licenses near capacity"
+ * sat dead on the Home screen. Every key the service can emit is listed.
+ */
 const TILE_ROUTE: Record<string, string> = {
+  'my-assets': '/my-equipment',
   'my-open-requests': '/(tabs)/requests',
   'awaiting-approval': '/(tabs)/approvals',
   'assets-total': '/(tabs)/assets',
   'warranty-expiring': '/(tabs)/assets',
-  'open-maintenance': '/maintenance',
   'licenses-expiring': '/licenses',
+  'licenses-at-capacity': '/licenses',
+  'open-maintenance': '/maintenance',
 };
 
 /** Home: role-aware KPI tiles plus the equipment issued to the signed-in user. */
