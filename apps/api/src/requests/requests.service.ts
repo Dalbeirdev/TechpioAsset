@@ -296,6 +296,71 @@ export class RequestsService {
       // oldest-first, which is how a conversation is followed.
       comments: [...request.comments].reverse(),
       canDecide,
+      waitingOn: await this.describeCurrentStep(actor, id),
+    };
+  }
+
+  /**
+   * Who the request is actually sitting with, and whether that is anybody.
+   *
+   * A step names a role or "the line manager" rather than a person, so a chain
+   * can point at nobody: a requester with no manager recorded, or a role no
+   * account holds. The request then waits forever, appears in no one's approval
+   * queue, and the detail page shows the same "Manager review - pending" it
+   * would show if a real person were about to act on it.
+   *
+   * Every request in the live tenant was stuck this way, which is what made the
+   * difference between "waiting on someone" and "waiting on no one" worth
+   * putting on the screen.
+   */
+  private async describeCurrentStep(actor: AuthUser, requestId: string) {
+    const step = await this.prisma.client.requestApproval.findFirst({
+      where: { requestId, decision: 'PENDING' },
+      orderBy: { stepOrder: 'asc' },
+      select: {
+        stepName: true,
+        approverType: true,
+        approverRoleId: true,
+        approverId: true,
+      },
+    });
+    if (!step) return null;
+
+    const approverIds = await this.pendingApproverIds(requestId);
+    const [people, role] = await Promise.all([
+      approverIds.length
+        ? this.prisma.client.user.findMany({
+            where: { id: { in: approverIds }, deletedAt: null },
+            select: { id: true, email: true, profile: { select: { firstName: true, lastName: true } } },
+          })
+        : Promise.resolve([]),
+      step.approverRoleId
+        ? this.prisma.client.role.findUnique({
+            where: { id: step.approverRoleId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      stepName: step.stepName,
+      approverType: step.approverType,
+      roleName: role?.name ?? null,
+      approvers: people.map((p) => ({
+        id: p.id,
+        name: [p.profile?.firstName, p.profile?.lastName].filter(Boolean).join(' ') || p.email,
+      })),
+      /** Nobody can act on this request until the configuration below is fixed. */
+      blocked: people.length === 0,
+      /** What to change, in the words of the thing that is missing. */
+      blockedReason:
+        people.length > 0
+          ? null
+          : step.approverType === 'LINE_MANAGER'
+            ? 'No manager is recorded for the person who raised this, so there is nobody to approve the step.'
+            : role
+              ? `Nobody holds the ${role.name} role, so there is nobody to approve this step.`
+              : 'This step has no approver assigned, so there is nobody to approve it.',
     };
   }
 
