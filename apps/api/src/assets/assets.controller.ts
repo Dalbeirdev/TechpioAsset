@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   MaxFileSizeValidator,
   Param,
@@ -302,6 +303,23 @@ export class AssetsController {
     @Body(zodBody(reassignAssetSchema)) body: ReassignAssetInput,
   ) {
     return this.assets.reassign(actor, id, body);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(PERMISSIONS.ASSETS_DELETE)
+  @ApiOperation({
+    summary: 'Delete a record that should never have existed',
+    description:
+      'For import mistakes and duplicates - a device that was never there. Distinct from ' +
+      'dispose, which records a real end of life. Soft: the row keeps its history, is ' +
+      'excluded from every read, and any open assignment is closed with it.',
+  })
+  remove(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Query('reason') reason?: string,
+  ) {
+    return this.assets.softDelete(actor, id, reason);
   }
 
   @Post(':id/dispose')
