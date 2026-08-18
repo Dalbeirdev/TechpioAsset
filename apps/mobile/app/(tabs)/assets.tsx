@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import type {
   AssetStatus,
   AssetCondition,
@@ -14,7 +14,9 @@ import {
   TONE_PALETTE_DARK,
   TONE_PALETTE_LIGHT,
 } from '@techpioasset/ui-tokens';
+import { Ionicons } from '@expo/vector-icons';
 import { MAX_PAGE_SIZE } from '@techpioasset/contracts';
+import { PERMISSIONS } from '@techpioasset/domain';
 import { useSession } from '../../src/providers/session';
 import { useTheme, statusColor, statusLabel } from '../../src/theme';
 import { Card, Chevron, EmptyState, Field, IconBadge, StatusPill } from '../../src/components/ui';
@@ -36,7 +38,7 @@ interface AssetRow {
 
 /** All company assets — searchable list, tap to open the asset. */
 export default function AssetsScreen() {
-  const { api } = useSession();
+  const { api, user } = useSession();
   const router = useRouter();
   const { c, scheme, spacing } = useTheme();
   const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
@@ -78,7 +80,10 @@ export default function AssetsScreen() {
     );
   }, [rows, q]);
 
+  const mayCreate = user?.permissions.includes(PERMISSIONS.ASSETS_CREATE) ?? false;
+
   return (
+    <View style={{ flex: 1, backgroundColor: c.background }}>
     <FlatList
       style={{ flex: 1, backgroundColor: c.background }}
       data={filtered}
@@ -159,5 +164,33 @@ export default function AssetsScreen() {
         );
       }}
     />
+
+    {/* Registering kit is done standing next to it, so it is one tap from the
+        list rather than buried in a menu. */}
+    {mayCreate ? (
+      <Pressable
+        onPress={() => router.push('/asset/new')}
+        accessibilityLabel="Register an asset"
+        style={{
+          position: 'absolute',
+          right: spacing.lg,
+          bottom: spacing.lg,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: c.brand,
+          alignItems: 'center',
+          justifyContent: 'center',
+          shadowColor: '#000',
+          shadowOpacity: 0.2,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 5,
+        }}
+      >
+        <Ionicons name="add" size={28} color={c.brandText} />
+      </Pressable>
+    ) : null}
+    </View>
   );
 }
