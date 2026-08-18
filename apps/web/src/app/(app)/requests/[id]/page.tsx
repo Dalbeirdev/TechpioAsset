@@ -89,6 +89,15 @@ interface RequestDetail {
     createdAt: string;
     uploadedById: string | null;
   }[];
+  /** v2.23 - who the current step is with, and whether that is anybody. */
+  waitingOn: {
+    stepName: string;
+    approverType: string;
+    roleName: string | null;
+    approvers: { id: string; name: string }[];
+    blocked: boolean;
+    blockedReason: string | null;
+  } | null;
 }
 
 function formatBytes(bytes: number): string {
@@ -574,6 +583,23 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
 
         <Card className="h-fit p-5">
           <h2 className="text-sm font-semibold">Approval chain</h2>
+          {/* A step names a role or "the line manager", so a chain can point at
+              nobody - a requester with no manager recorded, or a role no account
+              holds. The request then waits forever and appears in no one's
+              queue, while this panel looks exactly like a healthy one. */}
+          {data.waitingOn ? (
+            data.waitingOn.blocked ? (
+              <p className="mt-3 rounded-[var(--radius-control)] border border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)] p-3 text-xs text-[var(--tone-warning-fg)]">
+                <span className="font-semibold">Nobody can approve this right now.</span>{' '}
+                {data.waitingOn.blockedReason}
+              </p>
+            ) : (
+              <p className="mt-3 text-xs text-[var(--color-content-muted)]">
+                Waiting on {data.waitingOn.approvers.map((a) => a.name).join(', ')}
+                {data.waitingOn.roleName ? ` (${data.waitingOn.roleName})` : ''}.
+              </p>
+            )
+          ) : null}
           <ol className="mt-3 grid gap-3">
             {data.approvals.map((approval) => {
               const Icon = DECISION_ICON[approval.decision];
