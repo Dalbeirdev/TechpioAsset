@@ -371,6 +371,30 @@ export const ASSET_TYPES_BY_KEY: Readonly<Record<string, AssetTypeDef>> = Object
   ASSET_TYPES.map((t) => [t.key, t]),
 );
 
+/**
+ * Types a discovery agent can report on (v2.23).
+ *
+ * The agent runs on a computer and reports its hardware, operating system,
+ * installed software and health. A headset has none of those and never will, so
+ * an asset detail page built for laptops shows a mouse four tabs that read
+ * "Nothing discovered yet" forever - which looks like discovery is broken
+ * rather than inapplicable.
+ *
+ * Deliberately a short list of things that boot. Network gear is discoverable in
+ * principle, but nothing in this product reports it today, and a tab promising
+ * data that never arrives is the problem being fixed.
+ */
+const AGENT_REPORTED_TYPES: ReadonlySet<string> = new Set(['laptop', 'desktop', 'server']);
+
+/**
+ * True when a discovery agent could report this type. An unknown or missing
+ * type answers true: the caller uses this to decide what to hide, and hiding a
+ * section that might hold real data is worse than showing an empty one.
+ */
+export function isAgentReportedType(typeKey: string | null | undefined): boolean {
+  return typeKey ? AGENT_REPORTED_TYPES.has(typeKey) : true;
+}
+
 /** Types offered under a category, in catalogue order. */
 export function assetTypesForCategory(categoryKey: string): AssetTypeDef[] {
   return ASSET_TYPES.filter((t) => t.categoryKey === categoryKey);
