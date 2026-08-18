@@ -20,6 +20,7 @@ import {
   expiryState,
   insufficientStockMessage,
   isLowStock,
+  PERMISSIONS,
   planBatchIssue,
 } from '@techpioasset/domain';
 import type { PageQuery } from '@techpioasset/contracts';
@@ -288,7 +289,17 @@ export class StockService {
    * issues add to their holding, returns take it away. Derived rather than
    * stored, so it can never disagree with the movements behind it.
    */
+  /**
+   * What one person is holding. Your own holdings need no permission - a mouse
+   * issued to you is your own record, and an employee had no way to see the
+   * consumables in their name because the route asked for inventory:read.
+   * Reading someone else's still does. Company scoping below is unconditional.
+   */
   async heldBy(actor: AuthUser, userId: string) {
+    if (userId !== actor.id && !actor.permissions.includes(PERMISSIONS.INVENTORY_READ)) {
+      throw AppError.forbidden('Reading another person’s holdings needs inventory:read.');
+    }
+
     const rows = await this.prisma.client.stockMovement.groupBy({
       by: ['inventoryItemId', 'type'],
       where: {

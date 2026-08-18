@@ -55,11 +55,12 @@ interface HeldAsset {
   subcategory: { name: string } | null;
 }
 
+/** Shape returned by /stock/held-by/:userId - the item is flattened onto the row. */
 interface HeldConsumable {
-  itemId: string;
+  inventoryItemId: string;
   name: string;
+  unit: string | null;
   quantity: number;
-  unit?: string | null;
 }
 
 interface PersonRequest {
@@ -204,7 +205,7 @@ export default function PersonScreen() {
           <Card style={{ padding: 0, marginBottom: spacing.xl }}>
             {consumables.map((s, i) => (
               <View
-                key={s.itemId}
+                key={s.inventoryItemId}
                 style={{
                   flexDirection: 'row',
                   justifyContent: 'space-between',
