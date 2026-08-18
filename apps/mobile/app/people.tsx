@@ -1,8 +1,9 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, RefreshControl, Text, View } from 'react-native';
 import { useSession } from '../src/providers/session';
 import { useTheme } from '../src/theme';
-import { Avatar, Card, EmptyState, StatusPill } from '../src/components/ui';
+import { Avatar, Card, Chevron, EmptyState, StatusPill } from '../src/components/ui';
 
 interface PersonRow {
   id: string;
@@ -27,6 +28,7 @@ function displayName(p: PersonRow): string {
 export default function PeopleScreen() {
   const { api } = useSession();
   const { c, spacing } = useTheme();
+  const router = useRouter();
   const [rows, setRows] = useState<PersonRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +55,10 @@ export default function PeopleScreen() {
         const role = item.roles?.map((r) => r.role?.name ?? r.name).filter(Boolean)[0];
         const inactive = item.status !== 'ACTIVE';
         return (
-          <Card style={{ marginBottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <Card
+            onPress={() => router.push(`/person/${item.id}`)}
+            style={{ marginBottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}
+          >
             <Avatar name={name} size={44} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ color: c.text, fontWeight: '700', fontSize: 15 }} numberOfLines={1}>
@@ -69,6 +74,7 @@ export default function PeopleScreen() {
             ) : role ? (
               <StatusPill label={role} bg={c.brandSoft} fg={c.brand} />
             ) : null}
+            <Chevron />
           </Card>
         );
       }}
