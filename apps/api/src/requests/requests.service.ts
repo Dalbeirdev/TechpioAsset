@@ -331,6 +331,9 @@ export class RequestsService {
       approverIds.length
         ? this.prisma.client.user.findMany({
             where: { id: { in: approverIds }, deletedAt: null },
+            // Bounded to match pendingApproverIds, which already caps a role's
+            // holders at 25: this is a line of names under a heading, not a list.
+            take: 25,
             select: { id: true, email: true, profile: { select: { firstName: true, lastName: true } } },
           })
         : Promise.resolve([]),

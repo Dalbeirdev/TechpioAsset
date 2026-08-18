@@ -24,6 +24,17 @@ import { SsoProvider } from '../providers/sso/sso.provider.js';
 import { CurrentUser, Public } from './decorators.js';
 
 const REFRESH_COOKIE = 'techpioasset_refresh';
+/**
+ * How a native client carries the refresh token. A phone has no cookie jar, so
+ * the cookie below never reaches it and never comes back.
+ */
+const REFRESH_HEADER = 'x-refresh-token';
+/**
+ * Set by the mobile app so the server knows a cookie is useless to this caller.
+ * A browser never sends it, which is what keeps the refresh token out of reach
+ * of page scripts on the web app.
+ */
+const CLIENT_HEADER = 'x-client-type';
 const SSO_STATE_COOKIE = 'techpioasset_sso_state';
 const SSO_NONCE_COOKIE = 'techpioasset_sso_nonce';
 
@@ -66,8 +77,41 @@ export class AuthController {
     res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
   }
 
-  private readRefreshCookie(req: Request): string | undefined {
-    return (req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE];
+  /**
+   * The presented refresh token, from wherever this client can carry one.
+   *
+   * The cookie is the web's channel and stays the default. A native client has
+   * no cookie jar, so it sends the token in a header instead - the mobile app
+   * has been sending exactly this header all along, while nothing here read it,
+   * which is why the phone could never refresh a session and signed people out
+   * the moment their access token expired.
+   */
+  private readRefreshToken(req: Request): string | undefined {
+    const cookie = (req.cookies as Record<string, string> | undefined)?.[REFRESH_COOKIE];
+    if (cookie) return cookie;
+    const header = req.headers[REFRESH_HEADER];
+    return typeof header === 'string' && header.length > 0 ? header : undefined;
+  }
+
+  /** True when the caller cannot use cookies, so the token has to go back in a header. */
+  private isNativeClient(req: Request): boolean {
+    return (
+      String(req.headers[CLIENT_HEADER] ?? '').toLowerCase() === 'mobile' ||
+      typeof req.headers[REFRESH_HEADER] === 'string'
+    );
+  }
+
+  /**
+   * Hand back a rotated refresh token by every channel this caller can use.
+   *
+   * The cookie is always set, so the web is untouched. The header is added only
+   * for a native client: `X-Refresh-Token` is in the CORS exposed list, so
+   * returning it unconditionally would let any script on the web app read a
+   * long-lived credential - exactly the theft the httpOnly cookie prevents.
+   */
+  private issueRefreshToken(req: Request, res: Response, token: string): void {
+    this.setRefreshCookie(res, token);
+    if (this.isNativeClient(req)) res.setHeader('X-Refresh-Token', token);
   }
 
   @Post('login')
@@ -77,12 +121,13 @@ export class AuthController {
   @ApiOperation({ summary: 'Sign in with email and password' })
   async login(
     @Body(zodBody(loginRequestSchema)) body: { email: string; password: string; mfaCode?: string },
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.auth.login(body);
     if (result.kind === 'mfa-required') return { mfaRequired: true as const };
 
-    this.setRefreshCookie(res, result.refreshToken);
+    this.issueRefreshToken(req, res, result.refreshToken);
     return { accessToken: result.accessToken, expiresIn: result.expiresIn, user: result.user };
   }
 
@@ -179,12 +224,14 @@ export class AuthController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOperation({ summary: 'Exchange a refresh token for a new access token' })
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const presented = this.readRefreshCookie(req);
+    const presented = this.readRefreshToken(req);
     if (!presented) throw new AppError('UNAUTHENTICATED', 'No refresh token supplied');
 
     try {
       const result = await this.auth.refresh(presented);
-      this.setRefreshCookie(res, result.refreshToken);
+      // The token rotates on every refresh, so a native client that never
+      // receives the new one is signed out at the next attempt.
+      this.issueRefreshToken(req, res, result.refreshToken);
       return { accessToken: result.accessToken, expiresIn: result.expiresIn, user: result.user };
     } catch (error) {
       // A rejected refresh means the session is over; leaving the cookie in place
@@ -203,7 +250,7 @@ export class AuthController {
     @CurrentUser() user: AuthUser | undefined,
   ): Promise<void> {
     await this.auth.logout(
-      this.readRefreshCookie(req),
+      this.readRefreshToken(req),
       user ? { id: user.id, companyId: user.companyId } : undefined,
     );
     this.clearRefreshCookie(res);
@@ -286,7 +333,7 @@ export class AuthController {
   @Get('sessions')
   @ApiOperation({ summary: 'List your active sign-in sessions (devices)' })
   sessions(@CurrentUser() user: AuthUser, @Req() req: Request) {
-    return this.tokens.listSessions(user.id, this.readRefreshCookie(req));
+    return this.tokens.listSessions(user.id, this.readRefreshToken(req));
   }
 
   @Get('login-history')
@@ -303,7 +350,7 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Sign out every other device, keeping this one' })
   async revokeOtherSessions(@CurrentUser() user: AuthUser, @Req() req: Request) {
-    const revoked = await this.tokens.revokeOtherSessions(user.id, this.readRefreshCookie(req));
+    const revoked = await this.tokens.revokeOtherSessions(user.id, this.readRefreshToken(req));
     return { revoked };
   }
 

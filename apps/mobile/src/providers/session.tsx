@@ -82,7 +82,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (email, password, mfaCode) => {
       const response = await fetch(`${apiUrl}/api/v1/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // X-Client tells the server this caller has no cookie jar, so the
+        // refresh token comes back in a header it can actually read. Without it
+        // the token only ever arrived as a Set-Cookie a phone discards, and the
+        // session ended the moment the access token expired.
+        headers: { 'Content-Type': 'application/json', 'X-Client-Type': 'mobile' },
         body: JSON.stringify({ email, password, ...(mfaCode ? { mfaCode } : {}) }),
       });
       if (!response.ok) throw new Error('Email or password is incorrect');

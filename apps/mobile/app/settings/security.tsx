@@ -3,16 +3,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, Text, View } from 'react-native';
 import { useSession } from '../../src/providers/session';
 import { useTheme } from '../../src/theme';
-import { Card, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
+import { Alert } from 'react-native';
+import { Button, Card, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
 
 /**
  * Where you are signed in, and how you got there.
  *
- * Read-only on purpose. "Sign out everywhere else" is not offered here because
- * the server identifies the caller's own session from the refresh cookie, and a
- * native client has no cookie jar - so from a phone it would revoke every
- * session including this one, which is not what the button says. It stays on
- * the web until the refresh token is readable from a header.
+ * "Sign out everywhere else" is offered here now that the server can tell which
+ * session is this one: the two calls that need it send the stored refresh token
+ * (identifySession), so the caller's own session is excluded rather than caught
+ * in the sweep. Before that it would have signed you out of the phone you were
+ * holding.
  */
 
 interface Session {
@@ -54,12 +55,15 @@ export default function SecuritySettingsScreen() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [history, setHistory] = useState<LoginEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [revoking, setRevoking] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [s, h] = await Promise.all([
-        api.request<Session[]>('/auth/sessions').catch(() => []),
+        // identifySession: without it the server cannot tell which of these is
+        // the phone in your hand, and none would be marked "This device".
+        api.request<Session[]>('/auth/sessions', { identifySession: true }).catch(() => []),
         api.request<LoginEvent[]>('/auth/login-history').catch(() => []),
       ]);
       setSessions(s ?? []);
@@ -68,6 +72,27 @@ export default function SecuritySettingsScreen() {
       setLoading(false);
     }
   }, [api]);
+
+  async function revokeOthers() {
+    setRevoking(true);
+    try {
+      const result = await api.request<{ revoked: number }>('/auth/sessions/revoke-others', {
+        method: 'POST',
+        identifySession: true,
+      });
+      await load();
+      Alert.alert(
+        'Done',
+        result.revoked === 1
+          ? 'One other session was signed out.'
+          : `${result.revoked} other sessions were signed out.`,
+      );
+    } catch {
+      Alert.alert('Could not sign out the others', 'Check your connection and try again.');
+    } finally {
+      setRevoking(false);
+    }
+  }
 
   useEffect(() => void load(), [load]);
 
@@ -165,9 +190,32 @@ export default function SecuritySettingsScreen() {
         </Card>
       )}
 
+      {sessions.length > 1 ? (
+        <Button
+          label="Sign out of other devices"
+          icon="log-out-outline"
+          variant="secondary"
+          loading={revoking}
+          onPress={() => {
+            Alert.alert(
+              'Sign out of other devices?',
+              'Every other phone, tablet and browser signed in as you will be signed out. This device stays signed in.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Sign out others',
+                  style: 'destructive',
+                  onPress: () => void revokeOthers(),
+                },
+              ],
+            );
+          }}
+          style={{ marginBottom: spacing.lg }}
+        />
+      ) : null}
+
       <Text style={{ color: c.subtle, fontSize: 12, lineHeight: 18 }}>
-        Signing out of other devices, changing your password and setting up two-factor are in the
-        web app.
+        Changing your password and setting up two-factor are in the web app.
       </Text>
     </Screen>
   );
