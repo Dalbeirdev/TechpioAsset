@@ -1,4 +1,5 @@
 import { useColorScheme } from 'react-native';
+import { useAppearance } from './providers/appearance';
 import {
   ASSET_STATUS_TOKENS,
   TONE_PALETTE_LIGHT,
@@ -83,7 +84,11 @@ export interface Theme {
 }
 
 export function useTheme(): Theme {
-  const scheme = (useColorScheme() ?? 'light') as Scheme;
+  // The device setting is the default, not the rule: a stored preference of
+  // light or dark overrides it, which is what Settings > Appearance sets.
+  const system = (useColorScheme() ?? 'light') as Scheme;
+  const { preference } = useAppearance();
+  const scheme: Scheme = preference === 'system' ? system : preference;
   return {
     scheme,
     c: colors[scheme],
