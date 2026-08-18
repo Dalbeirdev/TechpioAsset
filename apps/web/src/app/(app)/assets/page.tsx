@@ -79,6 +79,14 @@ function AssetsTable() {
    * for a whole category.
    */
   const [type, setType] = useState<string>('');
+  /**
+   * The page opens on laptops, which is what people come here for; everything
+   * else is one change of this dropdown away. The type's id is per company, so
+   * the default cannot be a constant - it is resolved once the catalogue
+   * arrives, and only while the reader has not chosen anything themselves.
+   * Choosing "All types" is a choice, so it sticks.
+   */
+  const [typeChosen, setTypeChosen] = useState(false);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>('');
@@ -108,7 +116,7 @@ function AssetsTable() {
 
   // Types come from the company's own catalogue rather than the domain list, so
   // the dropdown offers what this company actually has.
-  const { data: categories } = useQuery({
+  const { data: categories, isError: categoriesFailed } = useQuery({
     queryKey: ['categories'],
     queryFn: () =>
       apiFetch<{ id: string; name: string; subcategories: { id: string; name: string }[] }[]>(
@@ -117,9 +125,23 @@ function AssetsTable() {
     staleTime: 5 * 60_000,
   });
 
+  useEffect(() => {
+    if (typeChosen || !categories) return;
+    const laptop = categories
+      .flatMap((c) => c.subcategories)
+      .find((sub) => sub.name.toLowerCase() === 'laptop');
+    if (laptop) setType(`sub:${laptop.id}`);
+    setTypeChosen(true);
+  }, [categories, typeChosen]);
+
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['assets', q, status, lifecycle, availability, ownership, type, page],
     queryFn: () => apiFetchPage<AssetRow>(`/assets?${query.toString()}`),
+    // Hold the first fetch until the default type is settled, so the table does
+    // not show the whole fleet for a moment and then replace it. If the
+    // catalogue cannot be read there is no default to wait for, and an
+    // unfiltered table is far better than one that never arrives.
+    enabled: typeChosen || categoriesFailed,
   });
 
   // Cost columns are absent from the payload entirely when the caller lacks
@@ -203,6 +225,7 @@ function AssetsTable() {
               value={type}
               onChange={(e) => {
                 setType(e.target.value);
+                setTypeChosen(true);
                 setPage(1);
               }}
               className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
