@@ -725,8 +725,33 @@ export class AssetsService {
     return this.findOne(actor, id);
   }
 
+  /**
+   * Change an asset's status.
+   *
+   * Normally assets:update. The exception is the person actually holding the
+   * thing reporting it broken: the mobile asset screen has offered "Report
+   * damage" since v2.x, but employees do not hold assets:update, so the one
+   * button meant for the person with the cracked screen answered 403 for them.
+   *
+   * The exception is deliberately narrow - only the current holder, only
+   * DAMAGED. Anything else (disposing of it, marking it available again) is a
+   * decision for whoever manages the fleet, and still needs the permission.
+   */
   async changeStatus(actor: AuthUser, id: string, status: AssetStatus, reason?: string) {
     const before = await this.loadForWrite(actor, id);
+
+    if (!actor.permissions.includes(PERMISSIONS.ASSETS_UPDATE)) {
+      const holdsIt = await this.prisma.client.assetAssignment.findFirst({
+        where: { assetId: id, userId: actor.id, returnedAt: null },
+        select: { id: true },
+      });
+      if (!holdsIt || status !== 'DAMAGED') {
+        throw AppError.forbidden(
+          'Changing this asset needs assets:update. You may report an asset you hold as damaged.',
+        );
+      }
+    }
+
     assertTransition(assetStatusMachine, before.status as AssetStatus, status);
 
     const after = await this.prisma.client.asset.update({
