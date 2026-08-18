@@ -13,7 +13,7 @@ import {
   OWNERSHIP_TYPE_TOKENS,
 } from '@techpioasset/ui-tokens';
 import {
-  ASSET_TYPES_BY_KEY, warrantySource,
+  ASSET_TYPES_BY_KEY, isAgentReportedType, warrantySource,
   PERMISSIONS,
   type AssetCondition,
   type AssetStatus,
@@ -179,6 +179,24 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     },
   });
 
+  // Moving from a laptop to a headset with "Hardware" open would leave the page
+  // on a tab that no longer exists, showing nothing at all. This sits above the
+  // loading and error returns: a hook after an early return runs on some
+  // renders and not others, which React rejects outright.
+  const discoveryAvailable =
+    !data ||
+    isAgentReportedType(data.subcategory?.key) ||
+    Boolean(data.hardwareProfile) ||
+    Boolean(data.osInfo) ||
+    Boolean(data.health) ||
+    data._count.installedSoftware > 0;
+
+  useEffect(() => {
+    if (!discoveryAvailable && (tab === 'hardware' || tab === 'os' || tab === 'software' || tab === 'health')) {
+      setTab('overview');
+    }
+  }, [discoveryAvailable, tab]);
+
   if (isPending) {
     return (
       <div className="mx-auto grid max-w-3xl gap-4">
@@ -200,6 +218,17 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
   // two monitors always read the same way round, and label it from the shared
   // catalogue rather than showing raw keys.
   const typeDef = data.subcategory ? ASSET_TYPES_BY_KEY[data.subcategory.key] : undefined;
+
+  /**
+   * The agent-reported sections belong to things that boot. A headset shows
+   * four tabs that say "Nothing discovered yet" forever, which reads as
+   * discovery being broken rather than inapplicable.
+   *
+   * They are still shown for any asset that actually carries the data, whatever
+   * its type: something reported it, and hiding that would lose real
+   * information. Only the permanently-empty case disappears.
+   */
+  const showDiscovery = discoveryAvailable;
   const specRows: [string, string][] = typeDef
     ? typeDef.fields
         .filter((f) => data.specs?.[f.key])
@@ -281,10 +310,17 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
           [
             ['overview', 'Overview'],
             ['lifecycle', 'Lifecycle'],
-            ['hardware', 'Hardware'],
-            ['os', 'OS & Security'],
-            ['software', `Software${data._count.installedSoftware ? ` (${data._count.installedSoftware})` : ''}`],
-            ['health', 'Health'],
+            ...(showDiscovery
+              ? ([
+                  ['hardware', 'Hardware'],
+                  ['os', 'OS & Security'],
+                  [
+                    'software',
+                    `Software${data._count.installedSoftware ? ` (${data._count.installedSoftware})` : ''}`,
+                  ],
+                  ['health', 'Health'],
+                ] as const)
+              : []),
             ['history', 'History'],
             ...(canSeeCost ? ([['financials', 'Financials']] as const) : []),
           ] as const
