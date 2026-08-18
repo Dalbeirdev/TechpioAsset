@@ -162,6 +162,11 @@ export class AssetsService {
     const filters: Prisma.AssetWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.subcategoryId
+        ? query.subcategoryId === 'none'
+          ? { subcategoryId: null }
+          : { subcategoryId: query.subcategoryId }
+        : {}),
       ...(query.officeId ? { officeId: query.officeId } : {}),
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
       ...(query.assignedUserId ? { assignedUserId: query.assignedUserId } : {}),

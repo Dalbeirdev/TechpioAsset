@@ -129,6 +129,15 @@ export const assetListQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   status: assetStatusEnum.optional(),
   categoryId: z.string().optional(),
+  /**
+   * v2.23 - the asset TYPE (laptop, monitor, mouse). Category alone is too
+   * coarse: a fleet where everything is "IT Assets" cannot be narrowed by it.
+   *
+   * The literal `none` matches assets with no type set. Without it those assets
+   * are unreachable by this filter and simply look missing - and an asset
+   * registered before its type existed is exactly the one someone needs to find.
+   */
+  subcategoryId: z.string().optional(),
   officeId: z.string().optional(),
   departmentId: z.string().optional(),
   assignedUserId: z.string().optional(),
