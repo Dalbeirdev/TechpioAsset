@@ -1218,6 +1218,53 @@ export class AssetsService {
    * history. The unique assetId on the record is what makes "disposed twice"
    * structurally impossible rather than merely checked.
    */
+  /**
+   * Remove a record that should never have existed (v2.23).
+   *
+   * A spreadsheet import creates whatever the spreadsheet said, mistakes
+   * included: duplicate monitors, a typo saved as an asset, kit that turned out
+   * to belong to somebody personally. Until now the only way to get rid of one
+   * was to dispose of it, which writes a disposal into the device's history and
+   * the reports - a fictional event, for a device that was never there.
+   *
+   * Soft, not destructive: the row keeps its history and can be brought back by
+   * clearing deletedAt, and every read in the app already filters on it. An open
+   * assignment is closed at the same time, because leaving one behind would show
+   * a person still holding a record that no longer exists.
+   */
+  async softDelete(actor: AuthUser, id: string, reason?: string) {
+    // Reads are filtered to deletedAt: null globally, so a second delete never
+    // gets here - loadForWrite raises 404, which is the honest answer for
+    // removing something that is already gone.
+    const asset = await this.loadForWrite(actor, id);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.assetAssignment.updateMany({
+        where: { assetId: id, returnedAt: null },
+        data: { returnedAt: new Date() },
+      });
+      await tx.asset.update({
+        where: { id },
+        data: { deletedAt: new Date(), updatedById: actor.id, version: { increment: 1 } },
+      });
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.ASSET_UPDATED,
+      entityType: 'Asset',
+      entityId: id,
+      previousValues: { assetTag: asset.assetTag, name: asset.name, deletedAt: null },
+      newValues: { deletedAt: new Date().toISOString() },
+      // The trail has to say this was a deletion, not another edit: the enum has
+      // no ASSET_DELETED, and inventing one is a migration for every tenant.
+      reason: reason ? `Deleted: ${reason}` : 'Deleted as an incorrect record',
+    });
+
+    return { id, deleted: true };
+  }
+
   async dispose(actor: AuthUser, id: string, input: DisposeAssetInput) {
     const asset = await this.loadForWrite(actor, id);
 

@@ -17,6 +17,16 @@ export const PERMISSIONS = {
   ASSETS_RETURN: 'assets:return',
   ASSETS_TRANSFER: 'assets:transfer',
   ASSETS_DISPOSE: 'assets:dispose',
+  /**
+   * Remove a record that should never have existed - a row from a bad import,
+   * a duplicate, a typo saved as an asset.
+   *
+   * Deliberately separate from assets:dispose. Disposal is a real event in a
+   * device's life and belongs in its history; deletion says the device was
+   * never there. Recording a spreadsheet mistake as a disposal would put a
+   * fictional event in the audit trail and the asset reports.
+   */
+  ASSETS_DELETE: 'assets:delete',
   ASSETS_COST_READ: 'assets:cost:read',
 
   // Quantity-tracked stock. v2.4 adds the warehouse layer: locations,

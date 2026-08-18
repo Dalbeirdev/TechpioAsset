@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Archive,
   Cable,
   Headphones,
   Keyboard,
@@ -27,6 +28,7 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
+import { useConfirm } from '@/providers/confirm-provider';
 import { Button, Card, EmptyState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
@@ -439,13 +441,15 @@ function AddExtraAssetDialog({
  * wherever you reached it from. "Take back" returns it to the pool, keeping the
  * record and its history.
  *
- * There is deliberately no delete: an asset is never removed, it is retired or
- * disposed of WITH a record (spec section 7), so the menu links to the asset's
- * own disposal panel rather than pretending a delete exists.
+ * Two different endings, deliberately not the same control. "Retire or dispose"
+ * records a real end of life and belongs in the device's history. "Delete" says
+ * the record should never have existed - a bad row from the spreadsheet import -
+ * and is limited to whoever holds assets:delete.
  */
 function RowMenu({ asset, onDone }: { asset: KitAsset; onDone: () => void }) {
   const { can } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -466,7 +470,9 @@ function RowMenu({ asset, onDone }: { asset: KitAsset; onDone: () => void }) {
           body: { conditionIn: 'GOOD', resultingStatus: 'AVAILABLE' },
         });
       }
-      return apiFetch(`/assets/${asset.id}`, { method: 'DELETE' });
+      return apiFetch(`/assets/${asset.id}?reason=${encodeURIComponent('Incorrect import row')}`, {
+        method: 'DELETE',
+      });
     },
     onSuccess: (_r, kind) => {
       toast.success(kind === 'return' ? 'Taken back into the pool' : 'Asset deleted');
@@ -514,9 +520,32 @@ function RowMenu({ asset, onDone }: { asset: KitAsset; onDone: () => void }) {
           </button>
           {can(PERMISSIONS.ASSETS_DISPOSE) ? (
             <Link href={`/assets/${asset.id}`} role="menuitem" className={itemCls}>
-              <Trash2 aria-hidden="true" className="size-4" />
+              <Archive aria-hidden="true" className="size-4" />
               Retire or dispose…
             </Link>
+          ) : null}
+          {can(PERMISSIONS.ASSETS_DELETE) ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={act.isPending}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: `Delete ${asset.name}?`,
+                  body:
+                    'This is for records that should never have existed - a bad row from an import. ' +
+                    'It is removed from the list and from this person, and its history is kept. ' +
+                    'If the device is real and reached its end of life, use Retire or dispose instead.',
+                  confirmLabel: 'Delete record',
+                  destructive: true,
+                });
+                if (ok) act.mutate('delete');
+              }}
+              className={`${itemCls} text-[var(--tone-critical-fg)]`}
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete (imported by mistake)
+            </button>
           ) : null}
         </div>
       ) : null}
