@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppearanceProvider } from '../src/providers/appearance';
 import { SessionProvider } from '../src/providers/session';
 import { useTheme } from '../src/theme';
 
@@ -9,6 +10,16 @@ import { useTheme } from '../src/theme';
  * themes the native navigation headers to match the app's palette.
  */
 export default function RootLayout() {
+  // The provider has to sit above anything calling useTheme - including this
+  // file - so the shell is a separate component inside it.
+  return (
+    <AppearanceProvider>
+      <RootShell />
+    </AppearanceProvider>
+  );
+}
+
+function RootShell() {
   const { c } = useTheme();
   return (
     <SafeAreaProvider>
@@ -48,7 +59,14 @@ export default function RootLayout() {
           <Stack.Screen name="analytics" options={{ headerShown: true, title: 'Analytics' }} />
           <Stack.Screen name="reports" options={{ headerShown: true, title: 'Reports' }} />
           <Stack.Screen name="audit" options={{ headerShown: true, title: 'Audit log' }} />
-          <Stack.Screen name="settings" options={{ headerShown: true, title: 'AI settings' }} />
+
+          <Stack.Screen name="settings/index" options={{ headerShown: true, title: 'Settings' }} />
+          <Stack.Screen name="settings/appearance" options={{ headerShown: true, title: 'Appearance' }} />
+          <Stack.Screen name="settings/security" options={{ headerShown: true, title: 'Security' }} />
+          <Stack.Screen name="settings/organisation" options={{ headerShown: true, title: 'Organisation' }} />
+          <Stack.Screen name="settings/offices" options={{ headerShown: true, title: 'Offices' }} />
+          <Stack.Screen name="settings/departments" options={{ headerShown: true, title: 'Departments' }} />
+          <Stack.Screen name="settings/ai" options={{ headerShown: true, title: 'AI settings' }} />
         </Stack>
       </SessionProvider>
     </SafeAreaProvider>

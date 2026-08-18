@@ -51,7 +51,9 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: 'Account',
     items: [
-      { icon: 'settings-outline', label: 'AI settings', href: '/settings', perm: PERMISSIONS.AI_CONFIGURE },
+      // The hub itself is permission-free: Appearance and Security are on it for
+      // everyone, and the company rows inside are gated individually.
+      { icon: 'settings-outline', label: 'Settings', href: '/settings' },
       { icon: 'person-circle-outline', label: 'Profile', href: '/(tabs)/profile' },
     ],
   },

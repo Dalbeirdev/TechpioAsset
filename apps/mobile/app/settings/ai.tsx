@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { RefreshControl, Text, View } from 'react-native';
-import { useSession } from '../src/providers/session';
-import { useTheme } from '../src/theme';
-import { Card, Screen, SectionTitle, StatusPill } from '../src/components/ui';
+import { useSession } from '../../src/providers/session';
+import { useTheme } from '../../src/theme';
+import { Card, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
 
 interface AiConfig {
   globallyEnabled: boolean;
