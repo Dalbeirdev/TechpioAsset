@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import {
   BookOpen,
   CircleHelp,
-  ExternalLink,
   FileText,
   LifeBuoy,
   Plus,
@@ -189,24 +188,20 @@ export default function HelpPage() {
             </Link>
           </li>
           <li>
-            <a
-              href="/docs/user-guide.pdf"
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              href="/guides"
               className="flex items-start gap-3 rounded-[var(--radius-control)] p-3 transition-colors hover:bg-[var(--color-surface-sunken)]"
             >
               <span className="mt-0.5 grid size-8 flex-none place-items-center rounded-lg bg-[var(--color-surface-sunken)] text-[var(--color-content-muted)]">
                 <BookOpen aria-hidden="true" className="size-4" />
               </span>
               <span className="grid gap-0.5">
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  User guide <ExternalLink aria-hidden="true" className="size-3.5" />
-                </span>
+                <span className="text-sm font-medium">All guides</span>
                 <span className="text-xs text-[var(--color-content-subtle)]">
-                  The full walkthrough, as a PDF you can keep.
+                  Inviting people, what each role can do, and how assets are added.
                 </span>
               </span>
-            </a>
+            </Link>
           </li>
           <li>
             {/* Served by nginx on the VPS, not from public/ - so this 404s on a
