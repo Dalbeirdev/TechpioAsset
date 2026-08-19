@@ -33,6 +33,15 @@ export const loginRequestSchema = z.object({
     .string()
     .regex(/^\d{6}$/, 'Enter the 6-digit code')
     .optional(),
+  /**
+   * Keep this browser signed in after it is closed.
+   *
+   * Defaults to true, which is what every client did before the flag existed.
+   * False makes the refresh cookie a session cookie, so a borrowed or shared
+   * machine forgets the session when the browser closes. The server-side token
+   * is unaffected either way - this only decides how long the browser keeps it.
+   */
+  remember: z.boolean().optional(),
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 

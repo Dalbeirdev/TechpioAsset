@@ -35,6 +35,17 @@ const REFRESH_HEADER = 'x-refresh-token';
  * of page scripts on the web app.
  */
 const CLIENT_HEADER = 'x-client-type';
+/**
+ * Remembers that this browser asked to be remembered.
+ *
+ * The refresh token rotates on every refresh, so without this the second
+ * refresh would silently re-issue a persistent cookie and undo the choice. A
+ * browser never reports a cookie's own lifetime back to the server, so the
+ * decision has to be carried somewhere - and a companion cookie written with
+ * the same lifetime is self-consistent: when the browser drops the session
+ * cookie on close it drops this one too. It holds no secret, only a "1".
+ */
+const REMEMBER_COOKIE = 'techpioasset_remember';
 const SSO_STATE_COOKIE = 'techpioasset_sso_state';
 const SSO_NONCE_COOKIE = 'techpioasset_sso_nonce';
 
@@ -63,18 +74,44 @@ export class AuthController {
    * is what makes XSS unable to steal a long-lived credential. The access token
    * is returned in the body and held in memory by the client.
    */
-  private setRefreshCookie(res: Response, token: string): void {
+  private setRefreshCookie(res: Response, token: string, remember = true): void {
     res.cookie(REFRESH_COOKIE, token, {
       httpOnly: true,
       secure: this.config.isProduction,
       sameSite: 'lax',
       path: '/api/v1/auth',
-      maxAge: this.tokens.refreshTtlSeconds * 1000,
+      // Omitting maxAge makes it a session cookie: the browser drops it when it
+      // closes. That is the whole of "remember me" - the server-side token still
+      // lives its full life, so a refresh that does arrive is still honoured.
+      ...(remember ? { maxAge: this.tokens.refreshTtlSeconds * 1000 } : {}),
     });
+
+    // Written either way, and always with the same lifetime as the token cookie
+    // beside it, so "off" is recorded rather than merely absent - absent has to
+    // keep meaning a session that predates this flag.
+    res.cookie(REMEMBER_COOKIE, remember ? '1' : '0', {
+      httpOnly: true,
+      secure: this.config.isProduction,
+      sameSite: 'lax',
+      path: '/api/v1/auth',
+      ...(remember ? { maxAge: this.tokens.refreshTtlSeconds * 1000 } : {}),
+    });
+  }
+
+  /**
+   * Whether this browser asked to stay signed in.
+   *
+   * A session that predates the flag has no cookie at all, and is treated as
+   * remembered - it was issued a persistent cookie, and a refresh must not
+   * quietly demote it and sign the person out when they close the browser.
+   */
+  private wasRemembered(req: Request): boolean {
+    return (req.cookies as Record<string, string> | undefined)?.[REMEMBER_COOKIE] !== '0';
   }
 
   private clearRefreshCookie(res: Response): void {
     res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
+    res.clearCookie(REMEMBER_COOKIE, { path: '/api/v1/auth' });
   }
 
   /**
@@ -109,8 +146,8 @@ export class AuthController {
    * returning it unconditionally would let any script on the web app read a
    * long-lived credential - exactly the theft the httpOnly cookie prevents.
    */
-  private issueRefreshToken(req: Request, res: Response, token: string): void {
-    this.setRefreshCookie(res, token);
+  private issueRefreshToken(req: Request, res: Response, token: string, remember = true): void {
+    this.setRefreshCookie(res, token, remember);
     if (this.isNativeClient(req)) res.setHeader('X-Refresh-Token', token);
   }
 
@@ -120,14 +157,15 @@ export class AuthController {
   @Throttle({ default: { limit: LOGIN_ATTEMPTS_PER_MINUTE, ttl: 60_000 } })
   @ApiOperation({ summary: 'Sign in with email and password' })
   async login(
-    @Body(zodBody(loginRequestSchema)) body: { email: string; password: string; mfaCode?: string },
+    @Body(zodBody(loginRequestSchema))
+    body: { email: string; password: string; mfaCode?: string; remember?: boolean },
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.auth.login(body);
     if (result.kind === 'mfa-required') return { mfaRequired: true as const };
 
-    this.issueRefreshToken(req, res, result.refreshToken);
+    this.issueRefreshToken(req, res, result.refreshToken, body.remember ?? true);
     return { accessToken: result.accessToken, expiresIn: result.expiresIn, user: result.user };
   }
 
@@ -230,8 +268,9 @@ export class AuthController {
     try {
       const result = await this.auth.refresh(presented);
       // The token rotates on every refresh, so a native client that never
-      // receives the new one is signed out at the next attempt.
-      this.issueRefreshToken(req, res, result.refreshToken);
+      // receives the new one is signed out at the next attempt. The rotated
+      // cookie keeps whatever lifetime this browser chose at sign-in.
+      this.issueRefreshToken(req, res, result.refreshToken, this.wasRemembered(req));
       return { accessToken: result.accessToken, expiresIn: result.expiresIn, user: result.user };
     } catch (error) {
       // A rejected refresh means the session is over; leaving the cookie in place
