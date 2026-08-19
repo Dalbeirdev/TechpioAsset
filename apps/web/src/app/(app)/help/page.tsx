@@ -173,6 +173,22 @@ export default function HelpPage() {
         <h2 className="mb-3 text-sm font-semibold">Guides and apps</h2>
         <ul className="grid gap-1">
           <li>
+            <Link
+              href="/guides/raising-a-request"
+              className="flex items-start gap-3 rounded-[var(--radius-control)] p-3 transition-colors hover:bg-[var(--color-surface-sunken)]"
+            >
+              <span className="mt-0.5 grid size-8 flex-none place-items-center rounded-lg bg-[var(--color-surface-sunken)] text-[var(--color-content-muted)]">
+                <FileText aria-hidden="true" className="size-4" />
+              </span>
+              <span className="grid gap-0.5">
+                <span className="text-sm font-medium">Raising a request</span>
+                <span className="text-xs text-[var(--color-content-subtle)]">
+                  What each type means, who approves it, and what every status is telling you.
+                </span>
+              </span>
+            </Link>
+          </li>
+          <li>
             <a
               href="/docs/user-guide.pdf"
               target="_blank"

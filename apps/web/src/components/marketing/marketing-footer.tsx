@@ -41,6 +41,7 @@ export function MarketingFooter() {
         <FooterCol
           title="Resources"
           links={[
+            { href: '/guides/raising-a-request', label: 'Raising a request' },
             { href: '/docs/user-guide.pdf', label: 'Documentation' },
             { href: '/login', label: 'Sign in' },
             { href: 'mailto:dalbeir@techpio.com', label: 'dalbeir@techpio.com' },
