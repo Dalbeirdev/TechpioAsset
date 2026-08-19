@@ -15,6 +15,7 @@ import { LenovoWarrantyService } from '../assets/lenovo-warranty.service.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { WebhooksService } from '../integrations/webhooks.service.js';
 import { AuthService } from '../auth/auth.service.js';
 import { TokenService } from '../auth/token.service.js';
 import { withSpan } from '../observability/tracing.js';
@@ -60,6 +61,7 @@ export class AlertSweepService implements OnModuleInit {
     private readonly tokens: TokenService,
     private readonly auth: AuthService,
     private readonly lenovoWarranty: LenovoWarrantyService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   onModuleInit(): void {
@@ -655,6 +657,16 @@ export class AlertSweepService implements OnModuleInit {
       await this.prisma.client.maintenanceRecord.update({
         where: { id: order.id },
         data: { escalatedAt: now },
+      });
+      // v2.24: escalation crosses the product boundary too - the on-call
+      // system watching this event is exactly the audience an overdue SLA is
+      // for. The escalatedAt stamp above is what makes this exactly-once.
+      void this.webhooks.publish(order.asset.companyId, 'workorder.escalated', {
+        workOrderId: order.id,
+        title: order.title,
+        status: order.status,
+        assetTag: order.asset.assetTag,
+        slaDueAt: order.slaDueAt,
       });
       escalated += 1;
     }

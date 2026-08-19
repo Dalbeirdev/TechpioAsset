@@ -28,6 +28,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { WebhooksService } from '../integrations/webhooks.service.js';
 import { decryptLicenseKey, encryptLicenseKey, maskLicenseKey } from './license-key.util.js';
 
 const SORTABLE = ['name', 'expiryDate', 'purchaseDate', 'createdAt', 'seatsPurchased'] as const;
@@ -49,6 +50,7 @@ export class LicensesService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly config: AppConfig,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   // ── reads ──────────────────────────────────────────────────────────────────
@@ -387,6 +389,16 @@ export class LicensesService {
           linkPath: `/licenses/${license.id}`,
           entityType: 'SoftwareLicense',
           entityId: license.id,
+        });
+        // v2.24: the same refusal, pushed to subscribed systems - a full pool
+        // is a purchasing signal, and the system that raises POs may not be
+        // this one. Fire-and-forget: a webhook must never change the refusal.
+        void this.webhooks.publish(actor.companyId, 'license.seat_blocked', {
+          licenseId: license.id,
+          licenseName: license.name,
+          seatsPurchased: license.seatsPurchased,
+          attemptedFor: { [principal.field]: principal.id },
+          attemptedById: actor.id,
         });
         throw error;
       }
