@@ -13,7 +13,13 @@ import {
 interface AuthState {
   user: AuthUser | null;
   status: 'loading' | 'authenticated' | 'anonymous';
-  login: (email: string, password: string, mfaCode?: string) => Promise<'ok' | 'mfa-required'>;
+  login: (
+    email: string,
+    password: string,
+    mfaCode?: string,
+    /** False keeps the session only until the browser closes. */
+    remember?: boolean,
+  ) => Promise<'ok' | 'mfa-required'>;
   logout: () => Promise<void>;
   /** True when the user holds every listed permission. */
   can: (...permissions: string[]) => boolean;
@@ -73,12 +79,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => setUnauthenticatedHandler(null);
   }, []);
 
-  const login = useCallback<AuthState['login']>(async (email, password, mfaCode) => {
+  const login = useCallback<AuthState['login']>(async (email, password, mfaCode, remember) => {
     const result = await apiFetch<{ accessToken: string; user: AuthUser } | { mfaRequired: true }>(
       '/auth/login',
       {
         method: 'POST',
-        body: { email, password, ...(mfaCode ? { mfaCode } : {}) },
+        body: {
+          email,
+          password,
+          ...(mfaCode ? { mfaCode } : {}),
+          ...(remember === undefined ? {} : { remember }),
+        },
       },
     );
 

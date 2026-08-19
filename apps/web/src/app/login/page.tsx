@@ -23,11 +23,21 @@ import {
 } from '@/components/ui/form';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { BrandLockup } from '@/components/brand';
+import { LoginShowcase } from '@/components/marketing/login-showcase';
+
+/**
+ * Sign in (v2.24 redesign).
+ *
+ * Two panels: what the product is, and the form. Below lg the showcase is not
+ * rendered at all - on a phone the form is the whole job, and a marketing panel
+ * above it only pushes the password field off the screen.
+ */
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
   password: z.string().min(1, 'Password is required'),
   mfaCode: z.string().optional(),
+  remember: z.boolean(),
 });
 type LoginValues = z.infer<typeof loginSchema>;
 
@@ -40,7 +50,7 @@ export default function LoginPage() {
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '', mfaCode: '' },
+    defaultValues: { email: '', password: '', mfaCode: '', remember: true },
   });
 
   useEffect(() => {
@@ -69,6 +79,7 @@ export default function LoginPage() {
         values.email,
         values.password,
         needsMfa ? values.mfaCode : undefined,
+        values.remember,
       );
       if (result === 'mfa-required') {
         setNeedsMfa(true);
@@ -85,146 +96,213 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-4 py-10">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex items-start justify-between">
-          <div>
-            <h1>
-              {/* The wordmark is a home link everywhere else it appears; on the
-                  sign-in page it was the one place it did nothing, which is
-                  exactly where somebody who is not signing in wants it. */}
-              <Link href="/" aria-label="PioAssets home" className="inline-flex">
-                <BrandLockup height={34} />
-              </Link>
-            </h1>
-            <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-              Manage Assets. Control Costs. Simplify Operations.
-            </p>
-          </div>
-          <ThemeToggle />
+    <div className="min-h-dvh lg:grid lg:grid-cols-[1.05fr_minmax(0,30rem)] xl:grid-cols-[1.15fr_minmax(0,32rem)]">
+      <LoginShowcase />
+
+      <div className="flex min-h-dvh flex-col px-5 py-6 sm:px-8">
+        <div className="flex justify-end">
+          <ThemeToggle labels />
         </div>
 
-        <Card className="p-6">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4" noValidate>
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        autoComplete="username"
-                        autoFocus
-                        disabled={needsMfa}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <PasswordInput
-                        autoComplete="current-password"
-                        disabled={needsMfa}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {needsMfa ? (
-                <FormField
-                  control={form.control}
-                  name="mfaCode"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Authentication code</FormLabel>
-                      <FormControl>
-                        <Input
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={6}
-                          autoFocus
-                          {...field}
-                          onChange={(e) => field.onChange(e.target.value.replace(/\D/g, ''))}
-                        />
-                      </FormControl>
-                      <FormDescription>Six-digit code from your authenticator app.</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : null}
-
-              {formError ? (
-                <p
-                  role="alert"
-                  className="rounded-[var(--radius-control)] border px-3 py-2 text-sm"
-                  style={{
-                    color: 'var(--tone-critical-fg)',
-                    backgroundColor: 'var(--tone-critical-bg)',
-                    borderColor: 'var(--tone-critical-border)',
-                  }}
-                >
-                  {formError}
+        <main className="flex flex-1 items-center justify-center py-8">
+          <div className="w-full max-w-sm">
+            <Card className="p-6 shadow-sm sm:p-7">
+              <div className="text-center">
+                {/* The wordmark is a home link everywhere else it appears; on the
+                    sign-in page it was the one place it did nothing, which is
+                    exactly where somebody who is not signing in wants it. */}
+                <h1>
+                  <Link href="/" aria-label="PioAssets home" className="inline-flex">
+                    <BrandLockup height={38} />
+                  </Link>
+                </h1>
+                <p className="mt-5 text-xl font-bold tracking-tight">
+                  {needsMfa ? 'One more step' : 'Welcome back'}
                 </p>
-              ) : null}
-
-              <Button type="submit" loading={form.formState.isSubmitting}>
-                {needsMfa ? 'Verify' : 'Sign in'}
-              </Button>
-            </form>
-          </Form>
-
-          {ssoEnabled && !needsMfa ? (
-            <>
-              <div className="my-4 flex items-center gap-3 text-xs text-[var(--color-content-subtle)]">
-                <span className="h-px flex-1 bg-[var(--color-border)]" />
-                or
-                <span className="h-px flex-1 bg-[var(--color-border)]" />
+                <p className="mt-1 text-sm text-[var(--color-content-muted)]">
+                  {needsMfa
+                    ? 'Confirm the code from your authenticator app.'
+                    : 'Sign in to your PioAssets account to continue.'}
+                </p>
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full"
-                onClick={() => {
-                  // Full-page navigation: the browser follows the OIDC redirect
-                  // chain and returns to the app authenticated via the refresh cookie.
-                  window.location.href = `${apiBaseUrl}/auth/sso/entra`;
-                }}
-              >
-                Continue with Microsoft
-              </Button>
-            </>
-          ) : null}
-        </Card>
 
-        <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-[var(--color-content-subtle)]">
-          <ShieldCheck aria-hidden="true" className="size-3.5" />
-          Sessions expire automatically and every action is audited.
-        </p>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 grid gap-4" noValidate>
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Work email</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="email"
+                            autoComplete="username"
+                            placeholder="you@company.com"
+                            autoFocus
+                            disabled={needsMfa}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-        <a
-          href="/downloads/techpioasset.apk"
-          className="mt-3 flex items-center justify-center gap-1.5 text-xs font-medium text-[var(--color-content-muted)] transition-colors hover:text-[var(--color-content)]"
-        >
-          <Smartphone aria-hidden="true" className="size-3.5" />
-          Download the Android app
-        </a>
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center justify-between gap-3">
+                          <FormLabel>Password</FormLabel>
+                          <Link
+                            href="/forgot-password"
+                            className="text-sm font-medium text-[var(--color-brand)] hover:underline"
+                          >
+                            Forgot password?
+                          </Link>
+                        </div>
+                        <FormControl>
+                          <PasswordInput
+                            autoComplete="current-password"
+                            disabled={needsMfa}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {needsMfa ? (
+                    <FormField
+                      control={form.control}
+                      name="mfaCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Authentication code</FormLabel>
+                          <FormControl>
+                            <Input
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                              autoFocus
+                              {...field}
+                              onChange={(e) => field.onChange(e.target.value.replace(/\D/g, ''))}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Six-digit code from your authenticator app.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <FormField
+                      control={form.control}
+                      name="remember"
+                      render={({ field }) => (
+                        <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            className="size-4 shrink-0 accent-[var(--color-brand)]"
+                          />
+                          Keep me signed in
+                        </label>
+                      )}
+                    />
+                  )}
+
+                  {formError ? (
+                    <p
+                      role="alert"
+                      className="rounded-[var(--radius-control)] border px-3 py-2 text-sm"
+                      style={{
+                        color: 'var(--tone-critical-fg)',
+                        backgroundColor: 'var(--tone-critical-bg)',
+                        borderColor: 'var(--tone-critical-border)',
+                      }}
+                    >
+                      {formError}
+                    </p>
+                  ) : null}
+
+                  <Button type="submit" loading={form.formState.isSubmitting}>
+                    {needsMfa ? 'Verify' : 'Sign in'}
+                  </Button>
+                </form>
+              </Form>
+
+              {ssoEnabled && !needsMfa ? (
+                <>
+                  <div className="my-4 flex items-center gap-3 text-xs text-[var(--color-content-subtle)]">
+                    <span className="h-px flex-1 bg-[var(--color-border)]" />
+                    or
+                    <span className="h-px flex-1 bg-[var(--color-border)]" />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => {
+                      // Full-page navigation: the browser follows the OIDC redirect
+                      // chain and returns to the app authenticated via the refresh cookie.
+                      window.location.href = `${apiBaseUrl}/auth/sso/entra`;
+                    }}
+                  >
+                    <MicrosoftLogo />
+                    Continue with Microsoft
+                  </Button>
+                </>
+              ) : null}
+            </Card>
+
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-[var(--color-content-subtle)]">
+              <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
+              Sessions expire automatically and every action is audited.
+            </p>
+
+            <a
+              href="/downloads/techpioasset.apk"
+              className="mt-3 flex items-center justify-center gap-1.5 text-xs font-medium text-[var(--color-content-muted)] transition-colors hover:text-[var(--color-content)]"
+            >
+              <Smartphone aria-hidden="true" className="size-3.5" />
+              Download the Android app
+            </a>
+          </div>
+        </main>
+
+        <footer className="flex flex-col items-center justify-between gap-2 border-t border-[var(--color-border)] pt-5 text-xs text-[var(--color-content-subtle)] sm:flex-row">
+          <p>© {new Date().getFullYear()} TechPIO Services LLP</p>
+          <nav aria-label="Support" className="flex items-center gap-4">
+            <Link href="/guides" className="hover:text-[var(--color-content)]">
+              Guides
+            </Link>
+            <Link href="/#security" className="hover:text-[var(--color-content)]">
+              Security
+            </Link>
+            <Link href="/contact" className="hover:text-[var(--color-content)]">
+              Support
+            </Link>
+          </nav>
+        </footer>
       </div>
-    </main>
+    </div>
+  );
+}
+
+/** Microsoft's four squares. Their brand guidance requires the mark unaltered. */
+function MicrosoftLogo() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" className="shrink-0">
+      <rect width="7" height="7" fill="#f25022" />
+      <rect x="9" width="7" height="7" fill="#7fba00" />
+      <rect y="9" width="7" height="7" fill="#00a4ef" />
+      <rect x="9" y="9" width="7" height="7" fill="#ffb900" />
+    </svg>
   );
 }

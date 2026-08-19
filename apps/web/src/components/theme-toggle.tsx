@@ -11,7 +11,12 @@ const OPTIONS = [
   { value: 'system', label: 'System', Icon: Monitor },
 ] as const;
 
-export function ThemeToggle() {
+/**
+ * `labels` spells the options out instead of relying on the icon alone. Used
+ * where there is room for it and the visitor is not yet fluent in the product -
+ * the sign-in page - and left off inside the app, where the header is tight.
+ */
+export function ThemeToggle({ labels = false }: { labels?: boolean } = {}) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -36,13 +41,15 @@ export function ThemeToggle() {
             aria-label={label}
             onClick={() => setTheme(value)}
             className={cn(
-              'inline-flex size-8 items-center justify-center rounded-[calc(var(--radius-control)-2px)] transition-colors',
+              'inline-flex h-8 items-center justify-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] transition-colors',
+              labels ? 'px-2.5 text-sm font-medium' : 'w-8',
               active
                 ? 'bg-[var(--color-brand)] text-[var(--color-brand-contrast)]'
                 : 'text-[var(--color-content-muted)] hover:bg-[var(--color-surface-sunken)]',
             )}
           >
             <Icon aria-hidden="true" className="size-4" />
+            {labels ? <span aria-hidden="true">{label}</span> : null}
           </button>
         );
       })}
