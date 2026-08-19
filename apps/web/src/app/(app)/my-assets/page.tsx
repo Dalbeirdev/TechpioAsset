@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import type { AssetCondition, AssetStatus } from '@techpioasset/domain';
-import { apiFetchPage } from '@/lib/api-client';
+import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
@@ -45,6 +45,16 @@ export default function MyAssetsPage() {
 
 function MyAssetsList() {
   const { user } = useAuth();
+
+  // A company can restrict raising requests to IT and HR. Offering three
+  // buttons that all lead to a form the reader cannot submit is worse than not
+  // offering them: the work is done before the refusal arrives.
+  const raise = useQuery({
+    queryKey: ['can-create-request'],
+    queryFn: () => apiFetch<{ allowed: boolean; reason?: string }>('/requests/can-create'),
+    staleTime: 60_000,
+  });
+  const mayRaise = raise.data?.allowed ?? true;
   // The header search sends OWN-scope users here with ?q=. The API already
   // matches name/tag/serial/brand/model and is scoped to the caller, so the
   // term simply rides along - no client-side filtering to drift out of step.
@@ -189,24 +199,34 @@ function MyAssetsList() {
               {/* Self-service intents, pre-filled with this device so nobody
                   types an asset tag by hand. */}
               <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--color-border)] pt-3">
-                <Link
-                  href={`/requests/new?report=issue&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
-                  className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
-                >
-                  Report issue
-                </Link>
-                <Link
-                  href={`/requests/new?type=REPLACEMENT&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
-                  className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
-                >
-                  Replacement
-                </Link>
-                <Link
-                  href={`/requests/new?type=UPGRADE&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
-                  className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
-                >
-                  Upgrade
-                </Link>
+                {!mayRaise ? (
+                  <p className="text-xs text-[var(--color-content-muted)]">
+                    {raise.data?.reason ??
+                      'Requests are raised by IT and HR. Contact them and they will raise one for you.'}
+                  </p>
+                ) : null}
+                {mayRaise ? (
+                  <>
+                    <Link
+                      href={`/requests/new?report=issue&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
+                      className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
+                    >
+                      Report issue
+                    </Link>
+                    <Link
+                      href={`/requests/new?type=REPLACEMENT&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
+                      className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
+                    >
+                      Replacement
+                    </Link>
+                    <Link
+                      href={`/requests/new?type=UPGRADE&about=${encodeURIComponent(`${asset.assetTag} ${asset.name}`)}`}
+                      className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"
+                    >
+                      Upgrade
+                    </Link>
+                  </>
+                ) : null}
               </div>
             </Card>
           ))}
