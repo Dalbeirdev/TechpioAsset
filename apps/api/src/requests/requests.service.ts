@@ -850,6 +850,7 @@ export class RequestsService {
         requestId: id,
         companyId: actor.companyId,
         requesterManagerId: requesterProfile?.managerId ?? null,
+        requesterId: request.requesterId,
       });
 
       // steps.length > 0 and the last step is never skipped, so a current step
@@ -924,17 +925,16 @@ export class RequestsService {
     });
     if (!approval) return;
 
-    // The requester never appears: they cannot approve their own request
-    // (SoD), so "waiting on you" would be a lie in their inbox.
-    const recipients = (
-      await this.resolveStepApprovers(this.prisma.client, {
-        companyId,
-        approverType: approval.approverType,
-        approverId: approval.approverId,
-        approverRoleId: approval.approverRoleId,
-        requesterManagerId: approval.request.requester.profile?.managerId ?? null,
-      })
-    ).filter((userId) => userId !== approval.request.requesterId);
+    // resolveStepApprovers already excludes the requester, so "waiting on you"
+    // can never land in the inbox of the person who raised it.
+    const recipients = await this.resolveStepApprovers(this.prisma.client, {
+      companyId,
+      approverType: approval.approverType,
+      approverId: approval.approverId,
+      approverRoleId: approval.approverRoleId,
+      requesterManagerId: approval.request.requester.profile?.managerId ?? null,
+      requesterId: approval.request.requesterId,
+    });
 
     // An approval nobody will ever see is a stalled request wearing a clean
     // status. When the step resolves to zero recipients (a role with no
@@ -1129,6 +1129,7 @@ export class RequestsService {
         requestId: id,
         companyId: actor.companyId,
         requesterManagerId: approval.request.requester.profile?.managerId ?? null,
+        requesterId: approval.request.requesterId,
       });
     });
 
@@ -1453,7 +1454,12 @@ export class RequestsService {
    */
   private async promoteUntilStaffed(
     tx: Tx,
-    ctx: { requestId: string; companyId: string; requesterManagerId: string | null },
+    ctx: {
+      requestId: string;
+      companyId: string;
+      requesterManagerId: string | null;
+      requesterId: string;
+    },
   ) {
     const skipped: string[] = [];
     for (;;) {
@@ -1472,6 +1478,7 @@ export class RequestsService {
         approverId: next.approverId,
         approverRoleId: next.approverRoleId,
         requesterManagerId: ctx.requesterManagerId,
+        requesterId: ctx.requesterId,
       });
 
       if (approvers.length === 0 && waiting.length > 1) {
@@ -1481,7 +1488,7 @@ export class RequestsService {
             decision: ApprovalDecision.SKIPPED,
             decidedAt: new Date(),
             comment: next.approverRole
-              ? `Skipped automatically — nobody holds the ${next.approverRole.name} role.`
+              ? `Skipped automatically — nobody eligible holds the ${next.approverRole.name} role.`
               : 'Skipped automatically — this step has no approver.',
           },
         });
@@ -1510,6 +1517,7 @@ export class RequestsService {
       approverId: approval.approverId,
       approverRoleId: approval.approverRoleId,
       requesterManagerId: approval.request.requester.profile?.managerId ?? null,
+      requesterId: approval.request.requesterId,
     });
   }
 
@@ -1530,12 +1538,21 @@ export class RequestsService {
       approverId: string | null;
       approverRoleId: string | null;
       requesterManagerId: string | null;
+      /** Excluded from the result: segregation of duties forbids self-approval. */
+      requesterId: string;
     },
   ): Promise<string[]> {
-    if (step.approverId) return [step.approverId];
+    // The requester is never an approver of their own request, whatever role
+    // they hold (BR-04, enforced in canApproveStep). Excluded here so every
+    // caller agrees: an IT team of one cannot approve their own IT step, so a
+    // step staffed only by the requester counts as unstaffed - it must skip,
+    // not sit pending on somebody the server will refuse.
+    const notRequester = (ids: string[]) => ids.filter((id) => id !== step.requesterId);
+
+    if (step.approverId) return notRequester([step.approverId]);
 
     if (step.approverType === 'LINE_MANAGER') {
-      if (step.requesterManagerId) return [step.requesterManagerId];
+      if (step.requesterManagerId) return notRequester([step.requesterManagerId]);
       const managers = await db.userRole.findMany({
         where: {
           role: { companyId: step.companyId, key: 'MANAGER' },
@@ -1544,7 +1561,7 @@ export class RequestsService {
         select: { userId: true },
         take: 25,
       });
-      return managers.map((m) => m.userId);
+      return notRequester(managers.map((m) => m.userId));
     }
 
     if (step.approverRoleId) {
@@ -1553,7 +1570,7 @@ export class RequestsService {
         select: { userId: true },
         take: 25,
       });
-      return holders.map((h) => h.userId);
+      return notRequester(holders.map((h) => h.userId));
     }
     return [];
   }

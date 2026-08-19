@@ -186,9 +186,56 @@ describe('steps nobody staffs', () => {
     const steps = detail.body.data.approvals as { stepName: string; decision: string; comment: string | null }[];
     const ghost = steps.find((a) => a.stepName === 'Ghost review')!;
     expect(ghost.decision).toBe('SKIPPED');
-    expect(ghost.comment).toContain('nobody holds');
+    expect(ghost.comment).toContain('nobody eligible holds');
 
     // Landed with finance, who can act.
+    expect(detail.body.data.canDecide).toBe(true);
+  });
+
+  it('a step staffed only by the requester counts as unstaffed and skips', async () => {
+    // The one-person-IT-team case, found while deciding who to grant IT
+    // Administrator to: if the sole holder of the approving role is the person
+    // who raised the request, segregation of duties blocks them - so the step
+    // must skip, not sit pending on somebody the server will refuse.
+    const role = await prisma.client.role.create({
+      data: {
+        companyId: s.superAdmin.user.companyId,
+        key: 'SOLO_REQUESTER_ROLE',
+        name: 'Solo requester role',
+        isSystem: false,
+      },
+    });
+    fixtures.roleIds.push(role.id);
+    await prisma.client.userRole.create({
+      data: { userId: s.employee.user.id, roleId: role.id },
+    });
+
+    const financeRole = await prisma.client.role.findFirstOrThrow({
+      where: { companyId: s.superAdmin.user.companyId, key: 'FINANCE' },
+    });
+    const definition = await prisma.client.workflowDefinition.create({
+      data: {
+        companyId: s.superAdmin.user.companyId,
+        key: 'fixture-solo-requester',
+        name: 'Fixture: solo requester',
+        requestType: 'RETURN',
+        isActive: true,
+        steps: {
+          create: [
+            { stepOrder: 1, name: 'Solo review', approverType: 'ROLE', approverRoleId: role.id },
+            { stepOrder: 2, name: 'Finance approval', approverType: 'ROLE', approverRoleId: financeRole.id },
+          ],
+        },
+      },
+    });
+    fixtures.definitionIds.push(definition.id);
+
+    const id = await raise('RETURN');
+
+    const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.finance));
+    const steps = detail.body.data.approvals as { stepName: string; decision: string }[];
+    expect(steps.find((a) => a.stepName === 'Solo review')!.decision).toBe('SKIPPED');
+    // ...and it landed on somebody who genuinely can act.
     expect(detail.body.data.canDecide).toBe(true);
   });
 
