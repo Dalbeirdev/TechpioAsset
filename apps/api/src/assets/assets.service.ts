@@ -19,6 +19,7 @@ import {
   IllegalTransitionError,
   assetStatusMachine,
   ASSET_STATUSES_ASSIGNABLE,
+  ASSET_STATUSES_IN_EMPLOYEE_CUSTODY,
   detectWarrantyVendor,
   PERMISSIONS,
   requiresSerialNumber,
@@ -665,9 +666,12 @@ export class AssetsService {
     }
 
     // Status changes go through the state machine even on a general update, so
-    // there is no back door around the transition rules.
+    // there is no back door around the transition rules - nor around the
+    // custody rule: an edit cannot declare an asset assigned any more than the
+    // status menu can.
     if (input.status && input.status !== before.status) {
       assertTransition(assetStatusMachine, before.status as AssetStatus, input.status);
+      await this.assertCustodyMatchesStatus(id, input.status);
     }
 
     // Price changes never ride along a general edit — they go through setPrice,
@@ -742,6 +746,48 @@ export class AssetsService {
    * DAMAGED. Anything else (disposing of it, marking it available again) is a
    * decision for whoever manages the fleet, and still needs the permission.
    */
+  /**
+   * Custody statuses cannot be declared, only earned (v2.24).
+   *
+   * "Assigned" is a statement that somebody holds the device, and the
+   * assignment record is what makes it true - it is what "Assigned to" reads,
+   * what the holder's My assets lists, and what offboarding checks. A status
+   * set to ASSIGNED by hand, with no record behind it, produced an asset that
+   * was simultaneously "Assigned" and "Assigned to: Unassigned" - each half
+   * reading a different source of truth.
+   *
+   * The real flows are untouched: assign, return and acknowledge write status
+   * and record in one transaction and never pass through here. This guards only
+   * the manual paths - the status menu, bulk status, a general edit.
+   */
+  private async assertCustodyMatchesStatus(id: string, next: AssetStatus): Promise<void> {
+    const custody = ASSET_STATUSES_IN_EMPLOYEE_CUSTODY.includes(next);
+    if (!custody && next !== 'RETURNED') return;
+
+    const open = await this.prisma.client.assetAssignment.findFirst({
+      where: { assetId: id, returnedAt: null },
+      select: { id: true },
+    });
+
+    if (custody && !open) {
+      throw new AppError(
+        'ILLEGAL_STATE_TRANSITION',
+        'Nobody holds this asset, so it cannot be marked as assigned or in use. ' +
+          'Use the Assign action instead - it records who has the device.',
+      );
+    }
+    // The mirror image: "returned" while somebody still holds it would leave the
+    // assignment open, the holder still shown, and the asset assignable to a
+    // second person while the first never gave it back.
+    if (next === 'RETURNED' && open) {
+      throw new AppError(
+        'ILLEGAL_STATE_TRANSITION',
+        'Somebody still holds this asset. Use the Return action instead - it records ' +
+          'the hand-back and the condition it came back in.',
+      );
+    }
+  }
+
   async changeStatus(actor: AuthUser, id: string, status: AssetStatus, reason?: string) {
     const before = await this.loadForWrite(actor, id);
 
@@ -758,6 +804,7 @@ export class AssetsService {
     }
 
     assertTransition(assetStatusMachine, before.status as AssetStatus, status);
+    await this.assertCustodyMatchesStatus(id, status);
 
     const after = await this.prisma.client.asset.update({
       where: { id },

@@ -14,6 +14,7 @@ import {
 } from '@techpioasset/ui-tokens';
 import {
   ASSET_STATUSES,
+  ASSET_STATUSES_IN_EMPLOYEE_CUSTODY,
   LIFECYCLE_STATES,
   AVAILABILITY_STATES,
   OWNERSHIP_TYPES,
@@ -367,7 +368,15 @@ function AssetsTable() {
               className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
             >
               <option value="">Set status to…</option>
-              {ASSET_STATUSES.map((value) => (
+              {/* No custody statuses here: "Assigned" and "In use" are earned
+                  through the Assign flow, which records who holds the device -
+                  a bulk dropdown can only declare them, and a declared one is an
+                  asset assigned to nobody. RETURNED likewise belongs to the
+                  Return action, which closes the assignment it ends. */}
+              {ASSET_STATUSES.filter(
+                (value) =>
+                  value !== 'RETURNED' && !ASSET_STATUSES_IN_EMPLOYEE_CUSTODY.includes(value),
+              ).map((value) => (
                 <option key={value} value={value}>
                   {ASSET_STATUS_TOKENS[value].label}
                 </option>

@@ -7,7 +7,12 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ASSET_STATUSES, ASSET_CONDITIONS, ASSET_TYPES_BY_KEY } from '@techpioasset/domain';
+import {
+  ASSET_STATUSES,
+  ASSET_STATUSES_IN_EMPLOYEE_CUSTODY,
+  ASSET_CONDITIONS,
+  ASSET_TYPES_BY_KEY,
+} from '@techpioasset/domain';
 import { ASSET_STATUS_TOKENS, CONDITION_TOKENS } from '@techpioasset/ui-tokens';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
@@ -498,7 +503,15 @@ function EditAssetForm({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {ASSET_STATUSES.map((s) => (
+                        {/* Custody statuses are earned through Assign, not
+                            declared here - offering "Assigned" on an edit
+                            created assets that were "Assigned" to nobody. The
+                            asset's current status always stays listed so an
+                            untouched form round-trips. */}
+                        {ASSET_STATUSES.filter(
+                          (s) =>
+                            s === asset.status || !ASSET_STATUSES_IN_EMPLOYEE_CUSTODY.includes(s),
+                        ).map((s) => (
                           <SelectItem key={s} value={s}>
                             {ASSET_STATUS_TOKENS[s].label}
                           </SelectItem>
