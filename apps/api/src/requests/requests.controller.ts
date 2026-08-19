@@ -182,6 +182,19 @@ export class RequestsController {
     return this.requests.submit(actor, id);
   }
 
+  @Post(':id/review')
+  @RequirePermissions(PERMISSIONS.REQUESTS_APPROVE)
+  @ApiOperation({
+    summary: 'Mark the current step as under review',
+    description:
+      'The approver of the current step signals they are looking at the request without deciding ' +
+      'yet. Informational only: the chain shows "Under review" instead of "Awaiting decision" and ' +
+      'the requester is notified. Idempotent - the first reviewer sticks.',
+  })
+  startReview(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.requests.startReview(actor, id);
+  }
+
   @Post(':id/decision')
   @RequirePermissions(PERMISSIONS.REQUESTS_APPROVE)
   @ApiOperation({

@@ -21,6 +21,8 @@ interface Approval {
   decision: 'WAITING' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED' | 'DELEGATED';
   decidedAt: string | null;
   comment: string | null;
+  reviewStartedAt: string | null;
+  reviewStartedBy: { id: string; profile: { firstName: string; lastName: string } | null } | null;
   approver: {
     id: string;
     email: string;
@@ -191,6 +193,15 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
       setActionError(message);
       toast.error(message);
     },
+  });
+
+  const startReview = useMutation({
+    mutationFn: () => apiFetch(`/requests/${id}/review`, { method: 'POST' }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['request', id] });
+      toast.success('Marked as under review — the requester has been told.');
+    },
+    onError: () => toast.error('Could not mark this as under review.'),
   });
 
   if (isPending) return <Skeleton className="h-96" />;
@@ -382,7 +393,21 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                 </p>
               ) : null}
 
-              <div className="mt-3 flex justify-end gap-2">
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                {/* "I am looking at it" without deciding - the requester sees
+                    "Under review" instead of a silence indistinguishable from
+                    neglect. Gone once claimed: it is a one-way signal. */}
+                {!currentStep?.reviewStartedAt ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={startReview.isPending}
+                    onClick={() => startReview.mutate()}
+                    className="mr-auto"
+                  >
+                    Mark as under review
+                  </Button>
+                ) : null}
                 <Button
                   variant="danger"
                   size="sm"
@@ -623,7 +648,13 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                       {approval.decision === 'WAITING'
                         ? 'Queued'
                         : approval.decision === 'PENDING'
-                          ? 'Awaiting decision'
+                          ? approval.reviewStartedAt
+                            ? `Under review${
+                                approval.reviewStartedBy?.profile
+                                  ? ` by ${approval.reviewStartedBy.profile.firstName} ${approval.reviewStartedBy.profile.lastName}`
+                                  : ''
+                              } since ${new Date(approval.reviewStartedAt).toLocaleDateString()}`
+                            : 'Awaiting decision'
                           : `${approval.decision.charAt(0)}${approval.decision.slice(1).toLowerCase()}${
                               approval.approver ? ` by ${personName(approval.approver)}` : ''
                             }`}
