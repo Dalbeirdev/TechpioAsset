@@ -11,6 +11,7 @@ import {
   LIFECYCLE_STATE_TOKENS,
   AVAILABILITY_STATE_TOKENS,
   OWNERSHIP_TYPE_TOKENS,
+  type StatusToken,
 } from '@techpioasset/ui-tokens';
 import {
   ASSET_TYPES_BY_KEY, isAgentReportedType, warrantySource,
@@ -132,6 +133,16 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 /** Whole months between two dates, floored — for age and warranty-remaining. */
+/** Drop badges whose label an earlier badge already carries. */
+function dedupeBadges(tokens: (StatusToken | null)[]): StatusToken[] {
+  const seen = new Set<string>();
+  return tokens.filter((t): t is StatusToken => {
+    if (!t || seen.has(t.label)) return false;
+    seen.add(t.label);
+    return true;
+  });
+}
+
 function monthsBetween(from: Date, to: Date): number {
   return Math.max(
     0,
@@ -251,13 +262,19 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
         />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight">{data.name}</h1>
-          <StatusBadge token={ASSET_STATUS_TOKENS[data.status]} size="sm" />
-          {data.lifecycleState ? (
-            <StatusBadge token={LIFECYCLE_STATE_TOKENS[data.lifecycleState]} size="sm" />
-          ) : null}
-          {data.availabilityState ? (
-            <StatusBadge token={AVAILABILITY_STATE_TOKENS[data.availabilityState]} size="sm" />
-          ) : null}
+          {/* Status, lifecycle and availability are three dimensions that often
+              agree - ASSIGNED derives availability "Assigned", so printing all
+              three verbatim reads "Assigned · Deployed · Assigned", which looks
+              like a bug, not three answers. Same dedupe the mobile app applies:
+              each dimension still gets its pill, but a label already on screen
+              is not repeated. */}
+          {dedupeBadges([
+            ASSET_STATUS_TOKENS[data.status],
+            data.lifecycleState ? LIFECYCLE_STATE_TOKENS[data.lifecycleState] : null,
+            data.availabilityState ? AVAILABILITY_STATE_TOKENS[data.availabilityState] : null,
+          ]).map((token) => (
+            <StatusBadge key={token.label} token={token} size="sm" />
+          ))}
           {data.ownershipType ? (
             <StatusBadge
               token={OWNERSHIP_TYPE_TOKENS[data.ownershipType]}
