@@ -4,10 +4,11 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Boxes, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { ApiError, apiFetch } from '@/lib/api-client';
 import { Button, Card } from '@/components/ui';
 import { PasswordInput } from '@/components/ui/password-input';
+import { BrandLockup } from '@/components/brand';
 
 /**
  * Where an invitation link lands (v2.12). Public by necessity - the person
@@ -45,11 +46,10 @@ function AcceptInviteForm() {
   return (
     <main className="grid min-h-dvh place-items-center bg-[var(--color-surface-sunken)] p-4">
       <Card className="w-full max-w-sm p-6">
-        <div className="mb-4 flex items-center gap-2 font-semibold tracking-tight">
-          <span className="grid size-8 place-items-center rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-contrast)]">
-            <Boxes aria-hidden="true" className="size-4" />
-          </span>
-          PioAssets
+        {/* Deliberately not a link: the invitation token lives in this URL, and
+            a stray trip to the home page loses it. */}
+        <div className="mb-4">
+          <BrandLockup height={28} />
         </div>
 
         {done ? (
