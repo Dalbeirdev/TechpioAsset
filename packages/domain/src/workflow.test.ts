@@ -141,13 +141,38 @@ describe('canApproveStep', () => {
     ).toBe(false);
   });
 
-  it('denies a line-manager step when the requester has no manager', () => {
+  // v2.24 - with no line manager recorded, the Manager ROLE stands in. The
+  // old rule (deny outright) left every request from a manager-less profile
+  // stalled forever; found in production, where no profile had one.
+  it('falls back to the Manager role when the requester has no manager', () => {
     expect(
       canApproveStep({
         step: step({ approverType: 'LINE_MANAGER' }),
         actorId: 'mgr',
         actorRoleKeys: ['MANAGER'],
         requesterManagerId: null,
+      }),
+    ).toBe(true);
+  });
+
+  it('the fallback is only for Manager-role holders', () => {
+    expect(
+      canApproveStep({
+        step: step({ approverType: 'LINE_MANAGER' }),
+        actorId: 'someone',
+        actorRoleKeys: ['HR', 'FINANCE'],
+        requesterManagerId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('a recorded line manager keeps exclusive claim - the role does not override it', () => {
+    expect(
+      canApproveStep({
+        step: step({ approverType: 'LINE_MANAGER' }),
+        actorId: 'other-manager',
+        actorRoleKeys: ['MANAGER'],
+        requesterManagerId: 'the-real-manager',
       }),
     ).toBe(false);
   });

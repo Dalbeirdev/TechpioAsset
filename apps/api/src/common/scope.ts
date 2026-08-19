@@ -66,6 +66,14 @@ export function requestScopeFilter(user: AuthUser): Prisma.AssetRequestWhereInpu
           { beneficiaryId: user.id },
           { managerId: user.id },
           { requester: { profile: { managerId: user.id } } },
+          // v2.24 - the Manager-role fallback. With no line manager recorded,
+          // the manager step goes to the Manager role; a scope that then hides
+          // those very requests would hand the role an inbox it cannot open.
+          // Visibility follows responsibility: only requests from manager-less
+          // requesters, and only for Manager-role holders.
+          ...(user.roles.includes('MANAGER')
+            ? [{ requester: { profile: { managerId: null } } } as const]
+            : []),
         ],
       };
 

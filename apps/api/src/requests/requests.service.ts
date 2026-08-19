@@ -1,5 +1,5 @@
 import { Logger, Injectable } from '@nestjs/common';
-import { ApprovalDecision, AuditAction, Prisma, type RequestType } from '@prisma/client';
+import { ApprovalDecision, AuditAction, Prisma, type NotificationType, type RequestType } from '@prisma/client';
 import type { AuthUser, CreateRequestInput, RequestListQuery } from '@techpioasset/contracts';
 import {
   EQUIPMENT_CATALOG,
@@ -24,6 +24,12 @@ import { WebhooksService } from '../integrations/webhooks.service.js';
 import { WorkflowService } from './workflow.service.js';
 
 const SORTABLE = ['createdAt', 'requestNumber', 'status', 'priority', 'requiredBy'] as const;
+
+/** The client shape Prisma passes to interactive-transaction callbacks. */
+type Tx = Omit<
+  PrismaService['client'],
+  '$connect' | '$disconnect' | '$on' | '$use' | '$transaction' | '$extends'
+>;
 
 @Injectable()
 export class RequestsService {
@@ -103,6 +109,16 @@ export class RequestsService {
                   // Without this branch, manager approvals never appear in an
                   // inbox and simply stall.
                   { approverType: 'LINE_MANAGER', request: { managerId: actor.id } },
+                  // v2.24 - no manager recorded: the Manager role stands in, so
+                  // those requests land in every Manager-role holder's inbox.
+                  ...(actor.roles.includes('MANAGER')
+                    ? [
+                        {
+                          approverType: 'LINE_MANAGER' as const,
+                          request: { managerId: null, requesterId: { not: actor.id } },
+                        },
+                      ]
+                    : []),
                 ],
               },
             },
@@ -370,7 +386,7 @@ export class RequestsService {
         people.length > 0
           ? null
           : step.approverType === 'LINE_MANAGER'
-            ? 'No manager is recorded for the person who raised this, so there is nobody to approve the step.'
+            ? 'The requester has no manager recorded and nobody holds the Manager role, so there is nobody to approve the step.'
             : role
               ? `Nobody holds the ${role.name} role, so there is nobody to approve this step.`
               : 'This step has no approver assigned, so there is nobody to approve it.',
@@ -807,14 +823,18 @@ export class RequestsService {
       return this.findOne(actor, id);
     }
 
-    const firstStatus = this.workflow.statusForStep(steps[0]!);
+    const requesterProfile = await this.prisma.client.userProfile.findUnique({
+      where: { userId: request.requesterId },
+      select: { managerId: true },
+    });
 
-    await this.prisma.client.$transaction(async (tx) => {
+    const promoted = await this.prisma.client.$transaction(async (tx) => {
       await tx.requestApproval.createMany({
-        // Only the first step is PENDING; the rest queue as WAITING. Creating
-        // them all as PENDING would put the request in every future approver's
-        // inbox the moment it was submitted.
-        data: steps.map((step, index) => ({
+        // Everything queues as WAITING; promoteUntilStaffed picks the first
+        // step somebody can actually act on and skips past unstaffed ones, so
+        // a chain whose opening step points at an empty role does not stall on
+        // the day it is raised.
+        data: steps.map((step) => ({
           requestId: id,
           stepOrder: step.stepOrder,
           stepName: step.stepName,
@@ -822,24 +842,56 @@ export class RequestsService {
           approverRoleId: step.approverRoleId,
           approverId: step.approverId,
           slaDueAt: step.slaDueAt,
-          decision: index === 0 ? ApprovalDecision.PENDING : ApprovalDecision.WAITING,
+          decision: ApprovalDecision.WAITING,
         })),
       });
 
+      const result = await this.promoteUntilStaffed(tx, {
+        requestId: id,
+        companyId: actor.companyId,
+        requesterManagerId: requesterProfile?.managerId ?? null,
+      });
+
+      // steps.length > 0 and the last step is never skipped, so a current step
+      // always exists here.
+      const current = result.current!;
       await tx.assetRequest.update({
         where: { id },
         data: {
-          status: firstStatus,
+          status: this.workflow.statusForStep({
+            stepOrder: current.stepOrder,
+            stepName: current.stepName,
+            approverType: current.approverType,
+            approverRoleId: current.approverRoleId,
+            approverRoleKey: current.approverRole?.key ?? null,
+            approverId: current.approverId,
+            slaDueAt: current.slaDueAt,
+          }),
           submittedAt: new Date(),
           workflowDefinitionId: definitionId,
-          currentStepOrder: steps[0]!.stepOrder,
+          currentStepOrder: current.stepOrder,
           updatedById: actor.id,
           version: { increment: 1 },
         },
       });
+      return result;
     });
 
-    await this.recordSubmission(actor, id, request.requestNumber, firstStatus);
+    const submittedTo = await this.prisma.client.assetRequest.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    await this.recordSubmission(actor, id, request.requestNumber, submittedTo?.status ?? 'SUBMITTED');
+    if (promoted.skipped.length > 0) {
+      await this.audit.record({
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.REQUEST_SUBMITTED,
+        entityType: 'AssetRequest',
+        entityId: id,
+        newValues: { skippedSteps: promoted.skipped, reason: 'No approver holds these steps' },
+      });
+    }
     await this.notifyApprovers(actor.companyId, id, request.requestNumber);
 
     return this.findOne(actor, id);
@@ -872,20 +924,17 @@ export class RequestsService {
     });
     if (!approval) return;
 
-    const recipients: string[] = [];
-
-    if (approval.approverId) {
-      recipients.push(approval.approverId);
-    } else if (approval.approverType === 'LINE_MANAGER') {
-      const managerId = approval.request.requester.profile?.managerId;
-      if (managerId) recipients.push(managerId);
-    } else if (approval.approverRoleId) {
-      const holders = await this.prisma.client.userRole.findMany({
-        where: { roleId: approval.approverRoleId },
-        select: { userId: true },
-      });
-      recipients.push(...holders.map((h) => h.userId));
-    }
+    // The requester never appears: they cannot approve their own request
+    // (SoD), so "waiting on you" would be a lie in their inbox.
+    const recipients = (
+      await this.resolveStepApprovers(this.prisma.client, {
+        companyId,
+        approverType: approval.approverType,
+        approverId: approval.approverId,
+        approverRoleId: approval.approverRoleId,
+        requesterManagerId: approval.request.requester.profile?.managerId ?? null,
+      })
+    ).filter((userId) => userId !== approval.request.requesterId);
 
     // An approval nobody will ever see is a stalled request wearing a clean
     // status. When the step resolves to zero recipients (a role with no
@@ -1063,7 +1112,7 @@ export class RequestsService {
       return this.findOne(actor, id);
     }
 
-    const nextStep = await this.prisma.client.$transaction(async (tx) => {
+    const { current: nextStep, skipped } = await this.prisma.client.$transaction(async (tx) => {
       await tx.requestApproval.update({
         where: { id: approval.id },
         data: {
@@ -1074,21 +1123,13 @@ export class RequestsService {
         },
       });
 
-      // Promote the next queued step onto its approver's desk.
-      const next = await tx.requestApproval.findFirst({
-        where: { requestId: id, decision: ApprovalDecision.WAITING },
-        orderBy: { stepOrder: 'asc' },
-        include: { approverRole: true },
+      // Promote the next step somebody can act on; unstaffed ones skip with
+      // the reason written on the step.
+      return this.promoteUntilStaffed(tx, {
+        requestId: id,
+        companyId: actor.companyId,
+        requesterManagerId: approval.request.requester.profile?.managerId ?? null,
       });
-
-      if (next) {
-        await tx.requestApproval.update({
-          where: { id: next.id },
-          data: { decision: ApprovalDecision.PENDING },
-        });
-      }
-
-      return next;
     });
 
     const nextStatus: RequestStatus = nextStep
@@ -1121,12 +1162,32 @@ export class RequestsService {
       entityType: 'AssetRequest',
       entityId: id,
       previousValues: { status: request.status },
-      newValues: { status: nextStatus, step: approval.stepName },
+      newValues: {
+        status: nextStatus,
+        step: approval.stepName,
+        ...(skipped.length ? { skippedSteps: skipped } : {}),
+      },
       reason: comment,
     });
 
     if (nextStep) {
       await this.notifyApprovers(actor.companyId, id, request.requestNumber);
+      // The requester hears about EVERY move, not only the terminal one - a
+      // three-step chain that only ever emails at the end reads as two weeks
+      // of silence. Same type as the final approval, so it emails.
+      await this.notifications.notify({
+        companyId: actor.companyId,
+        userId: request.requesterId,
+        type: 'REQUEST_APPROVED',
+        title: `${request.requestNumber}: ${approval.stepName} approved`,
+        body:
+          `${approval.stepName} approved${comment ? ` — “${comment}”` : ''}.` +
+          (skipped.length ? ` ${skipped.join(', ')} skipped (nobody holds that role).` : '') +
+          ` Now with ${nextStep.stepName}.`,
+        linkPath: `/requests/${id}`,
+        entityType: 'AssetRequest',
+        entityId: id,
+      });
     } else {
       await this.notifications.notify({
         companyId: actor.companyId,
@@ -1240,13 +1301,44 @@ export class RequestsService {
       },
     });
 
-    if (status === 'READY_FOR_ASSIGNMENT') {
-      await this.notifications.notify({
-        companyId: actor.companyId,
-        userId: request.beneficiaryId ?? request.requesterId,
+    // v2.24 - every fulfilment move reaches the requester's inbox and email,
+    // not only "ready": a request that goes quiet between approval and handover
+    // reads as lost, and "where is it?" tickets follow.
+    const fulfilmentNote: Partial<Record<RequestStatus, { type: NotificationType; title: string; body: string }>> = {
+      INVENTORY_RESERVED: {
+        type: 'ASSET_READY',
+        title: `${request.requestNumber}: reserved from stock`,
+        body: 'Your equipment has been reserved from existing stock and is being prepared.',
+      },
+      ORDERED: {
+        type: 'ASSET_ORDERED',
+        title: `${request.requestNumber}: ordered`,
+        body: 'Your equipment has been ordered from the supplier.',
+      },
+      RECEIVED: {
+        type: 'ASSET_RECEIVED',
+        title: `${request.requestNumber}: arrived`,
+        body: 'Your equipment has arrived and is being booked in.',
+      },
+      READY_FOR_ASSIGNMENT: {
         type: 'ASSET_READY',
         title: `Ready for collection: ${request.requestNumber}`,
         body: 'Your equipment is ready.',
+      },
+      COMPLETED: {
+        type: 'REQUEST_APPROVED',
+        title: `${request.requestNumber}: completed`,
+        body: 'Your request is complete. If anything is not right, reply on the request.',
+      },
+    };
+    const note = fulfilmentNote[status];
+    if (note) {
+      await this.notifications.notify({
+        companyId: actor.companyId,
+        userId: request.beneficiaryId ?? request.requesterId,
+        type: note.type,
+        title: note.title,
+        body: note.body,
         linkPath: `/requests/${id}`,
         entityType: 'AssetRequest',
         entityId: id,
@@ -1350,6 +1442,61 @@ export class RequestsService {
 
   /** Who currently holds the pending approval step, resolved the same way the
    * submit-time notification resolves it. */
+  /**
+   * Moves the chain to the next step somebody can actually act on (v2.24).
+   *
+   * A step whose approver set is empty - a role nobody holds - is marked
+   * SKIPPED with the reason written on the step itself, and the chain moves
+   * on. The LAST remaining step is never skipped: however unstaffed, a request
+   * must end on a human decision, and for an empty role the deadlock-breaker
+   * in assertCanDecide already lets a user-manager supply it.
+   */
+  private async promoteUntilStaffed(
+    tx: Tx,
+    ctx: { requestId: string; companyId: string; requesterManagerId: string | null },
+  ) {
+    const skipped: string[] = [];
+    for (;;) {
+      const waiting = await tx.requestApproval.findMany({
+        where: { requestId: ctx.requestId, decision: ApprovalDecision.WAITING },
+        orderBy: { stepOrder: 'asc' },
+        take: 2,
+        include: { approverRole: true },
+      });
+      const next = waiting[0];
+      if (!next) return { current: null, skipped };
+
+      const approvers = await this.resolveStepApprovers(tx, {
+        companyId: ctx.companyId,
+        approverType: next.approverType,
+        approverId: next.approverId,
+        approverRoleId: next.approverRoleId,
+        requesterManagerId: ctx.requesterManagerId,
+      });
+
+      if (approvers.length === 0 && waiting.length > 1) {
+        await tx.requestApproval.update({
+          where: { id: next.id },
+          data: {
+            decision: ApprovalDecision.SKIPPED,
+            decidedAt: new Date(),
+            comment: next.approverRole
+              ? `Skipped automatically — nobody holds the ${next.approverRole.name} role.`
+              : 'Skipped automatically — this step has no approver.',
+          },
+        });
+        skipped.push(next.stepName);
+        continue;
+      }
+
+      await tx.requestApproval.update({
+        where: { id: next.id },
+        data: { decision: ApprovalDecision.PENDING },
+      });
+      return { current: next, skipped };
+    }
+  }
+
   private async pendingApproverIds(requestId: string): Promise<string[]> {
     const approval = await this.prisma.client.requestApproval.findFirst({
       where: { requestId, decision: ApprovalDecision.PENDING },
@@ -1357,14 +1504,52 @@ export class RequestsService {
       include: { request: { include: { requester: { include: { profile: true } } } } },
     });
     if (!approval) return [];
-    if (approval.approverId) return [approval.approverId];
-    if (approval.approverType === 'LINE_MANAGER') {
-      const managerId = approval.request.requester.profile?.managerId;
-      return managerId ? [managerId] : [];
+    return this.resolveStepApprovers(this.prisma.client, {
+      companyId: approval.request.companyId,
+      approverType: approval.approverType,
+      approverId: approval.approverId,
+      approverRoleId: approval.approverRoleId,
+      requesterManagerId: approval.request.requester.profile?.managerId ?? null,
+    });
+  }
+
+  /**
+   * Who can actually act on a step - the one resolution rule (v2.24).
+   *
+   * A LINE_MANAGER step goes to the recorded line manager; with none recorded
+   * it goes to every active holder of the Manager role, because most companies
+   * never fill in per-person managers and a step that resolves to nobody is a
+   * request that stalls forever wearing a clean status. Mirrors the domain's
+   * canApproveStep exactly - what this returns is who that function admits.
+   */
+  private async resolveStepApprovers(
+    db: Pick<Tx, 'userRole'>,
+    step: {
+      companyId: string;
+      approverType: string;
+      approverId: string | null;
+      approverRoleId: string | null;
+      requesterManagerId: string | null;
+    },
+  ): Promise<string[]> {
+    if (step.approverId) return [step.approverId];
+
+    if (step.approverType === 'LINE_MANAGER') {
+      if (step.requesterManagerId) return [step.requesterManagerId];
+      const managers = await db.userRole.findMany({
+        where: {
+          role: { companyId: step.companyId, key: 'MANAGER' },
+          user: { deletedAt: null, status: 'ACTIVE' },
+        },
+        select: { userId: true },
+        take: 25,
+      });
+      return managers.map((m) => m.userId);
     }
-    if (approval.approverRoleId) {
-      const holders = await this.prisma.client.userRole.findMany({
-        where: { roleId: approval.approverRoleId },
+
+    if (step.approverRoleId) {
+      const holders = await db.userRole.findMany({
+        where: { roleId: step.approverRoleId, user: { deletedAt: null, status: 'ACTIVE' } },
         select: { userId: true },
         take: 25,
       });

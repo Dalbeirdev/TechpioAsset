@@ -214,13 +214,27 @@ export default function RaisingARequestPage() {
         <Section icon={Send} title="What happens when you submit">
           <p>
             The request enters an approval chain your company configured. A step is either a role —
-            HR, IT, Office, Finance — or your own line manager. Each step is decided in turn: the
+            HR, IT, Office, Finance — or your manager. Each step is decided in turn: the
             next reviewer only sees the request once the one before them has agreed, so nobody is
             asked to approve something that may still be rejected upstream.
           </p>
           <p>
-            Approvers are notified by email and see it under <strong>Approvals</strong>. You get an
-            email at each decision, and the request page shows exactly who it is with right now.
+            <strong>The manager step needs no setup.</strong> If a line manager is recorded on your
+            profile, the request goes to them alone; if not, it goes to everyone who holds the
+            Manager role. Either way, somebody real receives it the moment you submit.
+          </p>
+          <p>
+            <strong>A step nobody staffs is skipped, not waited on.</strong> If a step points at a
+            role no account holds, the chain marks it “skipped — nobody holds this role” and moves
+            straight to the next reviewer. The one exception: the final step is never skipped, so
+            every request ends with a human decision.
+          </p>
+          <p>
+            Approvers are notified by email and see it under <strong>Requests → Awaiting me</strong>.
+            An approver can also mark your request <strong>under review</strong> — the chain then
+            shows “Under review by …” instead of a silent “awaiting decision”, so you can tell
+            progress from neglect. You get an email at <strong>every</strong> step: each approval
+            with the reviewer’s note, and each fulfilment move — ordered, arrived, ready, done.
           </p>
           <p>
             One request per thing: if you already have an open request for the same item, the second
@@ -259,11 +273,12 @@ export default function RaisingARequestPage() {
             has been decided, what is outstanding, and who it is sitting with.
           </p>
           <p>
-            If a request has not moved, the request page names the person or role it is waiting on.
-            When it says <strong>nobody can approve this right now</strong>, the chain is pointing at
-            somebody who does not exist yet — most often a line manager has not been recorded, or no
-            account holds the role that step needs. That is a configuration fix, not a delay: send
-            the request number to whoever administers PioAssets for your company.
+            If a request has not moved, the request page names the person or role it is waiting on
+            — or that they have started reviewing it. When it says{' '}
+            <strong>nobody can approve this right now</strong>, the final step of the chain points at
+            a role no account holds — earlier steps skip themselves, but the last one always waits
+            for a person. That is a configuration fix, not a delay: send the request number to
+            whoever administers PioAssets for your company.
           </p>
           <p>
             You can cancel your own request at any point before it is decided, and add a comment to

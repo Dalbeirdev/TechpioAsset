@@ -116,7 +116,12 @@ export function canApproveStep(input: {
     case 'USER':
       return step.approverUserId === actorId;
     case 'LINE_MANAGER':
-      return Boolean(input.requesterManagerId) && input.requesterManagerId === actorId;
+      // With a line manager recorded, only they may approve. Without one, the
+      // Manager ROLE stands in - most companies never fill in per-person
+      // managers, and a step that resolves to nobody is a request that stalls
+      // forever wearing a clean status.
+      if (input.requesterManagerId) return input.requesterManagerId === actorId;
+      return actorRoleKeys.includes('MANAGER');
     case 'DEPARTMENT_HEAD':
       return (
         Boolean(input.requesterDepartmentHeadId) && input.requesterDepartmentHeadId === actorId

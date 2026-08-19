@@ -42,6 +42,7 @@ interface PrintableRequest {
     id: string;
     stepName: string;
     decision: string;
+    reviewStartedAt: string | null;
     decidedAt: string | null;
     comment: string | null;
     approver: { profile: { firstName: string; lastName: string } | null } | null;
@@ -170,18 +171,26 @@ export default function RequestPrintPage({ params }: { params: Promise<{ id: str
                 <th className="py-1 pr-2">Step</th>
                 <th className="py-1 pr-2">Decision</th>
                 <th className="py-1 pr-2">By</th>
-                <th className="py-1">On</th>
+                <th className="py-1 pr-2">On</th>
+                {/* The reviewer's note is half the point of the trail - an
+                    approval without its reasoning prints as a rubber stamp. */}
+                <th className="py-1">Note</th>
               </tr>
             </thead>
             <tbody>
               {data.approvals.map((a) => (
                 <tr key={a.id} className="border-b border-neutral-200">
                   <td className="py-1.5 pr-2">{a.stepName}</td>
-                  <td className="py-1.5 pr-2">{label(a.decision)}</td>
+                  <td className="py-1.5 pr-2">
+                    {a.decision === 'PENDING' && a.reviewStartedAt
+                      ? 'Under review'
+                      : label(a.decision)}
+                  </td>
                   <td className="py-1.5 pr-2">{personName(a.approver as never)}</td>
-                  <td className="py-1.5">
+                  <td className="py-1.5 pr-2">
                     {a.decidedAt ? new Date(a.decidedAt).toLocaleDateString() : '—'}
                   </td>
+                  <td className="py-1.5">{a.comment ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
