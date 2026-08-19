@@ -365,21 +365,32 @@ export default function IntegrationsPage() {
                       : 'rounded-full border border-[var(--color-border-strong)] px-3 py-1 text-xs font-medium text-[var(--color-content-muted)] hover:bg-[var(--color-surface-sunken)]'
                   }
                 >
+                  <span aria-hidden="true">{active ? '✓ ' : '+ '}</span>
                   {event}
                 </button>
               );
             })}
           </div>
         </div>
-        <Button
-          className="justify-self-start"
-          size="sm"
-          loading={createWebhook.isPending}
-          disabled={!url.trim() || events.length === 0}
-          onClick={() => createWebhook.mutate()}
-        >
-          Register webhook
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            loading={createWebhook.isPending}
+            disabled={!url.trim() || events.length === 0}
+            onClick={() => createWebhook.mutate()}
+          >
+            Register webhook
+          </Button>
+          {!url.trim() || events.length === 0 ? (
+            <p className="text-xs text-[var(--color-content-muted)]">
+              {!url.trim() && events.length === 0
+                ? 'Enter the endpoint URL and pick at least one event.'
+                : !url.trim()
+                  ? 'Enter the endpoint URL.'
+                  : 'Pick at least one event to subscribe to.'}
+            </p>
+          ) : null}
+        </div>
       </Card>
 
       <Card>
