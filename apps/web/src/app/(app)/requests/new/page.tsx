@@ -223,6 +223,14 @@ function NewRequestForm() {
   // server refuses cost from anyone else regardless of what the form shows.
   const canEnterCost = can(PERMISSIONS.ASSETS_COST_READ);
 
+  // The same answer the server enforces with, so the page and the API cannot
+  // disagree about who may raise a request.
+  const raise = useQuery({
+    queryKey: ['can-create-request'],
+    queryFn: () => apiFetch<{ allowed: boolean; reason?: string }>('/requests/can-create'),
+    staleTime: 60_000,
+  });
+
   const form = useForm<RequestValues>({
     resolver: zodResolver(requestSchema),
     defaultValues: {
@@ -403,6 +411,48 @@ function NewRequestForm() {
   });
 
   const priorityDot = (value: string) => PRIORITIES.find((p) => p.value === value)?.dot;
+
+  // Asked before the form is offered, not after it is filled in. A company can
+  // restrict raising requests to IT and HR, and every "Upgrade", "Replacement"
+  // and "Report issue" button on My assets leads straight here - so without
+  // this an employee writes the whole thing out and is refused on submit.
+  if (raise.data && !raise.data.allowed) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <nav aria-label="Breadcrumb" className="text-sm">
+          <Link href="/requests" className="text-[var(--color-brand)]">
+            Requests
+          </Link>
+          <span className="mx-1.5 text-[var(--color-content-subtle)]">/</span>
+          <span className="text-[var(--color-content-muted)]">New Request</span>
+        </nav>
+        <Card className="mt-4 p-6">
+          <h1 className="text-lg font-semibold tracking-tight">You cannot raise this yourself</h1>
+          <p className="mt-2 text-sm text-[var(--color-content-muted)]">{raise.data.reason}</p>
+          {prefillAbout ? (
+            <p className="mt-3 rounded-[var(--radius-control)] bg-[var(--color-surface-sunken)] p-3 text-sm">
+              <span className="text-[var(--color-content-muted)]">Tell them it is about </span>
+              <span className="font-medium">{prefillAbout}</span>.
+            </p>
+          ) : null}
+          <div className="mt-4 flex gap-2">
+            <Link
+              href="/my-assets"
+              className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+            >
+              Back to my equipment
+            </Link>
+            <Link
+              href="/requests"
+              className="rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-surface-sunken)]"
+            >
+              See my requests
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl">
