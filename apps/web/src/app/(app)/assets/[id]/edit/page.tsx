@@ -84,6 +84,26 @@ type EditValues = z.infer<typeof editSchema>;
 
 const toDateInput = (value: string | null): string => (value ? value.slice(0, 10) : '');
 
+/** The asset's editable fields, in the shape the form holds them. */
+function formValues(asset: AssetDetail): EditValues {
+  return {
+    name: asset.name,
+    assetTag: asset.assetTag,
+    categoryId: asset.category?.id ?? '',
+    subcategoryId: asset.subcategory?.id ?? '',
+    brand: asset.brand ?? '',
+    model: asset.model ?? '',
+    serialNumber: asset.serialNumber ?? '',
+    macAddress: asset.macAddress ?? '',
+    imei: asset.imei ?? '',
+    officeId: asset.office?.id ?? '',
+    purchaseDate: toDateInput(asset.purchaseDate),
+    warrantyEndDate: toDateInput(asset.warrantyEndDate),
+    condition: asset.condition,
+    status: asset.status,
+  };
+}
+
 /**
  * The actual form. It only mounts once the asset, categories and offices are all
  * loaded, and initialises with defaultValues — so every Select's options and its
@@ -107,23 +127,19 @@ function EditAssetForm({
 
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
-    defaultValues: {
-      name: asset.name,
-      assetTag: asset.assetTag,
-      categoryId: asset.category?.id ?? '',
-      subcategoryId: asset.subcategory?.id ?? '',
-      brand: asset.brand ?? '',
-      model: asset.model ?? '',
-      serialNumber: asset.serialNumber ?? '',
-      macAddress: asset.macAddress ?? '',
-      imei: asset.imei ?? '',
-      officeId: asset.office?.id ?? '',
-      purchaseDate: toDateInput(asset.purchaseDate),
-      warrantyEndDate: toDateInput(asset.warrantyEndDate),
-      condition: asset.condition,
-      status: asset.status,
-    },
+    defaultValues: formValues(asset),
   });
+
+  // When a fresh copy of the asset arrives underneath the form (the refetch on
+  // mount, or the refetch a failed save triggers), bring its values in without
+  // discarding what the user has typed: fields they edited keep their edits,
+  // everything else updates to the server's latest. The version for the lock is
+  // read from the prop at save time, so it is always the fresh one.
+  // Keyed to the version alone on purpose: the reset should fire when a fresh
+  // copy arrives, not on every render that recreates the form object.
+  useEffect(() => {
+    form.reset(formValues(asset), { keepDirtyValues: true });
+  }, [asset.version]);
 
   const selectedCategory = categories.find((c) => c.id === form.watch('categoryId'));
   // v2.20 - same type-driven fields as the create form, pre-filled from the
@@ -173,10 +189,15 @@ function EditAssetForm({
         for (const [path, message] of Object.entries(caught.fieldErrors)) {
           form.setError(path as keyof EditValues, { message });
         }
+        if (caught.problem.status === 409) {
+          // Pull the latest copy; the version-keyed reset keeps the user's
+          // edits and re-arms the lock, so "save again" genuinely works.
+          void queryClient.invalidateQueries({ queryKey: ['asset', id] });
+        }
         form.setError('root', {
           message:
             caught.problem.status === 409
-              ? 'Someone else changed this asset while you were editing. Reload and try again.'
+              ? 'This asset changed since the form loaded. Its latest values have been brought in - your edits are kept. Review and save again.'
               : (caught.problem.detail ?? caught.problem.title),
         });
       } else {
@@ -559,6 +580,11 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
   const assetQuery = useQuery({
     queryKey: ['asset', id],
     queryFn: () => apiFetch<AssetDetail>(`/assets/${id}`),
+    // The form carries the asset's version for the optimistic lock, and the
+    // ['asset', id] cache is shared with the detail page - initialising from a
+    // 30-second-old copy made the very first save fail with "someone else
+    // changed this asset" when the someone was the same person, one page ago.
+    refetchOnMount: 'always',
   });
   const categoriesQuery = useQuery({
     queryKey: ['categories'],

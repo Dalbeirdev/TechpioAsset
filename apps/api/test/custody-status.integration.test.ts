@@ -142,7 +142,73 @@ describe('statuses on an asset somebody holds', () => {
   });
 });
 
+describe('the default status', () => {
+  it('is AVAILABLE when the caller names none - the phone form never does', async () => {
+    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const res = await api(app)
+      .post('/api/v1/assets')
+      .set(auth(s.itAdmin))
+      .send({ assetTag: `DFLT-${suffix}`, name: `Default status ${suffix}`, categoryId });
+
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+    created.push(res.body.data.id);
+    // DRAFT was the old default, and a Draft asset is a trap: it cannot be
+    // assigned until somebody notices and flips it.
+    expect(res.body.data.status).toBe('AVAILABLE');
+  });
+});
+
 describe('an asset already in the phantom state', () => {
+  it('goes straight to AVAILABLE in one step - nobody holds it, so nothing needs returning', async () => {
+    const id = await makeAsset();
+    await prisma.client.asset.update({
+      where: { id },
+      data: { status: 'ASSIGNED', lifecycleState: 'DEPLOYED' },
+    });
+
+    // ASSIGNED does not transition to AVAILABLE for a genuinely held asset -
+    // but with no assignment behind it, the row is treated as already returned,
+    // so the one obvious edit works.
+    const res = await api(app)
+      .post(`/api/v1/assets/${id}/status`)
+      .set(auth(s.itAdmin))
+      .send({ status: 'AVAILABLE' });
+
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+  });
+
+  it('goes straight to AVAILABLE through a general edit too', async () => {
+    const id = await makeAsset();
+    await prisma.client.asset.update({
+      where: { id },
+      data: { status: 'ASSIGNED', lifecycleState: 'DEPLOYED' },
+    });
+
+    const res = await api(app)
+      .patch(`/api/v1/assets/${id}`)
+      .set(auth(s.itAdmin))
+      .send({ status: 'AVAILABLE' });
+
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+  });
+
+  it('does not open that shortcut for an asset somebody genuinely holds', async () => {
+    const id = await makeAsset();
+    const assigned = await api(app)
+      .post(`/api/v1/assets/${id}/assign`)
+      .set(auth(s.itAdmin))
+      .send({ userId: s.employee.user.id, conditionOut: 'GOOD' });
+    expect(assigned.status).toBeLessThan(300);
+
+    // Held means the Return flow is the only way back to the shelf.
+    const res = await api(app)
+      .post(`/api/v1/assets/${id}/status`)
+      .set(auth(s.itAdmin))
+      .send({ status: 'AVAILABLE' });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
   it('can be walked back out: RETURNED, then AVAILABLE, then assigned properly', async () => {
     const id = await makeAsset();
     // Recreate the production defect directly - the API no longer produces it.
