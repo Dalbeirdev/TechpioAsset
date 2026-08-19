@@ -136,9 +136,9 @@ export default function HelpScreen() {
       <Card style={{ padding: 0, marginBottom: spacing.xl }}>
         <LinkRow
           icon="book-outline"
-          label="User guide"
-          detail="The full walkthrough, as a PDF. Opens in your browser."
-          onPress={() => void Linking.openURL('https://pioassets.com/docs/user-guide.pdf')}
+          label="Guides"
+          detail="Raising a request, roles, adding assets. Opens in your browser."
+          onPress={() => void Linking.openURL('https://pioassets.com/guides')}
           last
         />
       </Card>
