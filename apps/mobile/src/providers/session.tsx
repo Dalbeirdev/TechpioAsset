@@ -37,7 +37,9 @@ const tokenStore = new SecureTokenStore();
 // the dev machine's LAN IP. EXPO_PUBLIC_API_URL (inlined by Metro at build time)
 // lets a device run point at it without editing committed config; the app.json
 // value and the localhost fallback keep simulator/web runs working unchanged.
-const apiUrl =
+// Exported so screens that run before there is a session - forgotten password -
+// reach the same host rather than resolving it a second time and drifting.
+export const apiUrl =
   process.env.EXPO_PUBLIC_API_URL ??
   (Constants.expoConfig?.extra?.apiUrl as string) ??
   'http://localhost:3001';
