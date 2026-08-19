@@ -415,11 +415,18 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                 Roles
               </legend>
               <div className="mt-2 grid grid-cols-2 gap-1.5">
-                {roleOptions.map((r) => (
+                {/* Super Admin is not an option: there is exactly one, and the
+                    server refuses to grant it. For the account that holds it,
+                    the box renders ticked and locked - the same server refuses
+                    to orphan the tenant by removing it. */}
+                {roleOptions
+                  .filter((r) => r.key !== 'SUPER_ADMIN' || roleKeys.includes('SUPER_ADMIN'))
+                  .map((r) => (
                   <label key={r.key} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
                       checked={roleKeys.includes(r.key)}
+                      disabled={r.key === 'SUPER_ADMIN'}
                       onChange={() => toggleRole(r.key)}
                       className="size-4 rounded border-[var(--color-border-strong)]"
                     />
@@ -807,7 +814,11 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
                 </legend>
                 {isFullManager ? (
                   <div className="mt-2 grid grid-cols-2 gap-1.5">
-                    {roleOptions.map((r) => (
+                    {/* No Super Admin here either: an invitation can never
+                        create a second one. */}
+                    {roleOptions
+                      .filter((r) => r.key !== 'SUPER_ADMIN')
+                      .map((r) => (
                       <label key={r.key} className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
