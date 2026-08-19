@@ -137,6 +137,14 @@ export class AuthService {
       data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
 
+    // v2.24: the Super Admin account holds one session at a time. Revoked
+    // before the new tokens are issued, so this sign-in is the only survivor -
+    // every other device is signed out at its next refresh. The role is the
+    // tenant's master key; two concurrent copies of it is one too many.
+    if (user.roles.some((r) => r.role.key === 'SUPER_ADMIN')) {
+      await this.tokens.revokeAllForUser(user.id, 'SUPER_ADMIN_SINGLE_SESSION');
+    }
+
     const authUser = await this.buildAuthUser(user.id);
     const issued = await this.tokens.issue({
       userId: user.id,
@@ -192,6 +200,12 @@ export class AuthService {
       where: { id: user.id },
       data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
+
+    // Same single-session rule as the password path: however the Super Admin
+    // arrives, only one copy of the master key is ever live.
+    if (user.roles.some((r) => r.role.key === 'SUPER_ADMIN')) {
+      await this.tokens.revokeAllForUser(user.id, 'SUPER_ADMIN_SINGLE_SESSION');
+    }
 
     const authUser = await this.buildAuthUser(user.id);
     const issued = await this.tokens.issue({

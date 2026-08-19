@@ -340,6 +340,25 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * v2.24 - there is exactly one Super Admin, and the role cannot be granted.
+   *
+   * The floor below stops the company losing its last Super Admin; this is the
+   * ceiling: while an active Super Admin exists, nobody else can be given the
+   * role - not through a role edit and not on an invitation. Checked against
+   * ACTIVE holders rather than stated as an absolute, so if the sole holder is
+   * ever lost through some path the guards did not foresee, granting becomes
+   * possible again instead of locking the tenant out forever.
+   */
+  private async assertSuperAdminGrantAllowed(companyId: string): Promise<void> {
+    if ((await this.activeSuperAdminCount(companyId)) >= 1) {
+      throw new AppError('VALIDATION_FAILED', 'There is exactly one Super Admin', {
+        detail:
+          'The Super Admin role cannot be granted to another account while the current Super Admin is active.',
+      });
+    }
+  }
+
   /** How many active Super Admins the company has — the floor we must not cross. */
   private async activeSuperAdminCount(companyId: string): Promise<number> {
     return this.prisma.client.user.count({
@@ -370,6 +389,10 @@ export class UsersService {
         detail: 'Grant Super Admin to another active user before removing it from this one.',
       });
     }
+
+    const gainingSuperAdmin =
+      !currentKeys.includes('SUPER_ADMIN') && nextKeys.includes('SUPER_ADMIN');
+    if (gainingSuperAdmin) await this.assertSuperAdminGrantAllowed(actor.companyId);
 
     const roles = await this.prisma.client.role.findMany({
       where: { companyId: actor.companyId, key: { in: nextKeys } },
@@ -592,6 +615,9 @@ export class UsersService {
 
   async invite(actor: AuthUser, input: InviteUserInput) {
     this.assertMayInvite(actor, input.roleKeys);
+    if (input.roleKeys.includes('SUPER_ADMIN')) {
+      await this.assertSuperAdminGrantAllowed(actor.companyId);
+    }
     const existing = await this.prisma.client.user.findFirst({
       where: { companyId: actor.companyId, email: input.email },
       select: { id: true, deletedAt: true },
