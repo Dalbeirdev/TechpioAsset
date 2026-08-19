@@ -17,6 +17,8 @@ interface ApprovalStep {
   stepName: string;
   decision: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED';
   comment: string | null;
+  reviewStartedAt: string | null;
+  reviewStartedBy: { profile: { firstName: string | null; lastName: string | null } | null } | null;
   approver: {
     email: string;
     profile: { firstName: string | null; lastName: string | null } | null;
@@ -66,6 +68,19 @@ export default function RequestDetailScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function startReview() {
+    if (!request) return;
+    setBusy(true);
+    try {
+      await api.request(`/requests/${request.id}/review`, { method: 'POST' });
+      await load();
+    } catch {
+      Alert.alert('Could not mark this', 'You may no longer be the approver for this step.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function decide(decision: 'APPROVED' | 'REJECTED') {
     if (!request) return;
@@ -182,13 +197,27 @@ export default function RequestDetailScreen() {
                 <Text style={{ color: c.muted, fontSize: 12, fontStyle: 'italic' }}>“{step.comment}”</Text>
               ) : null}
             </View>
-            <Text style={{ color: c.muted, fontSize: 12, fontWeight: '600' }}>{decisionLabel(step.decision)}</Text>
+            <Text style={{ color: c.muted, fontSize: 12, fontWeight: '600' }}>
+              {step.decision === 'PENDING' && step.reviewStartedAt
+                ? `Under review${step.reviewStartedBy?.profile?.firstName ? ` · ${step.reviewStartedBy.profile.firstName}` : ''}`
+                : decisionLabel(step.decision)}
+            </Text>
           </View>
         ))}
       </Card>
 
       {request.canDecide ? (
         <Card>
+          {!request.approvals.some((a) => a.decision === 'PENDING' && a.reviewStartedAt) ? (
+            <Button
+              label="Mark as under review"
+              icon="eye-outline"
+              variant="secondary"
+              onPress={() => void startReview()}
+              disabled={busy}
+              style={{ marginBottom: spacing.md }}
+            />
+          ) : null}
           <Field
             label="Comment (required to reject)"
             placeholder="Add a note…"

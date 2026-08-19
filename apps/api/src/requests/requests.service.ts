@@ -221,6 +221,10 @@ export class RequestsService {
             decidedAt: true,
             comment: true,
             slaDueAt: true,
+            reviewStartedAt: true,
+            reviewStartedBy: {
+              select: { id: true, profile: { select: { firstName: true, lastName: true } } },
+            },
             approver: {
               select: {
                 id: true,
@@ -929,6 +933,59 @@ export class RequestsService {
   // ───────────────────────────────────────────────────────────────────────────
   // Decisions
   // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * v2.24 - "I have seen it, I am on it", without deciding.
+   *
+   * A PENDING step read "Awaiting decision" whether the approver had opened it
+   * or ignored it for a week, so requesters could not tell silence from
+   * progress. Marking the step under review changes only what the chain says -
+   * "Under review by X since Y" - never what anyone may do; approve and reject
+   * stay available exactly as before.
+   *
+   * Guarded by the same rule as a decision: only the current step's approver
+   * may claim it. First claim sticks - two HR people opening the same request
+   * do not overwrite each other - and asking again is a harmless no-op rather
+   * than an error, so a double-click costs nothing.
+   */
+  async startReview(actor: AuthUser, id: string) {
+    const request = await this.loadForWrite(actor, id);
+    const approval = await this.workflow.assertCanDecide({
+      requestId: id,
+      actorId: actor.id,
+      actorRoleKeys: actor.roles,
+    });
+
+    if (approval.reviewStartedAt) return this.findOne(actor, id);
+
+    await this.prisma.client.requestApproval.update({
+      where: { id: approval.id },
+      data: { reviewStartedAt: new Date(), reviewStartedById: actor.id },
+    });
+
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.REQUEST_REVIEW_STARTED,
+      entityType: 'AssetRequest',
+      entityId: id,
+      newValues: { step: approval.stepName },
+    });
+
+    // The requester learns somebody picked it up - the entire point.
+    await this.notifications.notify({
+      companyId: actor.companyId,
+      userId: request.requesterId,
+      type: 'REQUEST_COMMENT',
+      title: `Request ${request.requestNumber} is being reviewed`,
+      body: `${approval.stepName} has started looking at your request.`,
+      linkPath: `/requests/${id}`,
+      entityType: 'AssetRequest',
+      entityId: id,
+    });
+
+    return this.findOne(actor, id);
+  }
 
   async decide(actor: AuthUser, id: string, decision: 'APPROVED' | 'REJECTED', comment?: string) {
     const request = await this.loadForWrite(actor, id);
