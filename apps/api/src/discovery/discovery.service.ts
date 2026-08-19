@@ -14,6 +14,7 @@ import { paginate } from '../common/paginate.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AssetHealthService } from '../asset-health/asset-health.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { WebhooksService } from '../integrations/webhooks.service.js';
 import { DiscoveryProvider } from '../providers/discovery/discovery.provider.js';
 import type { AgentPrincipal } from './agent.guard.js';
 
@@ -52,6 +53,7 @@ export class DiscoveryService {
     private readonly audit: AuditService,
     private readonly provider: DiscoveryProvider,
     private readonly health: AssetHealthService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   // ── ingest ─────────────────────────────────────────────────────────────────
@@ -87,6 +89,12 @@ export class DiscoveryService {
         this.reconcileDevice(tx as Tx, companyId, device, source),
       );
       summary[outcome.bucket] += 1;
+      if (outcome.newConflict) {
+        void this.webhooks.publish(companyId, 'discovery.conflict', {
+          source,
+          ...outcome.newConflict,
+        });
+      }
       if (outcome.applied) {
         summary.applied += 1;
         // H4: fresh data changes the health picture; recompute after commit.
@@ -277,6 +285,13 @@ export class DiscoveryService {
     bucket: 'matched' | 'proposed' | 'conflict' | 'unmatched';
     applied: boolean;
     assetId?: string | null;
+    /**
+     * Set on the sighting that turned this device INTO a conflict, not on
+     * every later sighting of the same conflicted device - an agent reports
+     * daily, and a webhook that fires daily about the same unresolved row is
+     * noise nobody will wire an automation to.
+     */
+    newConflict?: { serialNumber: string | null; hostname: string | null; candidateAssetId: string | null };
   }> {
     const serial = device.serialNumber?.trim() || null;
     const hostname = device.hostname?.trim() || null;
@@ -385,7 +400,14 @@ export class DiscoveryService {
     }
     const bucket =
       matchState === 'PROPOSED' ? 'proposed' : matchState === 'CONFLICT' ? 'conflict' : 'unmatched';
-    return { bucket, applied: false };
+    const becameConflict = matchState === 'CONFLICT' && existing?.matchState !== 'CONFLICT';
+    return {
+      bucket,
+      applied: false,
+      ...(becameConflict
+        ? { newConflict: { serialNumber: serial, hostname, candidateAssetId: assetId } }
+        : {}),
+    };
   }
 
   /**
