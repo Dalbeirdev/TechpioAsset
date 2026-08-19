@@ -75,16 +75,47 @@ describe('waitingOn', () => {
     expect(res.body.data.waitingOn.blockedReason).toBeNull();
   });
 
-  it('reports a manager step nobody can act on, and says why', async () => {
+  it('with no line manager recorded, the Manager role stands in - not blocked', async () => {
     await prisma.client.userProfile.update({ where: { id: profileId }, data: { managerId: null } });
-    const stranded = await raise();
+    const withFallback = await raise();
 
-    const res = await api(app).get(`/api/v1/requests/${stranded}`).set(auth(s.itAdmin));
+    const res = await api(app).get(`/api/v1/requests/${withFallback}`).set(auth(s.itAdmin));
 
-    expect(res.body.data.waitingOn.blocked).toBe(true);
-    expect(res.body.data.waitingOn.approvers).toEqual([]);
-    // The message has to name the missing thing - "pending" tells nobody what to fix.
-    expect(res.body.data.waitingOn.blockedReason).toMatch(/manager/i);
+    // v2.24: this used to be a stall; now the Manager role's holders are the
+    // approvers, and the banner names them instead of "nobody".
+    expect(res.body.data.waitingOn.blocked).toBe(false);
+    expect(
+      res.body.data.waitingOn.approvers.some((a: { id: string }) => a.id === s.manager.user.id),
+    ).toBe(true);
+  });
+
+  it('skips a manager step truly nobody can act on - the chain moves to HR', async () => {
+    await prisma.client.userProfile.update({ where: { id: profileId }, data: { managerId: null } });
+    // "Nobody" now means no line manager AND an empty Manager role.
+    const managerRole = await prisma.client.role.findFirstOrThrow({
+      where: { companyId: s.employee.user.companyId, key: 'MANAGER' },
+    });
+    const holders = await prisma.client.userRole.findMany({ where: { roleId: managerRole.id } });
+    await prisma.client.userRole.deleteMany({ where: { roleId: managerRole.id } });
+
+    try {
+      const stranded = await raise();
+      const res = await api(app).get(`/api/v1/requests/${stranded}`).set(auth(s.itAdmin));
+
+      // v2.24: an unstaffed mid-chain step no longer strands the request - it
+      // is skipped with the reason written on the step, and the chain lands on
+      // the next staffed desk. Only a LAST unstaffed step still blocks, which
+      // manager-fallback.integration.test.ts pins.
+      const steps = res.body.data.approvals as { stepName: string; decision: string; comment: string | null }[];
+      const managerStep = steps.find((a) => a.stepName.toLowerCase().includes('manager'))!;
+      expect(managerStep.decision).toBe('SKIPPED');
+      expect(res.body.data.status).toBe('HR_REVIEW_PENDING');
+      expect(res.body.data.waitingOn.blocked).toBe(false);
+    } finally {
+      await prisma.client.userRole.createMany({
+        data: holders.map((h) => ({ userId: h.userId, roleId: h.roleId, createdById: h.createdById })),
+      });
+    }
   });
 
   it('recovers as soon as the missing manager is recorded', async () => {

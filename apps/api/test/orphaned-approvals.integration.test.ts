@@ -13,6 +13,11 @@ import { api, auth, createTestApp, loginAll, type AccountKey, type Session } fro
  * status. These tests pin the two escape hatches: user-managers are told, and
  * user-managers may decide, when (and only when) the approver set is provably
  * empty.
+ *
+ * v2.24 narrowed when this can happen at all: a mid-chain step nobody staffs
+ * is now SKIPPED, so only the LAST step of a chain can sit orphaned - a
+ * request must end on a human decision, however unstaffed. The fixture
+ * therefore makes the orphan role the final step.
  */
 
 let app: INestApplication;
@@ -56,9 +61,9 @@ describe('a role step nobody holds', () => {
     const requestId = filed.body.data.id as string;
     await api(app).post(`/api/v1/requests/${requestId}/submit`).set(auth(s.employee));
 
-    // Re-point the SECOND step at the empty role, then approve step one as
-    // the manager: decide() will announce step two - to nobody, which is the
-    // case under test.
+    // Re-point the SECOND step at the empty role and drop the rest, so the
+    // orphan is the chain's FINAL step - the only position that can still
+    // orphan under v2.24, since mid-chain unstaffed steps skip themselves.
     const approvals = await prisma.client.requestApproval.findMany({
       where: { requestId },
       orderBy: { stepOrder: 'asc' },
@@ -67,6 +72,9 @@ describe('a role step nobody holds', () => {
     await prisma.client.requestApproval.update({
       where: { id: approvals[1]!.id },
       data: { approverRoleId: orphanRole.id, approverId: null, approverType: 'ROLE' },
+    });
+    await prisma.client.requestApproval.deleteMany({
+      where: { requestId, stepOrder: { gt: approvals[1]!.stepOrder } },
     });
 
     const first = await api(app)
