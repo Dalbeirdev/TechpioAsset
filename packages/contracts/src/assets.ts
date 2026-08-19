@@ -83,7 +83,12 @@ export const createAssetSchema = z.object({
   departmentId: z.string().optional().nullable(),
 
   condition: assetConditionEnum.default('GOOD'),
-  status: assetStatusEnum.default('DRAFT'),
+  // AVAILABLE, not DRAFT: a caller that names no status is registering real
+  // equipment (the phone's form, most API scripts), and a Draft asset is a trap
+  // - it cannot be assigned until somebody notices and flips it. Draft remains
+  // choosable for genuinely half-entered records; it is just not the silent
+  // default.
+  status: assetStatusEnum.default('AVAILABLE'),
   // v2.1 Workstream A — optional; lifecycle/availability are derived from status
   // on write when STATUS_MODEL_V2 is on. Ownership is orthogonal, so it is set here.
   ownershipType: ownershipTypeEnum.optional(),

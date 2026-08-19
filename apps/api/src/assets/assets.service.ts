@@ -670,7 +670,11 @@ export class AssetsService {
     // custody rule: an edit cannot declare an asset assigned any more than the
     // status menu can.
     if (input.status && input.status !== before.status) {
-      assertTransition(assetStatusMachine, before.status as AssetStatus, input.status);
+      assertTransition(
+        assetStatusMachine,
+        await this.effectiveStatusForTransition(id, before.status as AssetStatus),
+        input.status,
+      );
       await this.assertCustodyMatchesStatus(id, input.status);
     }
 
@@ -760,6 +764,30 @@ export class AssetsService {
    * and record in one transaction and never pass through here. This guards only
    * the manual paths - the status menu, bulk status, a general edit.
    */
+  /**
+   * The status the transition rules should reason from (v2.24).
+   *
+   * A custody status with no assignment behind it - the phantom "Assigned" this
+   * release stopped the product creating - still exists on rows made before the
+   * guard. The state machine would hold such a row hostage: ASSIGNED does not
+   * transition to AVAILABLE, because for a genuinely held asset that must go
+   * through Return. But nobody holds this one; semantically it already IS
+   * returned. So the transition check treats it as RETURNED, and the row can be
+   * repaired with the single obvious edit - set it to Available - instead of a
+   * two-step dance through a status that never happened.
+   */
+  private async effectiveStatusForTransition(
+    id: string,
+    current: AssetStatus,
+  ): Promise<AssetStatus> {
+    if (!ASSET_STATUSES_IN_EMPLOYEE_CUSTODY.includes(current)) return current;
+    const open = await this.prisma.client.assetAssignment.findFirst({
+      where: { assetId: id, returnedAt: null },
+      select: { id: true },
+    });
+    return open ? current : 'RETURNED';
+  }
+
   private async assertCustodyMatchesStatus(id: string, next: AssetStatus): Promise<void> {
     const custody = ASSET_STATUSES_IN_EMPLOYEE_CUSTODY.includes(next);
     if (!custody && next !== 'RETURNED') return;
@@ -803,7 +831,11 @@ export class AssetsService {
       }
     }
 
-    assertTransition(assetStatusMachine, before.status as AssetStatus, status);
+    assertTransition(
+      assetStatusMachine,
+      await this.effectiveStatusForTransition(id, before.status as AssetStatus),
+      status,
+    );
     await this.assertCustodyMatchesStatus(id, status);
 
     const after = await this.prisma.client.asset.update({
