@@ -178,15 +178,27 @@ export function Button({
 
 export function Field({
   label,
+  labelRight,
   ...props
-}: { label?: string } & TextInputProps) {
+}: { label?: string; labelRight?: ReactNode } & TextInputProps) {
   const { c, radius, spacing } = useTheme();
   return (
     <View style={{ marginBottom: spacing.md }}>
       {label ? (
-        <Text style={{ color: c.text, fontSize: 13, fontWeight: '600', marginBottom: 6 }}>
-          {label}
-        </Text>
+        // labelRight sits on the baseline of the label rather than under the
+        // input, which is where "Forgot password?" belongs: beside the thing it
+        // is about, not below the box you have just failed to fill in.
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 6,
+          }}
+        >
+          <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>{label}</Text>
+          {labelRight}
+        </View>
       ) : null}
       <TextInput
         placeholderTextColor={c.subtle}
