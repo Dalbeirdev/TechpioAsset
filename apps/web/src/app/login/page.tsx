@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -89,7 +90,12 @@ export default function LoginPage() {
         <div className="mb-6 flex items-start justify-between">
           <div>
             <h1>
-              <BrandLockup height={34} />
+              {/* The wordmark is a home link everywhere else it appears; on the
+                  sign-in page it was the one place it did nothing, which is
+                  exactly where somebody who is not signing in wants it. */}
+              <Link href="/" aria-label="PioAssets home" className="inline-flex">
+                <BrandLockup height={34} />
+              </Link>
             </h1>
             <p className="mt-1 text-sm text-[var(--color-content-muted)]">
               Manage Assets. Control Costs. Simplify Operations.
