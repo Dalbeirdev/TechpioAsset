@@ -53,6 +53,13 @@ export const PERMISSIONS = {
   REQUESTS_READ: 'requests:read',
   REQUESTS_APPROVE: 'requests:approve',
   REQUESTS_CANCEL: 'requests:cancel',
+  /**
+   * v2.25 - enter the commercial side of a request: inventory check, vendor,
+   * prices, quote. Held by Office Admin, Finance and the admins; deliberately
+   * NOT by the employee who raised it, because this figure is what decides
+   * whether Finance reviews the spend.
+   */
+  REQUESTS_ASSESS: 'requests:assess',
 
   // People
   EMPLOYEES_READ: 'employees:read',
@@ -213,6 +220,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.INVOICES_READ,
     P.VENDORS_READ,
     P.PURCHASE_ORDERS_READ,
+    P.REQUESTS_ASSESS,
     P.REQUESTS_CREATE,
     // v2.24 - whoever may raise a request may withdraw their own. The route
     // is guarded by this permission, so without it a specialist who raised a
@@ -267,6 +275,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     // Invoice capture ("scan a bill") is Finance + Super Admin only.
     P.VENDORS_READ,
     P.PURCHASE_ORDERS_READ,
+    P.REQUESTS_ASSESS,
     P.REQUESTS_CREATE,
     // v2.24 - whoever may raise a request may withdraw their own. The route
     // is guarded by this permission, so without it a specialist who raised a
@@ -313,6 +322,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.VENDORS_MANAGE,
     P.PURCHASE_ORDERS_READ,
     P.PURCHASE_ORDERS_MANAGE,
+    P.REQUESTS_ASSESS,
     P.REQUESTS_CREATE,
     // v2.24 - whoever may raise a request may withdraw their own. The route
     // is guarded by this permission, so without it a specialist who raised a

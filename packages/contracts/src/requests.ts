@@ -33,6 +33,12 @@ export const requestItemSchema = z.object({
   description: z.string().trim().min(1).max(500),
   quantity: z.coerce.number().positive().max(9999).default(1),
   preferredSpec: z.string().trim().max(1000).optional().nullable(),
+  /**
+   * v2.25 - accepted only from a caller holding `requests:assess`; the server
+   * drops it otherwise. An employee stating the price of their own request is
+   * how a Finance threshold gets walked around, so the figure that routes a
+   * request is only ever one an authorised role entered.
+   */
   estimatedCost: moneyString.optional().nullable(),
   /** v2.17 - the item is not in the catalog; admins review and may promote it. */
   isUncatalogued: z.boolean().optional(),

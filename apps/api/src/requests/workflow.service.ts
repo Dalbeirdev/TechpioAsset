@@ -18,6 +18,9 @@ export interface MaterialisedStep {
   approverRoleKey: string | null;
   approverId: string | null;
   slaDueAt: Date | null;
+  /** Snapshotted onto the approval row so a later config change cannot
+   *  re-decide a request already in flight. */
+  costThreshold: string | null;
 }
 
 /**
@@ -88,6 +91,7 @@ export class WorkflowService {
         approverRoleKey: step.approverRoleKey,
         approverId: step.approverUserId ?? null,
         slaDueAt: step.slaHours ? new Date(Date.now() + step.slaHours * 3_600_000) : null,
+        costThreshold: step.costThreshold ?? null,
       })),
     };
   }

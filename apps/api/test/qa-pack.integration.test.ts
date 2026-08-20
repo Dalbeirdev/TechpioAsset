@@ -48,28 +48,62 @@ async function createAndSubmit(actor: Session, overrides: Record<string, unknown
 }
 
 /** Cancel a request so QA probes do not pile up in the shared inbox. */
+/**
+ * Approve forward until the Finance step is reached or settled, returning it.
+ * Thresholds are evaluated when a step comes up (v2.25), so the chain has to be
+ * walked to see what the money decided.
+ */
+async function walkToFinance(id: string) {
+  const byStep: Record<string, Session> = {
+    'Manager review': s.manager,
+    'HR confirmation': s.hr,
+    'IT review': s.itAdmin,
+    'Office review': s.officeAdmin,
+  };
+  for (let guard = 0; guard < 8; guard += 1) {
+    const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    const approvals = detail.body.data.approvals as { stepName: string; decision: string }[];
+    const finance = approvals.find((a) => a.stepName.toLowerCase().includes('finance'));
+    if (finance && finance.decision !== 'WAITING') return finance;
+    const current = approvals.find((a) => a.decision === 'PENDING');
+    if (!current) return finance ?? null;
+    const who = byStep[current.stepName];
+    if (!who) return finance ?? null;
+    await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(who))
+      .send({ decision: 'APPROVED' });
+  }
+  return null;
+}
+
 async function cancel(actor: Session, id: string) {
   await api(app).post(`/api/v1/requests/${id}/cancel`).set(auth(actor)).send({});
 }
 
 describe('QA APR — approvals', () => {
   it('APR-004 boundary: cost exactly at the Finance threshold INCLUDES Finance (blueprint BR-05, inclusive; aligned in v2.3)', async () => {
-    const r = await createAndSubmit(s.employee, {
+    // v2.25 - priced by a role that may price. An employee's figure is dropped,
+    // so the boundary can only be exercised through an authorised one. The
+    // chain now always contains the step; what the threshold decides is whether
+    // it is DECIDED or SKIPPED when it comes up.
+    const r = await createAndSubmit(s.officeAdmin, {
       estimatedCost: '250.00',
       items: [{ description: 'QA boundary probe', quantity: 1, estimatedCost: '250.00' }],
     });
-    const names = r.approvals.map((a) => a.stepName.toLowerCase());
-    expect(names.some((n) => n.includes('finance'))).toBe(true);
-    await cancel(s.employee, r.id);
+    const financeAt = r.approvals.find((a) => a.stepName.toLowerCase().includes('finance'));
+    expect(financeAt, 'the step exists in the chain').toBeTruthy();
+    expect(financeAt!.decision, 'at the threshold Finance still applies').not.toBe('SKIPPED');
+    await cancel(s.officeAdmin, r.id);
 
-    // And just below the threshold still skips Finance.
-    const below = await createAndSubmit(s.employee, {
+    // And just below the threshold Finance is skipped, with the reason recorded.
+    const below = await createAndSubmit(s.officeAdmin, {
       estimatedCost: '249.99',
       items: [{ description: 'QA boundary probe (below)', quantity: 1, estimatedCost: '249.99' }],
     });
-    const belowNames = below.approvals.map((a) => a.stepName.toLowerCase());
-    expect(belowNames.some((n) => n.includes('finance'))).toBe(false);
-    await cancel(s.employee, below.id);
+    const belowFinance = await walkToFinance(below.id);
+    expect(belowFinance?.decision).toBe('SKIPPED');
+    await cancel(s.officeAdmin, below.id);
   });
 
   it('APR-009 SoD: the requester cannot decide their own request (403, step stays pending)', async () => {

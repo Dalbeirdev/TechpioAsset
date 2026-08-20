@@ -548,9 +548,10 @@ model Company {
   quotes                    Quote[]
   catalogItems              CatalogItem[]
 
-  emailTemplates    EmailTemplate[]
-  notificationRules NotificationRule[]
-  emailLogs         EmailLog[]
+  emailTemplates     EmailTemplate[]
+  notificationRules  NotificationRule[]
+  emailLogs          EmailLog[]
+  requestAssessments RequestAssessment[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -627,6 +628,7 @@ model User {
   delegationsReceived      ApprovalDelegation[]       @relation("DelegationDelegate")
   licenseAssignments       LicenseAssignment[]        @relation("LicenseAssignee")
   purchaseRequests         PurchaseRequest[]          @relation("PurchaseRequester")
+  requestAssessments       RequestAssessment[]        @relation("AssessmentAssessor")
 
   /// Email is unique per tenant, not globally: the same person may exist in two companies.
   @@unique([companyId, email])
@@ -1129,24 +1131,25 @@ model Asset {
   department    Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   assignedUser  User?             @relation("AssetCurrentAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
 
-  assignments          AssetAssignment[]
-  transfers            AssetTransfer[]
-  conditionLogs        AssetConditionLog[]
-  maintenance          MaintenanceRecord[]
-  warranties           Warranty[]
-  disposal             DisposalRecord?
-  invoiceLinks         AssetInvoiceLink[]
-  attachments          Attachment[]
-  replacementFor       AssetRequest[]          @relation("RequestReplacesAsset")
-  fulfilledItems       RequestItem[]           @relation("RequestItemFulfilledAsset")
-  inventoryScans       PhysicalInventoryScan[]
-  licenseAssignments   LicenseAssignment[]     @relation("LicenseAssignedAsset")
-  hardwareProfile      HardwareProfile?
-  osInfo               OperatingSystemInfo?
-  installedSoftware    InstalledSoftware[]
-  health               AssetHealth?
-  discoveredDevices    DiscoveredDevice[]
-  maintenanceSchedules MaintenanceSchedule[]
+  assignments           AssetAssignment[]
+  transfers             AssetTransfer[]
+  conditionLogs         AssetConditionLog[]
+  maintenance           MaintenanceRecord[]
+  warranties            Warranty[]
+  disposal              DisposalRecord?
+  invoiceLinks          AssetInvoiceLink[]
+  attachments           Attachment[]
+  replacementFor        AssetRequest[]          @relation("RequestReplacesAsset")
+  fulfilledItems        RequestItem[]           @relation("RequestItemFulfilledAsset")
+  inventoryScans        PhysicalInventoryScan[]
+  licenseAssignments    LicenseAssignment[]     @relation("LicenseAssignedAsset")
+  hardwareProfile       HardwareProfile?
+  osInfo                OperatingSystemInfo?
+  installedSoftware     InstalledSoftware[]
+  health                AssetHealth?
+  discoveredDevices     DiscoveredDevice[]
+  maintenanceSchedules  MaintenanceSchedule[]
+  assessmentsSuggesting RequestAssessment[]     @relation("AssessmentSuitableAsset")
 
   /// Postgres treats NULLs as distinct in a unique index, so quantity-tracked
   /// rows (which carry no serial) coexist freely while real serials stay unique.
@@ -1512,13 +1515,14 @@ model Vendor {
   createdById String?
   updatedById String?
 
-  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assets           Asset[]
-  invoices         Invoice[]
-  purchaseOrders   PurchaseOrder[]
-  quotes           Quote[]
-  maintenance      MaintenanceRecord[]
-  softwareLicenses SoftwareLicense[]
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assets             Asset[]
+  invoices           Invoice[]
+  purchaseOrders     PurchaseOrder[]
+  quotes             Quote[]
+  maintenance        MaintenanceRecord[]
+  softwareLicenses   SoftwareLicense[]
+  requestAssessments RequestAssessment[]
 
   @@unique([companyId, code])
   @@index([companyId, name])
@@ -1850,6 +1854,7 @@ model AssetRequest {
   comments    RequestComment[]
   attachments Attachment[]
   workOrder   MaintenanceRecord?
+  assessment  RequestAssessment?
 
   @@unique([companyId, requestNumber])
   @@index([companyId, status])
@@ -1930,6 +1935,10 @@ model RequestApproval {
   /// instead of "Awaiting decision"), never what anyone may do.
   reviewStartedAt   DateTime?
   reviewStartedById String?
+  /// v2.25 - the threshold this step was configured with when the chain was
+  /// built. Snapshotted rather than looked up so changing a workflow later
+  /// cannot silently re-decide a request already in flight.
+  costThreshold     Decimal?         @db.Decimal(14, 2)
   // v2.2 Workstream D — set when the SLA-escalation sweep has escalated this
   // overdue step, so it is escalated (and notified) exactly once.
   escalatedAt       DateTime?
@@ -1948,6 +1957,56 @@ model RequestApproval {
   @@index([approverId, decision])
   @@index([approverRoleId, decision])
   @@map("request_approvals")
+}
+
+/// v2.25 - what a request actually costs, decided internally.
+///
+/// The employee states a requirement; they never state a price. Everything
+/// commercial lives here and is writable only by roles holding
+/// requests:assess (Office Admin, Finance, Super Admin), which is what stops a
+/// requester choosing the number that decides whether Finance reviews their
+/// own request.
+model RequestAssessment {
+  id        String @id @default(cuid())
+  companyId String
+  requestId String @unique
+
+  /// Is there already something suitable on the shelf?
+  inventoryAvailable Boolean?
+  /// The specific asset found, when one was.
+  suitableAssetId    String?
+  /// False means no new expenditure, and Finance is skipped for that reason.
+  purchaseRequired   Boolean?
+
+  suggestedProduct String?
+  vendorId         String?
+
+  unitPrice Decimal? @db.Decimal(14, 2)
+  quantity  Int?
+  taxAmount Decimal? @db.Decimal(14, 2)
+  shipping  Decimal? @db.Decimal(14, 2)
+  discount  Decimal? @db.Decimal(14, 2)
+  /// Computed from the parts above on every write, never accepted from a
+  /// client: the figure that routes the request must not be assertable.
+  totalCost Decimal? @db.Decimal(14, 2)
+  currency  String?  @db.Char(3)
+
+  notes String?
+
+  assessedById String?
+  assessedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  request       AssetRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  suitableAsset Asset?       @relation("AssessmentSuitableAsset", fields: [suitableAssetId], references: [id], onDelete: SetNull)
+  vendor        Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  assessedBy    User?        @relation("AssessmentAssessor", fields: [assessedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@map("request_assessments")
 }
 
 model RequestComment {

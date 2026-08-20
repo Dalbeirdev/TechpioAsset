@@ -709,13 +709,33 @@ export class RequestsService {
       }
     }
 
-    // Total estimate drives threshold-based step skipping, so an explicit
-    // request-level figure wins and otherwise the items are summed.
-    const itemTotal = input.items.reduce(
-      (sum, item) => sum.plus(new Prisma.Decimal(item.estimatedCost ?? 0).times(item.quantity)),
-      new Prisma.Decimal(0),
-    );
-    const estimatedCost = input.estimatedCost ? new Prisma.Decimal(input.estimatedCost) : itemTotal;
+    // v2.25 - money on a request is not the requester's to state.
+    //
+    // The figure here decides whether Finance reviews the spend, so accepting
+    // it from anybody would let a requester price their own laptop at 1 and
+    // route around the threshold. The form already hid these fields from
+    // employees; nothing stopped the same call being made directly, which is
+    // what made it a control rather than a courtesy. Only a caller holding
+    // requests:assess may supply a cost - everyone else's is dropped, not
+    // rejected, so an older client still works and simply carries no price.
+    const mayPrice = actor.permissions.includes(PERMISSIONS.REQUESTS_ASSESS);
+    const itemTotal = mayPrice
+      ? input.items.reduce(
+          (sum, item) => sum.plus(new Prisma.Decimal(item.estimatedCost ?? 0).times(item.quantity)),
+          new Prisma.Decimal(0),
+        )
+      : new Prisma.Decimal(0);
+    // Null, not zero. Zero reads as "cheap" and would skip every thresholded
+    // step; the domain treats an UNKNOWN cost as "might exceed the threshold,
+    // send it to a human", which is the safe reading for a request nobody has
+    // priced yet.
+    const estimatedCost = !mayPrice
+      ? null
+      : input.estimatedCost
+        ? new Prisma.Decimal(input.estimatedCost)
+        : itemTotal.greaterThan(0)
+          ? itemTotal
+          : null;
 
     const request = await this.prisma.client.assetRequest.create({
       data: {
@@ -758,7 +778,8 @@ export class RequestsService {
             description: item.description,
             quantity: new Prisma.Decimal(item.quantity),
             preferredSpec: item.preferredSpec ?? null,
-            estimatedCost: item.estimatedCost ? new Prisma.Decimal(item.estimatedCost) : null,
+            estimatedCost:
+              mayPrice && item.estimatedCost ? new Prisma.Decimal(item.estimatedCost) : null,
             isUncatalogued: item.isUncatalogued ?? false,
             manufacturer: item.manufacturer ?? null,
             model: item.model ?? null,
@@ -790,10 +811,14 @@ export class RequestsService {
     }
     assertTransition(requestStatusMachine, request.status as RequestStatus, 'SUBMITTED');
 
+    // Null, deliberately: every configured step is created, and whether a
+    // thresholded one applies is decided when it becomes current - by which
+    // time somebody authorised has priced the request. Filtering here would
+    // settle Finance's involvement before anyone knew the cost.
     const { definitionId, steps } = await this.workflow.materialise(
       actor.companyId,
       request.type,
-      request.estimatedCost,
+      null,
     );
 
     if (steps.length === 0) {
@@ -842,6 +867,7 @@ export class RequestsService {
           approverRoleId: step.approverRoleId,
           approverId: step.approverId,
           slaDueAt: step.slaDueAt,
+          costThreshold: step.costThreshold,
           decision: ApprovalDecision.WAITING,
         })),
       });
@@ -853,27 +879,41 @@ export class RequestsService {
         requesterId: request.requesterId,
       });
 
-      // steps.length > 0 and the last step is never skipped, so a current step
-      // always exists here.
-      const current = result.current!;
+      // Every step can legitimately skip - a cheap request whose only
+      // thresholded step does not apply, raised by the one person staffing the
+      // other. Nothing is left to decide, so it is approved on submission,
+      // exactly as a request with no configured workflow is.
+      const current = result.current;
+      const now = new Date();
       await tx.assetRequest.update({
         where: { id },
-        data: {
-          status: this.workflow.statusForStep({
-            stepOrder: current.stepOrder,
-            stepName: current.stepName,
-            approverType: current.approverType,
-            approverRoleId: current.approverRoleId,
-            approverRoleKey: current.approverRole?.key ?? null,
-            approverId: current.approverId,
-            slaDueAt: current.slaDueAt,
-          }),
-          submittedAt: new Date(),
-          workflowDefinitionId: definitionId,
-          currentStepOrder: current.stepOrder,
-          updatedById: actor.id,
-          version: { increment: 1 },
-        },
+        data: current
+          ? {
+              status: this.workflow.statusForStep({
+                stepOrder: current.stepOrder,
+                stepName: current.stepName,
+                approverType: current.approverType,
+                approverRoleId: current.approverRoleId,
+                approverRoleKey: current.approverRole?.key ?? null,
+                approverId: current.approverId,
+                slaDueAt: current.slaDueAt,
+                costThreshold: current.costThreshold ? current.costThreshold.toString() : null,
+              }),
+              submittedAt: now,
+              workflowDefinitionId: definitionId,
+              currentStepOrder: current.stepOrder,
+              updatedById: actor.id,
+              version: { increment: 1 },
+            }
+          : {
+              status: 'APPROVED',
+              submittedAt: now,
+              decidedAt: now,
+              workflowDefinitionId: definitionId,
+              currentStepOrder: null,
+              updatedById: actor.id,
+              version: { increment: 1 },
+            },
       });
       return result;
     });
@@ -893,7 +933,29 @@ export class RequestsService {
         newValues: { skippedSteps: promoted.skipped, reason: 'No approver holds these steps' },
       });
     }
-    await this.notifyApprovers(actor.companyId, id, request.requestNumber);
+    if (promoted.current) {
+      await this.notifyApprovers(actor.companyId, id, request.requestNumber);
+    } else {
+      // Approved on submission because every step skipped. Same message the end
+      // of a chain sends, and the same work-order rule applies.
+      await this.notifications.notify({
+        companyId: actor.companyId,
+        userId: request.requesterId,
+        type: 'REQUEST_APPROVED',
+        title: `Request ${request.requestNumber} approved`,
+        body: 'No approval step applied to this request, so it is approved and being prepared.',
+        linkPath: `/requests/${id}`,
+        entityType: 'AssetRequest',
+        entityId: id,
+      });
+      await this.raiseWorkOrder(actor, {
+        id,
+        requestNumber: request.requestNumber,
+        type: request.type,
+        assetId: request.replacesAssetId,
+        businessReason: request.businessReason,
+      });
+    }
 
     return this.findOne(actor, id);
   }
@@ -1145,6 +1207,7 @@ export class RequestsService {
           approverRoleKey: nextStep.approverRole?.key ?? null,
           approverId: nextStep.approverId,
           slaDueAt: nextStep.slaDueAt,
+          costThreshold: nextStep.costThreshold ? nextStep.costThreshold.toString() : null,
         })
       : 'APPROVED';
 
@@ -1455,6 +1518,59 @@ export class RequestsService {
    * must end on a human decision, and for an empty role the deadlock-breaker
    * in assertCanDecide already lets a user-manager supply it.
    */
+  /**
+   * The only money the workflow is allowed to reason about (v2.25).
+   *
+   * The assessment wins where it exists, because it is the figure an
+   * authorised role entered. `estimatedCost` on the request is the fallback and
+   * is itself authorised-only since create() drops it from anyone else - so
+   * either way the requester's own claim can never route their request.
+   */
+  private async authorisedAmountFor(
+    tx: Pick<Tx, 'requestAssessment' | 'assetRequest'>,
+    requestId: string,
+  ): Promise<{ amount: Prisma.Decimal | null; purchaseRequired: boolean | null }> {
+    const assessment = await tx.requestAssessment.findUnique({
+      where: { requestId },
+      select: { totalCost: true, purchaseRequired: true },
+    });
+    if (assessment) {
+      return { amount: assessment.totalCost, purchaseRequired: assessment.purchaseRequired };
+    }
+    const request = await tx.assetRequest.findUnique({
+      where: { id: requestId },
+      select: { estimatedCost: true },
+    });
+    return { amount: request?.estimatedCost ?? null, purchaseRequired: null };
+  }
+
+  /**
+   * Why a thresholded step does not apply, or null if it does.
+   *
+   * Evaluated when the step is about to become current rather than when the
+   * chain is built, because the cost is entered after submission - assessing at
+   * build time would decide Finance's involvement before anyone knew the price.
+   */
+  private costSkipReason(
+    step: { costThreshold: Prisma.Decimal | null },
+    money: { amount: Prisma.Decimal | null; purchaseRequired: boolean | null },
+  ): string | null {
+    // A step with no threshold always applies, whatever the request costs.
+    if (step.costThreshold === null) return null;
+
+    if (money.purchaseRequired === false) {
+      return 'Skipped automatically — no new expenditure, filled from existing stock.';
+    }
+    // Unknown cost goes to a human: absent a figure the safe reading is that
+    // the request might exceed the threshold.
+    if (money.amount === null) return null;
+
+    if (money.amount.lessThan(step.costThreshold)) {
+      return `Skipped automatically — assessed at ${money.amount.toString()}, under the ${step.costThreshold.toString()} threshold.`;
+    }
+    return null;
+  }
+
   private async promoteUntilStaffed(
     tx: Tx,
     ctx: {
@@ -1465,6 +1581,8 @@ export class RequestsService {
     },
   ) {
     const skipped: string[] = [];
+    const money = await this.authorisedAmountFor(tx, ctx.requestId);
+
     for (;;) {
       const waiting = await tx.requestApproval.findMany({
         where: { requestId: ctx.requestId, decision: ApprovalDecision.WAITING },
@@ -1474,6 +1592,19 @@ export class RequestsService {
       });
       const next = waiting[0];
       if (!next) return { current: null, skipped };
+
+      // The configured business rule first: a step the money says does not
+      // apply is skipped wherever it sits, including last. That is a decision
+      // the company made, not a staffing failure.
+      const costReason = this.costSkipReason({ costThreshold: next.costThreshold }, money);
+      if (costReason) {
+        await tx.requestApproval.update({
+          where: { id: next.id },
+          data: { decision: ApprovalDecision.SKIPPED, decidedAt: new Date(), comment: costReason },
+        });
+        skipped.push(next.stepName);
+        continue;
+      }
 
       const approvers = await this.resolveStepApprovers(tx, {
         companyId: ctx.companyId,

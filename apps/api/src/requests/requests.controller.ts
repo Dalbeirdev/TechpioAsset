@@ -7,6 +7,7 @@ import {
   MaxFileSizeValidator,
   Param,
   ParseFilePipe,
+  Patch,
   Post,
   Query,
   Res,
@@ -28,12 +29,15 @@ import {
   requestCommentSchema,
   requestListQuerySchema,
   requestStatusEnum,
+  upsertAssessmentSchema,
   type AuthUser,
   type CreateRequestInput,
   type RequestListQuery,
+  type UpsertAssessmentInput,
 } from '@techpioasset/contracts';
 import { PERMISSIONS, type RequestStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
+import { AssessmentsService } from './assessments.service.js';
 import { toCsv } from '../common/csv.js';
 import { AppError } from '../common/errors/app-error.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
@@ -47,7 +51,10 @@ const cancelSchema = z.object({ reason: z.string().trim().max(500).optional() })
 @ApiTags('Requests')
 @Controller('requests')
 export class RequestsController {
-  constructor(private readonly requests: RequestsService) {}
+  constructor(
+    private readonly requests: RequestsService,
+    private readonly assessments: AssessmentsService,
+  ) {}
 
   @Get()
   @RequirePermissions(PERMISSIONS.REQUESTS_READ)
@@ -180,6 +187,35 @@ export class RequestsController {
   })
   submit(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
     return this.requests.submit(actor, id);
+  }
+
+  @Get(':id/assessment')
+  @RequirePermissions(PERMISSIONS.REQUESTS_ASSESS)
+  @ApiOperation({
+    summary: 'The commercial assessment of a request',
+    description:
+      'Inventory check, vendor, prices and the computed total. Behind requests:assess, so the ' +
+      'requester never sees the commercial side of their own request.',
+  })
+  getAssessment(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.assessments.get(actor, id);
+  }
+
+  @Patch(':id/assessment')
+  @RequirePermissions(PERMISSIONS.REQUESTS_ASSESS)
+  @ApiOperation({
+    summary: 'Record or update the commercial assessment',
+    description:
+      'Fields are merged, so a partial update leaves the rest alone. The total is computed from ' +
+      'the parts and is never accepted from the caller - it is what decides whether Finance ' +
+      'reviews the spend.',
+  })
+  upsertAssessment(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(upsertAssessmentSchema)) body: UpsertAssessmentInput,
+  ) {
+    return this.assessments.upsert(actor, id, body);
   }
 
   @Post(':id/review')

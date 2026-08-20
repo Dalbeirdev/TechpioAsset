@@ -212,7 +212,11 @@ describe('laptop request end to end', () => {
 
 describe('cost thresholds (spec section 11)', () => {
   it('skips finance approval for a low-value kitchen request', async () => {
-    const created = await createRequest(s.employee, {
+    // v2.25 - raised by somebody who may price it (an employee's own figure is
+    // dropped now, precisely so a requester cannot decide whether Finance sees
+    // their request) - and NOT by the Office Admin, who has to approve step one:
+    // nobody approves their own request.
+    const created = await createRequest(s.itAdmin, {
       type: 'KITCHEN_REQUIREMENT',
       estimatedCost: '45.00',
       businessReason: 'The kettle in the second-floor kitchen has stopped working.',
@@ -227,19 +231,31 @@ describe('cost thresholds (spec section 11)', () => {
 
     const submitted = await api(app)
       .post(`/api/v1/requests/${created.id}/submit`)
-      .set(auth(s.employee));
+      .set(auth(s.itAdmin));
 
-    // Kitchen workflow is Office review then Finance above 200.00. At 45.00 the
-    // finance step must not exist at all.
-    const names = submitted.body.data.approvals.map((a: { stepName: string }) => a.stepName);
-    expect(names).toEqual(['Office review']);
+    // Kitchen workflow is Office review then Finance above 200.00. At 45.00
+    // Finance does not apply - and since v2.25 the chain SAYS so rather than
+    // hiding the step: the cost arrives after submission, so the step is
+    // created and skipped when it comes up, carrying the reason.
+    const steps = submitted.body.data.approvals as { stepName: string; decision: string }[];
+    expect(steps[0]!.stepName).toBe('Office review');
+    expect(steps[0]!.decision).toBe('PENDING');
     expect(submitted.body.data.status).toBe('OFFICE_ADMIN_REVIEW_PENDING');
 
-    const approved = await api(app)
+    // Approving Office settles the chain: Finance is skipped on cost, and the
+    // request is approved without it.
+    await api(app)
       .post(`/api/v1/requests/${created.id}/decision`)
       .set(auth(s.officeAdmin))
       .send({ decision: 'APPROVED' });
-    expect(approved.body.data.status).toBe('APPROVED');
+    const after = await api(app)
+      .get(`/api/v1/requests/${created.id}`)
+      .set(auth(s.officeAdmin));
+    const finance = (after.body.data.approvals as { stepName: string; decision: string; comment: string | null }[])
+      .find((a) => a.stepName === 'Finance approval')!;
+    expect(finance.decision).toBe('SKIPPED');
+    expect(finance.comment).toContain('under the 200');
+    expect(after.body.data.status).toBe('APPROVED');
   });
 
   it('includes finance approval for a high-value kitchen request', async () => {
