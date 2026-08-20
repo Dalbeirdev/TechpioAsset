@@ -234,6 +234,33 @@
   body {
     background: #fff !important;
   }
+
+  /* A guide printed for an induction pack (v2.24). The marketing hero is a
+     white-on-navy gradient that a printer renders as a black slab with
+     invisible text, and the site footer is navigation nobody can click on
+     paper. Both are dropped; the content keeps its own colours. */
+  .guide-hero {
+    background: #fff !important;
+    color: #0f172a !important;
+    padding-top: 0 !important;
+    padding-bottom: 1rem !important;
+  }
+  .guide-hero * {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+    background-image: none !important;
+  }
+  .guide-hero [aria-hidden='true'] {
+    display: none !important;
+  }
+  footer {
+    display: none !important;
+  }
+  /* Never split a step or a status row across two pages. */
+  li,
+  section {
+    break-inside: avoid;
+  }
 }
 
 /* ── Marketing site (pioassets.com homepage) ──────────────────────────────
