@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Printer, Check, CircleDashed, CircleX, Clock, MinusCircle, Paperclip, Trash2 } from 'lucide-react';
 import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
-import { PERMISSIONS, findIssueCategory, type RequestStatus } from '@techpioasset/domain';
+import { PERMISSIONS, requestProgress, findIssueCategory, type RequestStatus } from '@techpioasset/domain';
 import { apiFetch, apiBaseUrl, getAccessToken, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
+import { ProcurementAssessment } from '@/components/requests/procurement-assessment';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 
 interface Approval {
@@ -251,6 +252,10 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
         ) : null}
       </header>
 
+      {/* Where it has got to, for the person who raised it: a stage and a desk,
+          in their language, without needing to read the approval chain. */}
+      <RequestProgressStrip status={data.status} />
+
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
         <div className="grid gap-4">
           <Card className="p-5">
@@ -368,6 +373,8 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
               ))}
             </ul>
           </Card>
+
+          {can(PERMISSIONS.REQUESTS_ASSESS) ? <ProcurementAssessment requestId={id} /> : null}
 
           {canAct ? (
             <Card className="p-5">
@@ -672,5 +679,55 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * How far along, and with whom - the requester's view of progress.
+ *
+ * Deliberately says nothing about money: the commercial assessment sits behind
+ * requests:assess, and a progress bar is exactly the sort of place a cost would
+ * leak into the requester's screen by accident.
+ */
+function RequestProgressStrip({ status }: { status: RequestStatus }) {
+  const progress = requestProgress(status);
+  const done = progress.settled && status === 'COMPLETED';
+  const stopped = progress.settled && status !== 'COMPLETED';
+
+  return (
+    <section
+      aria-label="Progress"
+      className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-sm font-medium">{progress.stage}</p>
+        <p className="text-xs text-[var(--color-content-muted)]">
+          {progress.with ? `Currently with ${progress.with}` : 'Nothing further is expected'}
+        </p>
+      </div>
+      <div
+        className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-sunken)]"
+        role="progressbar"
+        aria-valuenow={progress.percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`${progress.percent}% complete`}
+      >
+        <div
+          className="h-full rounded-full transition-[width]"
+          style={{
+            width: `${progress.percent}%`,
+            backgroundColor: stopped
+              ? 'var(--tone-critical-fg)'
+              : done
+                ? 'var(--tone-success-fg)'
+                : 'var(--color-brand)',
+          }}
+        />
+      </div>
+      <p className="mt-1.5 text-xs text-[var(--color-content-subtle)] tabular-nums">
+        {progress.percent}%
+      </p>
+    </section>
   );
 }

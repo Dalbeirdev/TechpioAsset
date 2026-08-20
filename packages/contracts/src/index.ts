@@ -7,6 +7,7 @@ export * from './auth';
 export * from './assets';
 export * from './requests';
 export * from './workflows';
+export * from './assessments';
 export * from './invoices';
 export * from './mobile';
 export * from './maintenance';

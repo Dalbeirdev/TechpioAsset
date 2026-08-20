@@ -26,7 +26,7 @@ const listWorkflows = (as: Session) => api(app).get('/api/v1/workflows').set(aut
 async function raiseCheapRequest() {
   const created = await api(app)
     .post('/api/v1/requests')
-    .set(auth(s.employee))
+    .set(auth(s.officeAdmin))
     .send({
       type: 'ADDITIONAL_EQUIPMENT',
       businessReason: 'Threshold behaviour.',
@@ -37,9 +37,42 @@ async function raiseCheapRequest() {
     });
   expect(created.status, JSON.stringify(created.body)).toBeLessThan(300);
   const id = created.body.data.id as string;
-  await api(app).post(`/api/v1/requests/${id}/submit`).set(auth(s.employee));
-  const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
-  return (detail.body.data.approvals as { stepName: string }[]).map((a) => a.stepName);
+  await api(app).post(`/api/v1/requests/${id}/submit`).set(auth(s.officeAdmin));
+  return id;
+}
+
+/**
+ * Does the Finance step actually apply?
+ *
+ * The chain has to be walked to find out: since v2.25 a threshold is evaluated
+ * when the step comes up, not when the chain is built, because the cost is
+ * entered after submission. A queued step has simply not been decided yet.
+ */
+async function financeApplies(id: string) {
+  const byStep: Record<string, AccountKey> = {
+    'Manager review': 'manager',
+    'HR confirmation': 'hr',
+    'IT review': 'itAdmin',
+    'Office review': 'officeAdmin',
+  };
+  for (let guard = 0; guard < 8; guard += 1) {
+    const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    const steps = detail.body.data.approvals as { stepName: string; decision: string }[];
+    const finance = steps.find((a) => a.stepName === 'Finance approval');
+    if (!finance) return false;
+    if (finance.decision === 'SKIPPED') return false;
+    if (finance.decision !== 'WAITING') return true;
+
+    const current = steps.find((a) => a.decision === 'PENDING');
+    if (!current) return false;
+    const who = byStep[current.stepName];
+    if (!who) return false;
+    await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s[who]))
+      .send({ decision: 'APPROVED' });
+  }
+  return false;
 }
 
 beforeAll(async () => {
@@ -101,7 +134,9 @@ describe('clearing a threshold', () => {
       where: { id: financeStepId },
       data: { costThreshold: '250' },
     });
-    expect(await raiseCheapRequest()).not.toContain('Finance approval');
+    // v2.25 - the step is created either way; the threshold decides whether it
+    // applies when it comes up, because the cost is entered after submission.
+    expect(await financeApplies(await raiseCheapRequest())).toBe(false);
 
     const cleared = await api(app)
       .patch(`/api/v1/workflows/steps/${financeStepId}`)
@@ -110,7 +145,7 @@ describe('clearing a threshold', () => {
     expect(cleared.status, JSON.stringify(cleared.body)).toBeLessThan(300);
 
     // After: the same cheap request does.
-    expect(await raiseCheapRequest()).toContain('Finance approval');
+    expect(await financeApplies(await raiseCheapRequest())).toBe(true);
 
     // Changing who must approve what leaves the same trail a role change does.
     const trail = await prisma.client.auditLog.findFirst({
