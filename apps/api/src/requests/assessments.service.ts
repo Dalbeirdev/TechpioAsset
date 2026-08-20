@@ -4,6 +4,7 @@ import type { AuthUser, UpsertAssessmentInput } from '@techpioasset/contracts';
 import { AppError } from '../common/errors/app-error.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RequestsService } from './requests.service.js';
 
 /**
  * The commercial assessment of a request (v2.25).
@@ -22,6 +23,7 @@ export class AssessmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly requests: RequestsService,
   ) {}
 
   /** (unit price x quantity) + tax + shipping - discount, or null if unpriced. */
@@ -158,6 +160,11 @@ export class AssessmentsService {
         vendorId: saved.vendorId,
       },
     });
+
+    // An inventory-check or cost-assessment stage is completed by doing the
+    // work, so recording the answer is what moves the chain on - not a second
+    // click on a button asking the same question again.
+    await this.requests.completeAssessmentStages(actor, requestId);
 
     return this.present(saved);
   }

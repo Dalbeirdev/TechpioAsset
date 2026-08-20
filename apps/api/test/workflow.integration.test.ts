@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
 /**
@@ -9,14 +10,35 @@ import { api, auth, createTestApp, loginAll, type AccountKey, type Session } fro
  * Driven entirely through the HTTP API as the real actors, so the configured
  * workflow, the step-level authorisation and the status machine are all exercised
  * together rather than in isolation.
+ *
+ * The chain this walks is the approval one, so the file pins its own
+ * precondition: the v2.25 assessment stages are configurable per workflow, and
+ * a suite that silently inherits whatever another file left switched on passes
+ * or fails for reasons that have nothing to do with what it is testing. They
+ * are covered in assessment-stages.integration.test.ts.
  */
 
 let app: INestApplication;
 let s: Record<AccountKey, Session>;
+let prisma: PrismaService;
+let removedStageIds: string[] = [];
 
 beforeAll(async () => {
   app = await createTestApp();
   s = await loginAll(app);
+  prisma = app.get(PrismaService);
+
+  const stages = await prisma.client.workflowStep.findMany({
+    where: {
+      kind: { not: 'APPROVAL' },
+      workflowDefinition: { companyId: s.superAdmin.user.companyId },
+    },
+    select: { id: true },
+  });
+  removedStageIds = stages.map((x) => x.id);
+  if (removedStageIds.length > 0) {
+    await prisma.client.workflowStep.deleteMany({ where: { id: { in: removedStageIds } } });
+  }
 });
 
 afterAll(async () => {

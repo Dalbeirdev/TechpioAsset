@@ -69,11 +69,17 @@ describe('provisioned tenants get real approval chains', () => {
 
     // Steps resolve to REAL roles in THIS tenant, not dangling ids.
     const itEquipment = definitions.find((d) => d.key === 'it-equipment')!;
-    expect(itEquipment.steps.length).toBeGreaterThanOrEqual(4);
-    const roleIds = itEquipment.steps.map((s) => s.approverRoleId).filter(Boolean) as string[];
+    expect(itEquipment.steps.length).toBeGreaterThanOrEqual(6);
+    // Deduplicated: since v2.25 two steps legitimately share a role (the
+    // inventory check and the cost assessment both sit with the office
+    // administrator), so comparing row count to id count would fail for a
+    // reason that has nothing to do with dangling ids.
+    const roleIds = [
+      ...new Set(itEquipment.steps.map((s) => s.approverRoleId).filter(Boolean) as string[]),
+    ];
     const roles = await prisma.client.role.findMany({
       where: { id: { in: roleIds } },
-      select: { companyId: true },
+      select: { id: true, companyId: true },
     });
     expect(roles).toHaveLength(roleIds.length);
     expect(roles.every((r) => r.companyId === tenantId)).toBe(true);

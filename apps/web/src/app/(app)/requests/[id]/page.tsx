@@ -22,6 +22,7 @@ interface Approval {
   decision: 'WAITING' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED' | 'DELEGATED';
   decidedAt: string | null;
   comment: string | null;
+  kind: 'APPROVAL' | 'INVENTORY_CHECK' | 'COST_ASSESSMENT';
   reviewStartedAt: string | null;
   reviewStartedBy: { id: string; profile: { firstName: string; lastName: string } | null } | null;
   approver: {
@@ -214,7 +215,11 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   // which is the only party that knows the step's approver rules - the local
   // permission check alone would offer an Approve button that 403s on click.
   const currentStep = data.approvals.find((a) => a.decision === 'PENDING');
-  const canAct = Boolean(currentStep) && can(PERMISSIONS.REQUESTS_APPROVE) && data.canDecide;
+  // An assessment stage is completed by recording the answer, not by approving:
+  // the decision panel would offer a button the server refuses.
+  const isAssessmentStage = Boolean(currentStep) && currentStep!.kind !== 'APPROVAL';
+  const canAct =
+    Boolean(currentStep) && !isAssessmentStage && can(PERMISSIONS.REQUESTS_APPROVE) && data.canDecide;
 
   return (
     <div className="mx-auto grid max-w-4xl gap-4">
@@ -373,6 +378,17 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
               ))}
             </ul>
           </Card>
+
+          {isAssessmentStage ? (
+            <Card className="p-4">
+              <p className="text-sm font-medium">Waiting on {currentStep!.stepName}</p>
+              <p className="mt-1 text-xs text-[var(--color-content-muted)]">
+                {currentStep!.kind === 'INVENTORY_CHECK'
+                  ? 'This step is completed by answering whether a purchase is required — there is nothing to approve.'
+                  : 'This step is completed by recording the cost — there is nothing to approve.'}
+              </p>
+            </Card>
+          ) : null}
 
           {can(PERMISSIONS.REQUESTS_ASSESS) ? <ProcurementAssessment requestId={id} /> : null}
 
