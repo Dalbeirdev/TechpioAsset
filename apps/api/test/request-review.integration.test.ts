@@ -83,6 +83,18 @@ describe('marking a step under review', () => {
     expect(after.reviewStartedAt).toBe(step.reviewStartedAt);
   });
 
+  it('names the step in the notification, so four desks are four messages', async () => {
+    const id = await submittedRequest();
+    await api(app).post(`/api/v1/requests/${id}/review`).set(auth(s.manager));
+
+    const told = await api(app).get('/api/v1/notifications?pageSize=25').set(auth(s.employee));
+    expect(told.status).toBeLessThan(300);
+    const titles = (told.body.data as { title: string }[]).map((n) => n.title);
+    // The step is in the title, not only the body: identical subject lines
+    // across a chain read as one message repeated, not as progress.
+    expect(titles.some((t) => /Manager review is reviewing/.test(t))).toBe(true);
+  });
+
   it('does not change what the approver may do - approve still works after it', async () => {
     const id = await submittedRequest();
 
