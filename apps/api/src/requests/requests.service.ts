@@ -1026,7 +1026,10 @@ export class RequestsService {
       companyId: actor.companyId,
       userId: request.requesterId,
       type: 'REQUEST_COMMENT',
-      title: `Request ${request.requestNumber} is being reviewed`,
+      // The step belongs in the subject line, not only the body: a four-step
+      // chain otherwise sends the requester four identically-titled emails,
+      // which reads as one message repeated rather than progress.
+      title: `${request.requestNumber}: ${approval.stepName} is reviewing`,
       body: `${approval.stepName} has started looking at your request.`,
       linkPath: `/requests/${id}`,
       entityType: 'AssetRequest',
