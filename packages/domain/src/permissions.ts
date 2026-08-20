@@ -214,6 +214,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.VENDORS_READ,
     P.PURCHASE_ORDERS_READ,
     P.REQUESTS_CREATE,
+    // v2.24 - whoever may raise a request may withdraw their own. The route
+    // is guarded by this permission, so without it a specialist who raised a
+    // ticket could not cancel it - only Registered Employees could.
+    P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
     P.EMPLOYEES_READ,
@@ -234,6 +238,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   HR: [
     P.ASSETS_READ,
     P.REQUESTS_CREATE,
+    // v2.24 - whoever may raise a request may withdraw their own. The route
+    // is guarded by this permission, so without it a specialist who raised a
+    // ticket could not cancel it - only Registered Employees could.
+    P.REQUESTS_CANCEL,
     P.REQUESTS_CREATE_ON_BEHALF,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
@@ -260,6 +268,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.VENDORS_READ,
     P.PURCHASE_ORDERS_READ,
     P.REQUESTS_CREATE,
+    // v2.24 - whoever may raise a request may withdraw their own. The route
+    // is guarded by this permission, so without it a specialist who raised a
+    // ticket could not cancel it - only Registered Employees could.
+    P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
     P.EMPLOYEES_READ,
@@ -302,6 +314,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.PURCHASE_ORDERS_READ,
     P.PURCHASE_ORDERS_MANAGE,
     P.REQUESTS_CREATE,
+    // v2.24 - whoever may raise a request may withdraw their own. The route
+    // is guarded by this permission, so without it a specialist who raised a
+    // ticket could not cancel it - only Registered Employees could.
+    P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
     P.REPORTS_READ,
@@ -313,6 +329,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   MANAGER: [
     P.ASSETS_READ,
     P.REQUESTS_CREATE,
+    // v2.24 - whoever may raise a request may withdraw their own. The route
+    // is guarded by this permission, so without it a specialist who raised a
+    // ticket could not cancel it - only Registered Employees could.
+    P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
     P.EMPLOYEES_READ,
