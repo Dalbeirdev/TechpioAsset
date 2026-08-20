@@ -8,6 +8,7 @@ import {
   HelpCircle,
   Laptop,
   ListChecks,
+  Route,
   Send,
   Smartphone,
   UserCog,
@@ -16,6 +17,7 @@ import { REQUEST_STATUS_TOKENS } from '@techpioasset/ui-tokens';
 import type { RequestStatus } from '@techpioasset/domain';
 import { HeroAccent, HeroBackdrop, HeroBadge } from '@/components/marketing/hero-backdrop';
 import { StatusBadge } from '@/components/status-badge';
+import { PrintGuide } from '@/components/marketing/print-guide';
 
 /**
  * How to raise a request, written for the person raising one.
@@ -89,7 +91,7 @@ const STATUSES: { key: RequestStatus; meaning: string; group: 'open' | 'decided'
 export default function RaisingARequestPage() {
   return (
     <div>
-      <section className="relative overflow-hidden">
+      <section className="guide-hero relative overflow-hidden">
         <HeroBackdrop />
         <div className="relative mx-auto max-w-3xl px-5 py-16 sm:py-20">
           <HeroBadge>Guide</HeroBadge>
@@ -100,6 +102,12 @@ export default function RaisingARequestPage() {
             Everything a request goes through — where to start it, what to write, who approves it,
             and what each status is telling you while you wait.
           </p>
+          {/* Printing the live page is the only copy worth handing out: it was
+              right the day it was made, and there is no second document to
+              keep in step with the product. */}
+          <div className="mt-6">
+            <PrintGuide />
+          </div>
         </div>
       </section>
 
@@ -242,6 +250,77 @@ export default function RaisingARequestPage() {
           </p>
         </Section>
 
+        <Section icon={Route} title="One request, all the way through">
+          <p>
+            The rules above, as a single worked example. This is a real four-step chain — a laptop
+            for a new starter, estimated at 1,699 — and every line is what the product actually
+            does, not an illustration of what it might.
+          </p>
+
+          <ol className="mt-4 grid gap-0">
+            <Beat
+              n={1}
+              actor="Ravi (requester)"
+              title="Raises it"
+              badge="Manager approval"
+              sees="Fills in the type, what he needs and why, and submits. He can cancel it himself right up until somebody decides."
+              others="The request lands with the manager within seconds — inbox and email."
+            />
+            <Beat
+              n={2}
+              actor="Daniel (manager)"
+              title="Marks it under review, then approves"
+              badge="HR review"
+              sees="Finds it under Requests → Awaiting me. Three choices: mark under review, approve, reject — each with a note."
+              others={'Ravi gets two emails: “Manager review is reviewing”, then “Manager review approved — Team needs it, approved.”'}
+            />
+            <Beat
+              n={3}
+              actor="Sofia (HR)"
+              title="Confirms the joiner"
+              badge="IT review"
+              sees="A fresh step: HR does not inherit the manager’s review mark, and cannot see the manager’s step as theirs to decide."
+              others="Ravi hears again, with Sofia’s note attached."
+            />
+            <Beat
+              n={4}
+              actor="Marcus (IT)"
+              title="Confirms the specification"
+              badge="Finance approval"
+              sees="Decides what to actually issue. If nobody held the IT Administrator role, this step would skip itself rather than stall."
+              others="Ravi hears again. The chain moves to Finance because the estimate is above the Finance threshold."
+            />
+            <Beat
+              n={5}
+              actor="Hannah (finance)"
+              title="Approves the spend"
+              badge="Approved"
+              sees="The last step. Cost is visible here and to nobody below it."
+              others="Ravi is told the request is fully approved and being prepared."
+              last
+            />
+          </ol>
+
+          <Callout>
+            <strong>What Ravi received:</strong> eight messages — one as each desk picked it up, one
+            as each approved, each carrying that reviewer’s own words. At no point did he have to
+            ask where it had got to.
+          </Callout>
+
+          <p className="mt-4">
+            After approval it continues through fulfilment — reserved or ordered, arrived, ready,
+            handed over — and Ravi is emailed at each of those too. The{' '}
+            <strong>PDF</strong> on the request prints the whole trail: every step, who decided it,
+            when, and their note.
+          </p>
+
+          <p>
+            <strong>If somebody rejects instead:</strong> the request stops there, the remaining
+            steps are marked skipped so the chain reads as a finished history rather than a
+            half-done one, and the rejection reaches Ravi with the reason.
+          </p>
+        </Section>
+
         <Section icon={UserCog} title="Every status, in order">
           <p className="mb-3">
             These are the exact badges you will see on the request, so you can match what is on
@@ -371,5 +450,56 @@ function Field({
       </p>
       <p className="mt-1 text-sm text-[var(--color-content-muted)]">{children}</p>
     </div>
+  );
+}
+
+/** One move in the worked example: who acted, what they saw, what others got. */
+function Beat({
+  n,
+  actor,
+  title,
+  badge,
+  sees,
+  others,
+  last = false,
+}: {
+  n: number;
+  actor: string;
+  title: string;
+  badge: string;
+  sees: string;
+  others: React.ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <li className="grid grid-cols-[auto_1fr] gap-x-4">
+      <div className="flex flex-col items-center">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--color-brand)] text-sm font-semibold text-[var(--color-brand-contrast)]">
+          {n}
+        </span>
+        {/* The rail is what makes five cards read as one sequence. */}
+        {!last ? <span className="w-px flex-1 bg-[var(--color-border-strong)]" /> : null}
+      </div>
+      <div className={last ? 'pb-0' : 'pb-6'}>
+        <p className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold">{title}</span>
+          <span className="text-xs text-[var(--color-content-subtle)]">{actor}</span>
+          <span className="rounded-full bg-[var(--color-surface-sunken)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-content-muted)]">
+            → {badge}
+          </span>
+        </p>
+        <p className="mt-1 text-sm text-[var(--color-content-muted)]">{sees}</p>
+        <p className="mt-1 text-sm text-[var(--color-content-muted)]">{others}</p>
+      </div>
+    </li>
+  );
+}
+
+/** A pulled-out remark inside a section. */
+function Callout({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 text-sm">
+      {children}
+    </p>
   );
 }
