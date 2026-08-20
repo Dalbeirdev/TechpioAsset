@@ -6,6 +6,7 @@ export * from './health';
 export * from './auth';
 export * from './assets';
 export * from './requests';
+export * from './workflows';
 export * from './invoices';
 export * from './mobile';
 export * from './maintenance';

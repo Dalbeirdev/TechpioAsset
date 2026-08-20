@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { ulid } from 'ulid';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
 /**
@@ -13,10 +14,12 @@ import { api, auth, createTestApp, loginAll, type AccountKey, type Session } fro
 
 let app: INestApplication;
 let s: Record<AccountKey, Session>;
+let prisma: PrismaService;
 
 beforeAll(async () => {
   app = await createTestApp();
   s = await loginAll(app);
+  prisma = app.get(PrismaService);
 });
 
 afterAll(async () => {
@@ -187,17 +190,34 @@ describe('offline scan sync — idempotent replay (spec section 16)', () => {
 describe('delta pull (spec section 24)', () => {
   it('returns assets changed since a timestamp, scoped to the caller', async () => {
     const past = new Date(Date.now() - 86_400_000 * 400).toISOString();
+    // Ask for the largest page the endpoint allows. At the default 200 both
+    // sides hit the cap on a long-lived database, and the comparison below
+    // stops being about scoping at all.
     const admin = await api(app)
-      .get(`/api/v1/mobile/assets/delta?since=${past}`)
+      .get(`/api/v1/mobile/assets/delta?since=${past}&limit=500`)
       .set(auth(s.superAdmin));
     const employee = await api(app)
-      .get(`/api/v1/mobile/assets/delta?since=${past}`)
+      .get(`/api/v1/mobile/assets/delta?since=${past}&limit=500`)
       .set(auth(s.employee));
 
     expect(admin.status).toBe(200);
     expect(admin.body.data.data.length).toBeGreaterThan(0);
-    // The employee's delta is scoped just like every other asset read.
-    expect(employee.body.data.data.length).toBeLessThan(admin.body.data.data.length);
+
+    // The employee's delta is scoped just like every other asset read - asserted
+    // against what they actually hold, not against the admin's row count. Both
+    // responses are pages ordered by updatedAt, so on a long-lived database
+    // comparing the two slices tests pagination rather than scoping.
+    const employeeRows = employee.body.data.data as { id: string }[];
+    expect(employeeRows.length).toBeGreaterThan(0);
+
+    const foreign = await prisma.client.asset.count({
+      where: {
+        id: { in: employeeRows.map((r) => r.id) },
+        assignedUserId: { not: s.employee.user.id },
+      },
+    });
+    expect(foreign, 'an OWN-scoped delta must contain only the caller’s assets').toBe(0);
+
     expect(admin.body.data.syncedAt).toBeTruthy();
   });
 
