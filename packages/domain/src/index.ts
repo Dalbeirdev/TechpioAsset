@@ -2,6 +2,7 @@ export * from './state-machine';
 export * from './asset-status';
 export * from './asset-dimensions';
 export * from './request-status';
+export * from './request-progress';
 export * from './verification-status';
 export * from './money';
 export * from './tracking';
