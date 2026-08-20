@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { AuditAction, Prisma, type ApproverType, type RequestType } from '@prisma/client';
+import { AuditAction, Prisma, type ApproverType, type RequestType, type WorkflowStepKind } from '@prisma/client';
 import type { AuthUser } from '@techpioasset/contracts';
 import {
   ONBOARDING_TEMPLATE,
@@ -204,6 +204,7 @@ export class PlatformService {
               costThreshold: step.costThreshold ? new Prisma.Decimal(step.costThreshold) : null,
               isSkippable: step.isSkippable ?? false,
               slaHours: step.slaHours ?? null,
+              kind: (step.kind ?? 'APPROVAL') as WorkflowStepKind,
             },
           });
         }

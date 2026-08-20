@@ -237,6 +237,7 @@ export class RequestsService {
             decidedAt: true,
             comment: true,
             slaDueAt: true,
+            kind: true,
             reviewStartedAt: true,
             reviewStartedBy: {
               select: { id: true, profile: { select: { firstName: true, lastName: true } } },
@@ -868,6 +869,7 @@ export class RequestsService {
           approverId: step.approverId,
           slaDueAt: step.slaDueAt,
           costThreshold: step.costThreshold,
+          kind: step.kind,
           decision: ApprovalDecision.WAITING,
         })),
       });
@@ -898,6 +900,7 @@ export class RequestsService {
                 approverId: current.approverId,
                 slaDueAt: current.slaDueAt,
                 costThreshold: current.costThreshold ? current.costThreshold.toString() : null,
+                kind: current.kind,
               }),
               submittedAt: now,
               workflowDefinitionId: definitionId,
@@ -1103,6 +1106,28 @@ export class RequestsService {
 
   async decide(actor: AuthUser, id: string, decision: 'APPROVED' | 'REJECTED', comment?: string) {
     const request = await this.loadForWrite(actor, id);
+
+    // An assessment stage is work, not a judgement. Approving it would let the
+    // chain move past an inventory check nobody performed, with the cost still
+    // unknown - which is the whole thing these stages exist to prevent.
+    const current = await this.prisma.client.requestApproval.findFirst({
+      where: { requestId: id, decision: ApprovalDecision.PENDING },
+      orderBy: { stepOrder: 'asc' },
+      select: { kind: true, stepName: true },
+    });
+    if (current && current.kind !== 'APPROVAL' && decision === 'APPROVED') {
+      throw new AppError(
+        'ILLEGAL_STATE_TRANSITION',
+        `"${current.stepName}" is completed by recording the assessment, not by approving it`,
+        {
+          detail:
+            current.kind === 'INVENTORY_CHECK'
+              ? 'Answer whether a purchase is required in the procurement assessment.'
+              : 'Enter the cost in the procurement assessment.',
+        },
+      );
+    }
+
     const approval = await this.workflow.assertCanDecide({
       requestId: id,
       actorId: actor.id,
@@ -1208,6 +1233,7 @@ export class RequestsService {
           approverId: nextStep.approverId,
           slaDueAt: nextStep.slaDueAt,
           costThreshold: nextStep.costThreshold ? nextStep.costThreshold.toString() : null,
+          kind: nextStep.kind,
         })
       : 'APPROVED';
 
@@ -1593,6 +1619,22 @@ export class RequestsService {
       const next = waiting[0];
       if (!next) return { current: null, skipped };
 
+      // A cost-assessment stage exists to put a price on a purchase. Told
+      // there is no purchase, it has nothing to ask for and stands aside - the
+      // inventory check before it already recorded the answer.
+      if (next.kind === 'COST_ASSESSMENT' && money.purchaseRequired === false) {
+        await tx.requestApproval.update({
+          where: { id: next.id },
+          data: {
+            decision: ApprovalDecision.SKIPPED,
+            decidedAt: new Date(),
+            comment: 'Skipped automatically — nothing to cost, filled from existing stock.',
+          },
+        });
+        skipped.push(next.stepName);
+        continue;
+      }
+
       // The configured business rule first: a step the money says does not
       // apply is skipped wherever it sits, including last. That is a decision
       // the company made, not a staffing failure.
@@ -1636,6 +1678,177 @@ export class RequestsService {
       });
       return { current: next, skipped };
     }
+  }
+
+  /**
+   * Advance past any assessment stage the saved assessment has now answered
+   * (v2.25).
+   *
+   * These stages are completed by doing the work, not by approving: an
+   * inventory check is done once somebody has said whether a purchase is
+   * required, and a cost assessment once there is a figure. Called after the
+   * assessment is written, so the chain moves the moment the answer exists
+   * rather than waiting for a second, meaningless click.
+   *
+   * Loops, because answering both questions in one save should clear both
+   * stages.
+   */
+  async completeAssessmentStages(actor: AuthUser, requestId: string): Promise<void> {
+    for (let guard = 0; guard < 4; guard += 1) {
+      const current = await this.prisma.client.requestApproval.findFirst({
+        where: { requestId, decision: ApprovalDecision.PENDING },
+        orderBy: { stepOrder: 'asc' },
+        select: { id: true, kind: true, stepName: true },
+      });
+      if (!current || current.kind === 'APPROVAL') return;
+
+      const money = await this.authorisedAmountFor(this.prisma.client, requestId);
+      const answered =
+        current.kind === 'INVENTORY_CHECK'
+          ? money.purchaseRequired !== null
+          : money.amount !== null || money.purchaseRequired === false;
+      if (!answered) return;
+
+      const request = await this.prisma.client.assetRequest.findUniqueOrThrow({
+        where: { id: requestId },
+        select: {
+          requestNumber: true,
+          requesterId: true,
+          type: true,
+          replacesAssetId: true,
+          businessReason: true,
+          requester: { select: { profile: { select: { managerId: true } } } },
+        },
+      });
+
+      const { current: nextStep, skipped } = await this.prisma.client.$transaction(async (tx) => {
+        await tx.requestApproval.update({
+          where: { id: current.id },
+          data: {
+            decision: ApprovalDecision.APPROVED,
+            decidedAt: new Date(),
+            approverId: actor.id,
+            comment:
+              current.kind === 'INVENTORY_CHECK'
+                ? money.purchaseRequired
+                  ? 'Nothing suitable in stock — a purchase is required.'
+                  : 'Filled from existing stock.'
+                : `Assessed at ${money.amount?.toString() ?? 'no cost'}.`,
+          },
+        });
+        return this.promoteUntilStaffed(tx, {
+          requestId,
+          companyId: actor.companyId,
+          requesterManagerId: request.requester.profile?.managerId ?? null,
+          requesterId: request.requesterId,
+        });
+      });
+
+      await this.settleAfterStep(actor, {
+        requestId,
+        requestNumber: request.requestNumber,
+        requesterId: request.requesterId,
+        type: request.type,
+        replacesAssetId: request.replacesAssetId,
+        businessReason: request.businessReason,
+        stepName: current.stepName,
+        nextStep,
+        skipped,
+      });
+    }
+  }
+
+  /**
+   * Shared tail of "a step just completed": set the status, tell whoever needs
+   * telling, and raise the work order if the chain finished.
+   */
+  private async settleAfterStep(
+    actor: AuthUser,
+    ctx: {
+      requestId: string;
+      requestNumber: string;
+      requesterId: string;
+      type: string;
+      replacesAssetId: string | null;
+      businessReason: string;
+      stepName: string;
+      nextStep: { stepOrder: number; stepName: string } | null;
+      skipped: string[];
+    },
+  ): Promise<void> {
+    const now = new Date();
+    const detail = await this.prisma.client.requestApproval.findFirst({
+      where: { requestId: ctx.requestId, decision: ApprovalDecision.PENDING },
+      orderBy: { stepOrder: 'asc' },
+      include: { approverRole: true },
+    });
+
+    const nextStatus: RequestStatus = detail
+      ? this.workflow.statusForStep({
+          stepOrder: detail.stepOrder,
+          stepName: detail.stepName,
+          approverType: detail.approverType,
+          approverRoleId: detail.approverRoleId,
+          approverRoleKey: detail.approverRole?.key ?? null,
+          approverId: detail.approverId,
+          slaDueAt: detail.slaDueAt,
+          costThreshold: detail.costThreshold ? detail.costThreshold.toString() : null,
+          kind: detail.kind,
+        })
+      : 'APPROVED';
+
+    await this.prisma.client.assetRequest.update({
+      where: { id: ctx.requestId },
+      data: {
+        status: nextStatus,
+        currentStepOrder: detail?.stepOrder ?? null,
+        ...(detail ? {} : { decidedAt: now }),
+        updatedById: actor.id,
+        version: { increment: 1 },
+      },
+    });
+
+    if (detail) {
+      await this.notifyApprovers(actor.companyId, ctx.requestId, ctx.requestNumber);
+      await this.notifications.notify({
+        companyId: actor.companyId,
+        userId: ctx.requesterId,
+        type: 'REQUEST_APPROVED',
+        title: `${ctx.requestNumber}: ${ctx.stepName} completed`,
+        body:
+          `${ctx.stepName} is done.` +
+          (ctx.skipped.length ? ` ${ctx.skipped.join(', ')} skipped.` : '') +
+          ` Now with ${detail.stepName}.`,
+        linkPath: `/requests/${ctx.requestId}`,
+        entityType: 'AssetRequest',
+        entityId: ctx.requestId,
+      });
+      return;
+    }
+
+    await this.notifications.notify({
+      companyId: actor.companyId,
+      userId: ctx.requesterId,
+      type: 'REQUEST_APPROVED',
+      title: `Request ${ctx.requestNumber} approved`,
+      body: 'Your request has completed approval and is being prepared.',
+      linkPath: `/requests/${ctx.requestId}`,
+      entityType: 'AssetRequest',
+      entityId: ctx.requestId,
+    });
+    void this.webhooks.publish(actor.companyId, 'request.decided', {
+      requestId: ctx.requestId,
+      requestNumber: ctx.requestNumber,
+      decision: 'APPROVED',
+      step: ctx.stepName,
+    });
+    await this.raiseWorkOrder(actor, {
+      id: ctx.requestId,
+      requestNumber: ctx.requestNumber,
+      type: ctx.type,
+      assetId: ctx.replacesAssetId,
+      businessReason: ctx.businessReason,
+    });
   }
 
   private async pendingApproverIds(requestId: string): Promise<string[]> {

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@techpioasset/contracts';
-import { updateWorkflowStepSchema } from '@techpioasset/contracts';
+import { setAssessmentStagesSchema, updateWorkflowStepSchema } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
@@ -23,6 +23,22 @@ export class WorkflowsController {
   })
   list(@CurrentUser() actor: AuthUser) {
     return this.workflows.list(actor);
+  }
+
+  @Patch(':id/assessment-stages')
+  @RequirePermissions(PERMISSIONS.WORKFLOWS_CONFIGURE)
+  @ApiOperation({
+    summary: 'Add or remove the inventory-check and cost-assessment stages',
+    description:
+      'The two stages go in immediately before the first thresholded step, because their answer ' +
+      'is what that threshold is measured against. Requests already in flight are untouched.',
+  })
+  setAssessmentStages(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(setAssessmentStagesSchema)) body: { enabled: boolean; roleKey?: string },
+  ) {
+    return this.workflows.setAssessmentStages(actor, id, body);
   }
 
   @Patch('steps/:id')

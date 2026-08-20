@@ -51,6 +51,12 @@ export interface WorkflowStepLike {
   /** Step applies only when the request total exceeds this. */
   costThreshold?: string | number | null;
   isSkippable: boolean;
+  /**
+   * v2.25 - what the step asks of its holder. An assessment stage is work
+   * rather than a judgement: it completes when the answer it exists to capture
+   * is recorded, not by somebody pressing Approve.
+   */
+  kind?: 'APPROVAL' | 'INVENTORY_CHECK' | 'COST_ASSESSMENT';
 }
 
 /**

@@ -191,6 +191,18 @@ enum ApproverType {
   DEPARTMENT_HEAD
 }
 
+/// v2.25 - what a step asks of the person it sits with.
+///
+/// APPROVAL is a judgement: approve or reject. The other two are work - fill in
+/// the assessment. They complete when the answer they exist to capture is
+/// recorded, rather than by somebody pressing Approve on a question nobody
+/// asked them.
+enum WorkflowStepKind {
+  APPROVAL
+  INVENTORY_CHECK
+  COST_ASSESSMENT
+}
+
 /// Spec section 9 - 16 statuses. Mirrors @techpioasset/domain VerificationStatus.
 enum VerificationStatus {
   UPLOADED
@@ -1939,6 +1951,8 @@ model RequestApproval {
   /// built. Snapshotted rather than looked up so changing a workflow later
   /// cannot silently re-decide a request already in flight.
   costThreshold     Decimal?         @db.Decimal(14, 2)
+  /// Snapshotted like the threshold: what this step asks of its holder.
+  kind              WorkflowStepKind @default(APPROVAL)
   // v2.2 Workstream D — set when the SLA-escalation sweep has escalated this
   // overdue step, so it is escalated (and notified) exactly once.
   escalatedAt       DateTime?
@@ -2063,6 +2077,7 @@ model WorkflowStep {
 
   stepOrder      Int
   name           String
+  kind           WorkflowStepKind @default(APPROVAL)
   approverType   ApproverType
   approverRoleId String?
   approverUserId String?

@@ -34,6 +34,24 @@ export const updateWorkflowStepSchema = z
 
 export type UpdateWorkflowStepInput = z.infer<typeof updateWorkflowStepSchema>;
 
+/**
+ * Add or remove the two assessment stages on a workflow (v2.25).
+ *
+ * Deliberately narrower than general step editing: these two stages have fixed
+ * names, a fixed order relative to each other, and no approver choice - they
+ * are the commercial half of the process, not an arbitrary step somebody might
+ * insert anywhere. Restructuring a chain properly is still a larger job.
+ */
+export const setAssessmentStagesSchema = z
+  .object({
+    enabled: z.boolean(),
+    /** Who does the assessment work. Defaults to the office administrator. */
+    roleKey: z.string().min(1).max(60).optional(),
+  })
+  .strict();
+
+export type SetAssessmentStagesInput = z.infer<typeof setAssessmentStagesSchema>;
+
 export const workflowStepSchema = z.object({
   id: z.string(),
   stepOrder: z.number(),
@@ -42,6 +60,7 @@ export const workflowStepSchema = z.object({
   approverRoleKey: z.string().nullable(),
   approverRoleName: z.string().nullable(),
   costThreshold: z.string().nullable(),
+  kind: z.enum(['APPROVAL', 'INVENTORY_CHECK', 'COST_ASSESSMENT']),
   isSkippable: z.boolean(),
   slaHours: z.number().nullable(),
   /** How many active accounts could actually decide this step today. */

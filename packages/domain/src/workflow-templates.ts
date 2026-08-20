@@ -21,6 +21,11 @@ export interface WorkflowStepTemplate {
   costThreshold?: string;
   isSkippable?: boolean;
   slaHours?: number;
+  /**
+   * v2.25 - what the step asks of its holder. Assessment stages are completed
+   * by recording the answer rather than by approving.
+   */
+  kind?: 'APPROVAL' | 'INVENTORY_CHECK' | 'COST_ASSESSMENT';
 }
 
 export interface WorkflowTemplate {
@@ -44,8 +49,28 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       { order: 1, name: 'Manager review', approverType: 'LINE_MANAGER', slaHours: 48 },
       { order: 2, name: 'HR confirmation', approverType: 'ROLE', roleKey: 'HR', slaHours: 48 },
       { order: 3, name: 'IT review', approverType: 'ROLE', roleKey: 'IT_ADMIN', slaHours: 72 },
+      // v2.25 - the commercial half, as two stages rather than one hidden
+      // panel. The inventory check answers "do we already have one?"; only if
+      // the answer is no does anything need pricing, so the cost stage stands
+      // aside when it is yes.
       {
         order: 4,
+        name: 'Inventory check',
+        approverType: 'ROLE',
+        roleKey: 'OFFICE_ADMIN',
+        kind: 'INVENTORY_CHECK',
+        slaHours: 48,
+      },
+      {
+        order: 5,
+        name: 'Cost assessment',
+        approverType: 'ROLE',
+        roleKey: 'OFFICE_ADMIN',
+        kind: 'COST_ASSESSMENT',
+        slaHours: 48,
+      },
+      {
+        order: 6,
         name: 'Finance approval',
         approverType: 'ROLE',
         roleKey: 'FINANCE',

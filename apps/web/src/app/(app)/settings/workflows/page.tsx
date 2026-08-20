@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Users } from 'lucide-react';
+import { AlertTriangle, ClipboardList, Users } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import type { WorkflowDefinition, WorkflowStep } from '@techpioasset/contracts';
 import { apiFetch, ApiError } from '@/lib/api-client';
@@ -41,6 +41,26 @@ export default function WorkflowSettingsPage() {
     queryKey: ['workflows'],
     queryFn: () => apiFetch<WorkflowDefinition[]>('/workflows'),
     enabled: can(PERMISSIONS.WORKFLOWS_CONFIGURE),
+  });
+
+  const stages = useMutation({
+    mutationFn: (input: { definitionId: string; enabled: boolean }) =>
+      apiFetch(`/workflows/${input.definitionId}/assessment-stages`, {
+        method: 'PATCH',
+        body: { enabled: input.enabled },
+      }),
+    onSuccess: async (_r, input) => {
+      await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      toast.success(
+        input.enabled
+          ? 'Inventory check and cost assessment added to this workflow'
+          : 'Assessment stages removed — requests already in flight keep theirs',
+      );
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not change the stages',
+      ),
   });
 
   const save = useMutation({
@@ -95,6 +115,12 @@ export default function WorkflowSettingsPage() {
               {workflow.requestType ? titleCase(workflow.requestType) : 'Every other request type'}
             </span>
           </div>
+
+          <AssessmentStagesToggle
+            hasStages={workflow.steps.some((step) => step.kind !== 'APPROVAL')}
+            busy={stages.isPending}
+            onToggle={(enabled) => stages.mutate({ definitionId: workflow.id, enabled })}
+          />
 
           <ol className="mt-4 grid gap-2">
             {workflow.steps.map((step) => (
@@ -192,5 +218,46 @@ function StepRow({
         ) : null}
       </div>
     </li>
+  );
+}
+
+/**
+ * Whether this workflow asks somebody to check stock and price the request
+ * before Finance sees it.
+ *
+ * Offered as one switch rather than as two editable steps: the pair only makes
+ * sense together, in that order, immediately before the thresholded step whose
+ * answer they supply. Editing them as arbitrary steps would invite chains that
+ * price a request nobody checked stock for.
+ */
+function AssessmentStagesToggle({
+  hasStages,
+  busy,
+  onToggle,
+}: {
+  hasStages: boolean;
+  busy: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
+      <ClipboardList aria-hidden="true" className="size-4 shrink-0 text-[var(--color-brand)]" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">Inventory check and cost assessment</p>
+        <p className="text-xs text-[var(--color-content-muted)]">
+          {hasStages
+            ? 'The request waits for somebody to check stock and price it before finance approval.'
+            : 'Not in this workflow — the cost can be recorded at any point instead.'}
+        </p>
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        loading={busy}
+        onClick={() => onToggle(!hasStages)}
+      >
+        {hasStages ? 'Remove stages' : 'Add stages'}
+      </Button>
+    </div>
   );
 }
