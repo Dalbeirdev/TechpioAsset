@@ -51,7 +51,24 @@ export const REQUEST_STATUS_TOKENS: Readonly<Record<RequestStatus, StatusToken>>
   MANAGER_APPROVAL_PENDING: { label: 'Manager approval', tone: 'warning', icon: 'UserCog' },
   HR_REVIEW_PENDING: { label: 'HR review', tone: 'warning', icon: 'Users' },
   IT_REVIEW_PENDING: { label: 'IT review', tone: 'warning', icon: 'MonitorCog' },
-  OFFICE_ADMIN_REVIEW_PENDING: { label: 'Office review', tone: 'warning', icon: 'Building2' },
+  /**
+   * Named for the desk, not an action, and deliberately unlike its siblings
+   * (v2.26).
+   *
+   * The others map to one step each, so "HR review" is both the status and the
+   * thing being done. This one covers three - Inventory check, Cost assessment,
+   * and a step some workflows literally call "Office review" - so naming it
+   * after any one of them describes the other two wrongly. It used to say
+   * "Office review", which collided with that step name and matched no role or
+   * permission; somebody went looking through every role for the "Office
+   * review" permission it implied. "Office administration" is the wording the
+   * progress panel already uses for this desk.
+   */
+  OFFICE_ADMIN_REVIEW_PENDING: {
+    label: 'Office administration',
+    tone: 'warning',
+    icon: 'Building2',
+  },
   FINANCE_APPROVAL_PENDING: { label: 'Finance approval', tone: 'warning', icon: 'Banknote' },
   APPROVED: { label: 'Approved', tone: 'success', icon: 'CircleCheck' },
   REJECTED: { label: 'Rejected', tone: 'critical', icon: 'CircleX' },
