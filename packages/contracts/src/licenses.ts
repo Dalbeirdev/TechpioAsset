@@ -30,6 +30,11 @@ const costModelEnum = z.enum(['PER_SEAT', 'FLAT', 'PER_CPU', 'PER_CORE']);
 
 export const licenseListQuerySchema = pageQuerySchema.extend({
   status: z.enum(['ACTIVE', 'EXPIRING', 'EXPIRED', 'RETIRED']).optional(),
+  /** Licences with a seat pool at or near capacity - what the dashboard counts. */
+  nearCapacity: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   family: licenseFamilyEnum.optional(),
   vendorId: z.string().optional(),
 });

@@ -23,6 +23,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StockService } from '../stock/stock.service.js';
+import { OPEN_MAINTENANCE } from '../dashboard/dashboard.service.js';
 
 @Injectable()
 export class MaintenanceService {
@@ -37,6 +38,7 @@ export class MaintenanceService {
     const where: Prisma.MaintenanceRecordWhereInput = {
       asset: tenantFilter(actor),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.open ? { status: { in: [...OPEN_MAINTENANCE] } } : {}),
       ...(query.assetId ? { assetId: query.assetId } : {}),
       ...(query.type ? { type: query.type } : {}),
       ...(query.technicianId ? { technicianId: query.technicianId } : {}),

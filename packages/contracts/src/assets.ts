@@ -145,6 +145,11 @@ export const assetListQuerySchema = z.object({
   subcategoryId: z.string().optional(),
   officeId: z.string().optional(),
   departmentId: z.string().optional(),
+  /**
+   * Warranty ending within N days, still in service (v2.26). The dashboard has
+   * counted this for a long time and had nowhere to send anyone who clicked it.
+   */
+  warrantyWithinDays: z.coerce.number().int().min(1).max(3650).optional(),
   assignedUserId: z.string().optional(),
   condition: assetConditionEnum.optional(),
   vendorId: z.string().optional(),

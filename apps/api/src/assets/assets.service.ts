@@ -170,6 +170,24 @@ export class AssetsService {
         : {}),
       ...(query.officeId ? { officeId: query.officeId } : {}),
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+      // Warranty ending inside the window and still in service - the set the
+      // dashboard's "Warranty expiring" tile counts. Retired kit is excluded
+      // for the same reason the tile excludes it: nobody renews a disposed
+      // laptop's warranty.
+      ...(query.warrantyWithinDays
+        ? {
+            warrantyEndDate: {
+              gte: new Date(),
+              lte: new Date(Date.now() + query.warrantyWithinDays * 86_400_000),
+            },
+            // Only when the caller has not chosen a status themselves: a second
+            // `status` key here would silently overwrite theirs, and a filter
+            // accepted and dropped is worse than one refused.
+            ...(query.status
+              ? {}
+              : { status: { notIn: ['DISPOSED', 'DONATED', 'RETIRED'] as const } }),
+          }
+        : {}),
       ...(query.assignedUserId ? { assignedUserId: query.assignedUserId } : {}),
       ...(query.condition ? { condition: query.condition } : {}),
       ...(query.vendorId ? { vendorId: query.vendorId } : {}),

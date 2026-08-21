@@ -30,6 +30,7 @@ import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WebhooksService } from '../integrations/webhooks.service.js';
 import { decryptLicenseKey, encryptLicenseKey, maskLicenseKey } from './license-key.util.js';
+import { strainedLicenses } from './strained-pools.js';
 
 const SORTABLE = ['name', 'expiryDate', 'purchaseDate', 'createdAt', 'seatsPurchased'] as const;
 
@@ -56,8 +57,14 @@ export class LicensesService {
   // ── reads ──────────────────────────────────────────────────────────────────
 
   async list(actor: AuthUser, query: LicenseListQuery) {
+    // Resolved to ids because the 0.9 ratio compares two columns, which a
+    // Prisma filter cannot do. Same helper the dashboard tile uses.
+    const strainedIds = query.nearCapacity
+      ? (await strainedLicenses(this.prisma.client, actor.companyId)).ids
+      : null;
     const where: Prisma.SoftwareLicenseWhereInput = {
       companyId: actor.companyId,
+      ...(strainedIds ? { id: { in: strainedIds } } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.family ? { family: query.family } : {}),
       ...(query.vendorId ? { vendorId: query.vendorId } : {}),
