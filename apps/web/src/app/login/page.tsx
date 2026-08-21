@@ -96,10 +96,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[1.05fr_minmax(0,30rem)] xl:grid-cols-[1.15fr_minmax(0,32rem)]">
+    // lg:h-dvh, not min-h: the showcase beside the form is a tall stack, and
+    // letting it size the grid row made the whole PAGE 912px on every screen.
+    // On a 768px laptop that pushed the Sign in button below the fold - the one
+    // control the page exists for - and sliced the dashboard mockup mid-table
+    // at whatever height the window happened to be. The viewport sets the
+    // height now and the showcase fits itself into it.
+    <div className="min-h-dvh lg:grid lg:h-dvh lg:grid-cols-[1.05fr_minmax(0,30rem)] lg:overflow-hidden xl:grid-cols-[1.15fr_minmax(0,32rem)]">
       <LoginShowcase />
 
-      <div className="flex min-h-dvh flex-col px-5 py-6 sm:px-8">
+      {/* Its own scroller, so a short window scrolls the form rather than the
+          page - the showcase stays put instead of sliding away with it. */}
+      <div className="flex min-h-dvh flex-col px-5 py-6 sm:px-8 lg:h-full lg:min-h-0 lg:overflow-y-auto">
         <div className="flex justify-end">
           <ThemeToggle labels />
         </div>
