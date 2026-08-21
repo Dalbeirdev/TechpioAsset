@@ -270,18 +270,19 @@ export default function RequestDetailScreen() {
           {currentStep.kind === 'INVENTORY_CHECK' ? (
             <>
               <Text style={{ color: c.muted, fontSize: 12, marginBottom: spacing.md }}>
-                Answering this completes the step — there is nothing to approve.
+                One question, two answers. Answering it completes the step — there is nothing to
+                approve. Which item off the shelf is recorded in the web app.
               </Text>
               <View style={{ flexDirection: 'row', gap: spacing.md }}>
                 <Button
-                  label="No — in stock"
+                  label="No — fill from stock"
                   variant="secondary"
                   onPress={() => void answerStock(false)}
                   disabled={busy}
                   style={{ flex: 1 }}
                 />
                 <Button
-                  label="Yes — needs buying"
+                  label="Yes — buy it"
                   onPress={() => void answerStock(true)}
                   loading={busy}
                   style={{ flex: 1 }}
