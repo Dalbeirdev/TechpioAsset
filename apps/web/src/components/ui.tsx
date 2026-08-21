@@ -48,6 +48,41 @@ export const Button = forwardRef<
 
 export const Input = ShadInput;
 
+/**
+ * A plain <select>, styled once (v2.26).
+ *
+ * The same class string had been pasted into seventeen selects across five
+ * screens, which is how they drifted: a couple were missing the focus ring, and
+ * nothing stopped a long option from stretching its grid column. Consolidated
+ * so there is one place to change.
+ *
+ * Deliberately native rather than the Radix Select used on three other screens.
+ * A native select gets keyboard type-ahead for free, and the pickers here run to
+ * every colleague in the company - scrolling 150 names with no way to type at
+ * them is the difference between usable and not.
+ */
+export const NativeSelect = forwardRef<
+  HTMLSelectElement,
+  React.SelectHTMLAttributes<HTMLSelectElement>
+>(({ className, ...props }, ref) => (
+  <select
+    ref={ref}
+    className={cn(
+      'h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm',
+      // min-w-0 so a long option cannot push its grid column wider than the
+      // track; without it one 40-character name reflows the whole row. Width
+      // itself is the caller's to set - filter-bar selects size to their
+      // content, and defaulting to w-full here would stretch every one of them.
+      'min-w-0',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-1',
+      'disabled:cursor-not-allowed disabled:opacity-50',
+      className,
+    )}
+    {...props}
+  />
+));
+NativeSelect.displayName = 'NativeSelect';
+
 export function Field({
   label,
   htmlFor,

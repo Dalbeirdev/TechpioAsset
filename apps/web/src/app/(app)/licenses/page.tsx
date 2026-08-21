@@ -7,7 +7,7 @@ import { KeyRound, Plus, Search } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
-import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { Card, EmptyState, ErrorState, NativeSelect, Skeleton } from '@/components/ui';
 import {
   LicenseStatusPill,
   SeatsMeter,
@@ -64,18 +64,17 @@ export default function LicensesPage() {
             className="h-9 w-64 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] pl-8 text-sm"
           />
         </div>
-        <select
+        <NativeSelect
           aria-label="Filter by status"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
         >
           <option value="">All statuses</option>
           <option value="ACTIVE">Active</option>
           <option value="EXPIRING">Expiring</option>
           <option value="EXPIRED">Expired</option>
           <option value="RETIRED">Retired</option>
-        </select>
+        </NativeSelect>
       </div>
 
       {isPending ? (
