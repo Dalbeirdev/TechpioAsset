@@ -13,6 +13,7 @@ import {
 } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
 import { awaitingMeFilter } from './awaiting-me.js';
+import { CLOSED_REQUEST_STATUSES } from '../dashboard/dashboard.service.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { requestScopeFilter, tenantFilter } from '../common/scope.js';
 import { AppConfig } from '../config/config.module.js';
@@ -122,6 +123,7 @@ export class RequestsService {
             ],
           }
         : {}),
+      ...(query.open ? { status: { notIn: [...CLOSED_REQUEST_STATUSES] } } : {}),
       ...(query.awaitingMe ? awaitingMeFilter(actor) : {}),
     };
     return { AND: [requestScopeFilter(actor), filters] };

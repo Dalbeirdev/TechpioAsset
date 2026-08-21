@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, User } from 'lucide-react';
 import { apiFetchPage } from '@/lib/api-client';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { SchedulesPanel } from '@/components/maintenance/schedules-panel';
+import { useSearchParams } from 'next/navigation';
 
 /**
  * v2.5 H5 — the work-order board. Open work grouped by status with SLA
@@ -65,11 +66,16 @@ function slaBadge(row: MaintenanceRow) {
   );
 }
 
-export default function MaintenancePage() {
+function MaintenanceBoard() {
   const [view, setView] = useState<'board' | 'schedules'>('board');
+  // v2.26 - the dashboard's "Open maintenance" tile links here with ?open=true;
+  // without reading it the count and the destination disagreed.
+  const params = useSearchParams();
+  const [openOnly] = useState(params.get('open') === 'true');
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['maintenance'],
-    queryFn: () => apiFetchPage<MaintenanceRow>('/maintenance?pageSize=100'),
+    queryKey: ['maintenance', openOnly],
+    queryFn: () =>
+      apiFetchPage<MaintenanceRow>(`/maintenance?pageSize=100${openOnly ? '&open=true' : ''}`),
   });
 
   if (view === 'schedules') {
@@ -260,5 +266,17 @@ function MaintenanceHeader({
         ))}
       </div>
     </header>
+  );
+}
+
+/**
+ * useSearchParams needs a Suspense boundary at the route level, so the board is
+ * its own component and the page provides one.
+ */
+export default function MaintenancePage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-64" />}>
+      <MaintenanceBoard />
+    </Suspense>
   );
 }

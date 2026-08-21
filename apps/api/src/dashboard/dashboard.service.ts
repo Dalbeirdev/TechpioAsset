@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assetScopeFilter, tenantFilter } from '../common/scope.js';
 import { awaitingMeFilter } from '../requests/awaiting-me.js';
+import { strainedLicenses } from '../licenses/strained-pools.js';
 
 /** A single KPI tile. The frontend maps `icon` (Lucide) + `tone` to styling. */
 export interface DashboardTile {
@@ -15,8 +16,17 @@ export interface DashboardTile {
   tone: 'neutral' | 'info' | 'progress' | 'success' | 'warning' | 'danger';
 }
 
-const OPEN_REQUEST_STATUSES = ['APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const;
-const OPEN_MAINTENANCE = ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS'] as const;
+/**
+ * Exported so the list endpoints can offer exactly what these tiles count
+ * (v2.26). They used to be private here, so `?open=true` did not exist and
+ * every open tile linked to an unfiltered list - click "Open maintenance: 58"
+ * and land on all 174.
+ *
+ * The name is historical and reads backwards: these are the statuses a request
+ * is NOT open in.
+ */
+export const CLOSED_REQUEST_STATUSES = ['APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const;
+export const OPEN_MAINTENANCE = ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS'] as const;
 const RETIRED_STATUSES = ['DISPOSED', 'DONATED', 'RETIRED'] as const;
 
 /**
@@ -43,7 +53,7 @@ export class DashboardService {
     const [myAssets, myOpenRequests] = await Promise.all([
       db.asset.count({ where: { ...tenant, assignedUserId: actor.id, deletedAt: null } }),
       db.assetRequest.count({
-        where: { ...tenant, requesterId: actor.id, status: { notIn: [...OPEN_REQUEST_STATUSES] } },
+        where: { ...tenant, requesterId: actor.id, status: { notIn: [...CLOSED_REQUEST_STATUSES] } },
       }),
     ]);
     tiles.push({
@@ -58,7 +68,7 @@ export class DashboardService {
       key: 'my-open-requests',
       label: 'My open requests',
       value: myOpenRequests,
-      href: '/requests',
+      href: '/requests?mine=true&open=true',
       icon: 'ClipboardList',
       tone: 'progress',
     });
@@ -105,7 +115,7 @@ export class DashboardService {
             status: { notIn: [...RETIRED_STATUSES] },
           },
         }),
-        href: '/assets',
+        href: '/assets?warrantyWithinDays=90',
         icon: 'ShieldAlert',
         tone: 'warning',
       });
@@ -125,7 +135,7 @@ export class DashboardService {
         key: 'licenses-expiring',
         label: 'Licenses expiring (90d)',
         value: expiring,
-        href: '/licenses',
+        href: '/licenses?status=EXPIRING',
         icon: 'KeyRound',
         tone: expiring > 0 ? 'warning' : 'neutral',
       });
@@ -133,21 +143,20 @@ export class DashboardService {
       // v2.7 R4 — pools at or near capacity. A licence that is full today is
       // tomorrow's blocked hire, so it earns its own tile rather than being
       // discovered at the moment of refusal.
-      const pools = await db.seatPool.findMany({
-        where: { companyId: actor.companyId, license: { status: { not: 'RETIRED' } } },
-        select: { seatsAllocated: true, seatsReserved: true },
-      });
-      const strained = pools.filter(
-        (p) => p.seatsAllocated > 0 && p.seatsReserved / p.seatsAllocated >= 0.9,
-      );
-      const full = strained.filter((p) => p.seatsReserved >= p.seatsAllocated).length;
+      // Counted as LICENCES, not pools. It said "Licenses near capacity" while
+      // counting seat pools, so one licence with three strained pools showed as
+      // three - and it linked to a licence list that could never agree with it.
+      const strained = await strainedLicenses(db, actor.companyId);
       tiles.push({
         key: 'licenses-at-capacity',
-        label: full > 0 ? `Licenses full (${full}) or near` : 'Licenses near capacity',
-        value: strained.length,
-        href: '/licenses',
+        label:
+          strained.fullCount > 0
+            ? `Licenses full (${strained.fullCount}) or near`
+            : 'Licenses near capacity',
+        value: strained.ids.length,
+        href: '/licenses?nearCapacity=true',
         icon: 'KeyRound',
-        tone: full > 0 ? 'danger' : strained.length > 0 ? 'warning' : 'neutral',
+        tone: strained.fullCount > 0 ? 'danger' : strained.ids.length > 0 ? 'warning' : 'neutral',
       });
     }
 
@@ -159,7 +168,7 @@ export class DashboardService {
         value: await db.maintenanceRecord.count({
           where: { asset: { companyId: actor.companyId }, status: { in: [...OPEN_MAINTENANCE] } },
         }),
-        href: '/maintenance',
+        href: '/maintenance?open=true',
         icon: 'Wrench',
         tone: 'progress',
       });

@@ -50,6 +50,11 @@ export const maintenanceListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   order: z.enum(['asc', 'desc']).default('desc'),
   status: maintenanceStatusEnum.optional(),
+  /** Requested, scheduled or in progress - what "Open maintenance" counts. */
+  open: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   assetId: z.string().optional(),
   type: maintenanceTypeEnum.optional(),
   /** v2.5: filter to one technician's work orders (mobile "my work orders"). */

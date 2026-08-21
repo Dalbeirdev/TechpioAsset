@@ -8,6 +8,7 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, NativeSelect, Skeleton } from '@/components/ui';
+import { useSearchParams } from 'next/navigation';
 import {
   LicenseStatusPill,
   SeatsMeter,
@@ -18,7 +19,8 @@ import {
 export default function LicensesPage() {
   const { can } = useAuth();
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('');
+  // Seeded from the URL: the dashboard's expiring tile links here with it.
+  const [status, setStatus] = useState(useSearchParams().get('status') ?? '');
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['licenses', q, status],

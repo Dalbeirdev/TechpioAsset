@@ -14,6 +14,7 @@ import { useToast } from '@/providers/toast-provider';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/status-badge';
+import { useSearchParams } from 'next/navigation';
 
 function titleCase(value: string): string {
   return value
@@ -42,12 +43,19 @@ interface RequestRow {
 function RequestsTable() {
   const { can } = useAuth();
   const toast = useToast();
-  const [awaitingMe, setAwaitingMe] = useState(false);
+  // v2.26 - seeded from the URL. The dashboard tiles have always linked here
+  // with a filter on the query string, and this page ignored it: clicking
+  // "Awaiting my approval: 5" landed on every request you can see. The number
+  // was right and the destination was not.
+  const search$ = useSearchParams();
+  const [awaitingMe, setAwaitingMe] = useState(search$.get('awaitingMe') === 'true');
+  const [mine, setMine] = useState(search$.get('mine') === 'true');
+  const [open, setOpen] = useState(search$.get('open') === 'true');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('');
-  const [type, setType] = useState('');
+  const [status, setStatus] = useState(search$.get('status') ?? '');
+  const [type, setType] = useState(search$.get('type') ?? '');
 
   // Debounce the search box so we query once the user pauses, not per keystroke.
   useEffect(() => {
@@ -60,12 +68,14 @@ function RequestsTable() {
 
   const params = new URLSearchParams({ page: String(page), pageSize: '25' });
   if (awaitingMe) params.set('awaitingMe', 'true');
+  if (mine) params.set('mine', 'true');
+  if (open) params.set('open', 'true');
   if (q) params.set('q', q);
   if (status) params.set('status', status);
   if (type) params.set('type', type);
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['requests', awaitingMe, page, q, status, type],
+    queryKey: ['requests', awaitingMe, mine, open, page, q, status, type],
     queryFn: () => apiFetchPage<RequestRow>(`/requests?${params.toString()}`),
   });
 
@@ -86,8 +96,29 @@ function RequestsTable() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Requests</h1>
           <p className="mt-1 text-sm text-[var(--color-content-muted)]">
-            {awaitingMe ? 'Waiting on your decision.' : 'Requests you can see.'}
+            {awaitingMe
+              ? 'Waiting on your decision.'
+              : mine && open
+                ? 'Your requests that are still in flight.'
+                : mine
+                  ? 'Requests you raised.'
+                  : open
+                    ? 'Requests still in flight.'
+                    : 'Requests you can see.'}
           </p>
+          {mine || open ? (
+            <button
+              type="button"
+              onClick={() => {
+                setMine(false);
+                setOpen(false);
+                setPage(1);
+              }}
+              className="mt-1 text-xs font-medium text-[var(--color-brand)] hover:underline"
+            >
+              Show all requests
+            </button>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">

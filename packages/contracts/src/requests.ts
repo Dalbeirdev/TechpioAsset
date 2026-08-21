@@ -126,6 +126,15 @@ export const requestListQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   status: requestStatusEnum.optional(),
   type: requestTypeEnum.optional(),
+  /**
+   * Still in flight (v2.26). `status` takes a single value, so there was no way
+   * to ask for "not finished" - which is exactly what the dashboard's open
+   * tiles count, leaving them linking to an unfiltered list.
+   */
+  open: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   /** Only requests currently awaiting the caller's decision. */
   awaitingMe: z
     .enum(['true', 'false'])

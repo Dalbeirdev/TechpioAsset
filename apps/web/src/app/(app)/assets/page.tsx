@@ -63,6 +63,9 @@ interface AssetRow {
 
 function AssetsTable() {
   const params = useSearchParams();
+  const [warrantyWithinDays, setWarrantyWithinDays] = useState(
+    params.get('warrantyWithinDays') ?? '',
+  );
   const { user, can } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -87,7 +90,10 @@ function AssetsTable() {
    * arrives, and only while the reader has not chosen anything themselves.
    * Choosing "All types" is a choice, so it sticks.
    */
-  const [typeChosen, setTypeChosen] = useState(false);
+  // Arriving with a filter on the URL counts as a choice: the dashboard's
+  // warranty tile counts every asset type, so letting the laptop default apply
+  // on top would show a subset of the number that was clicked.
+  const [typeChosen, setTypeChosen] = useState(Boolean(params.get('warrantyWithinDays')));
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>('');
@@ -108,6 +114,12 @@ function AssetsTable() {
     if (ownership) p.set('ownershipType', ownership);
     if (type.startsWith('sub:')) p.set('subcategoryId', type.slice(4));
     if (type.startsWith('cat:')) p.set('categoryId', type.slice(4));
+    // v2.26 - carried straight through from the URL. The dashboard's warranty
+    // tile links here with it; the page rebuilt its query from its own controls
+    // only, so the parameter was dropped and the tile landed on the whole
+    // fleet. It arrives by link rather than from a control, so the banner below
+    // is what says it is on and what turns it off.
+    if (warrantyWithinDays) p.set('warrantyWithinDays', warrantyWithinDays);
     return p;
   };
 
@@ -217,6 +229,18 @@ function AssetsTable() {
                 ? `Results for “${q}”.`
                 : 'Everything you are permitted to see.'}
           </p>
+          {warrantyWithinDays ? (
+            <button
+              type="button"
+              onClick={() => {
+                setWarrantyWithinDays('');
+                setPage(1);
+              }}
+              className="mt-1 text-xs font-medium text-[var(--color-brand)] hover:underline"
+            >
+              Warranty ending within {warrantyWithinDays} days · show all assets
+            </button>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
