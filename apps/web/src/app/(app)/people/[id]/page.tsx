@@ -39,7 +39,11 @@ interface PersonDetail {
     hireDate: string | null;
     department: { id: string; name: string } | null;
     office: { id: string; name: string } | null;
-    manager: { id: string; email: string } | null;
+    manager: {
+      id: string;
+      email: string;
+      profile: { firstName: string; lastName: string } | null;
+    } | null;
   } | null;
   roles: { role: { key: string; name: string } }[];
 }
@@ -124,7 +128,26 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
           />
           <Row label="Department" value={p.profile?.department?.name ?? '—'} />
           <Row label="Office" value={p.profile?.office?.name ?? '—'} />
-          <Row label="Manager" value={p.profile?.manager?.email ?? '—'} />
+          <Row
+            label="Line manager"
+            value={
+              p.profile?.manager ? (
+                <Link
+                  href={`/people/${p.profile.manager.id}`}
+                  className="underline underline-offset-2"
+                >
+                  {p.profile.manager.profile
+                    ? `${p.profile.manager.profile.firstName} ${p.profile.manager.profile.lastName}`
+                    : p.profile.manager.email}
+                </Link>
+              ) : (
+                // Not a blank: "none" here has a consequence worth naming.
+                <span className="text-[var(--color-content-muted)]">
+                  Not set — approvals fall back to the Manager role
+                </span>
+              )
+            }
+          />
           <Row label="Joined" value={fmtDate(p.createdAt)} />
           <Row label="Hire date" value={fmtDate(p.profile?.hireDate ?? null)} />
           <Row label="Last sign-in" value={fmtDate(p.lastLoginAt)} />

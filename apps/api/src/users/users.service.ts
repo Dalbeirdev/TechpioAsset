@@ -114,7 +114,13 @@ export class UsersService {
                 avatarKey: true,
                 department: { select: { id: true, name: true } },
                 office: { select: { id: true, name: true } },
-                manager: { select: { id: true, email: true } },
+                manager: {
+                  select: {
+                    id: true,
+                    email: true,
+                    profile: { select: { firstName: true, lastName: true } },
+                  },
+                },
               },
             },
             roles: { select: { role: { select: { key: true, name: true } } } },
@@ -200,14 +206,69 @@ export class UsersService {
    * let a user pick whose assets they can see. Admin mode (users:manage) may
    * place people. Both are audited with before/after.
    */
+  /**
+   * A line manager must be a real, usable approver for this person (v2.26).
+   *
+   * Three ways it can be wrong, and the third is the one that bites. Naming
+   * yourself is an obvious mistake. Naming somebody outside the company, or a
+   * deleted account, leaves the step permanently unstaffed. But naming somebody
+   * whose own chain leads back here builds a cycle - A reports to B, B reports
+   * to A - and the approval walk would loop until something gave out. The
+   * chain is walked upward before the write so the graph can never hold one.
+   */
+  private async assertManagerIsUsable(companyId: string, targetUserId: string, managerId: string) {
+    if (managerId === targetUserId) {
+      throw new AppError('VALIDATION_FAILED', 'Somebody cannot be their own line manager');
+    }
+    const manager = await this.prisma.client.user.findFirst({
+      where: { id: managerId, companyId, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (!manager) throw AppError.notFound('User', managerId);
+    if (manager.status === 'DEACTIVATED') {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        'That account is deactivated and could never act on an approval. Choose an active user.',
+      );
+    }
+
+    // Walk up from the proposed manager. Reaching the target means this edit
+    // would close a loop. The bound is a safety net, not the exit condition:
+    // an existing cycle (impossible through this method, but not through a
+    // direct database edit) must not hang the request.
+    let cursor: string | null = managerId;
+    for (let hop = 0; cursor && hop < 64; hop += 1) {
+      if (cursor === targetUserId) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          'That would create a reporting loop - the person you picked already reports to this user, directly or through their own manager.',
+        );
+      }
+      const next: { managerId: string | null } | null =
+        await this.prisma.client.userProfile.findUnique({
+          where: { userId: cursor },
+          select: { managerId: true },
+        });
+      cursor = next?.managerId ?? null;
+    }
+  }
+
   async updateProfile(
     actor: AuthUser,
     targetUserId: string,
     input: AdminUpdateProfileInput,
     mode: 'self' | 'admin',
   ) {
-    if (mode === 'self' && (input.departmentId !== undefined || input.officeId !== undefined || input.employeeNumber !== undefined)) {
-      throw AppError.forbidden('Department, office and employee number are set by your administrator');
+    if (
+      mode === 'self' &&
+      (input.departmentId !== undefined ||
+        input.officeId !== undefined ||
+        input.employeeNumber !== undefined ||
+        input.managerId !== undefined)
+    ) {
+      throw AppError.forbidden(
+        'Department, office, employee number and line manager are set by your administrator',
+      );
     }
     const user = await this.prisma.client.user.findFirst({
       where: { id: targetUserId, companyId: actor.companyId, deletedAt: null },
@@ -229,6 +290,9 @@ export class UsersService {
       });
       if (!office) throw AppError.notFound('Office', input.officeId);
     }
+    if (input.managerId) {
+      await this.assertManagerIsUsable(actor.companyId, targetUserId, input.managerId);
+    }
 
     const patch = {
       ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
@@ -243,6 +307,7 @@ export class UsersService {
       ...(input.canRaiseRequests !== undefined ? { canRaiseRequests: input.canRaiseRequests } : {}),
       ...(input.officeId !== undefined ? { officeId: input.officeId } : {}),
       ...(input.employeeNumber !== undefined ? { employeeNumber: input.employeeNumber } : {}),
+      ...(input.managerId !== undefined ? { managerId: input.managerId } : {}),
     };
 
     const before = user.profile
@@ -252,6 +317,9 @@ export class UsersService {
           jobTitle: user.profile.jobTitle,
           departmentId: user.profile.departmentId,
           officeId: user.profile.officeId,
+          // Who approved this person's requests before the change is exactly
+          // the kind of thing an auditor comes back for.
+          managerId: user.profile.managerId,
         }
       : null;
 
@@ -271,6 +339,7 @@ export class UsersService {
               departmentId: input.departmentId ?? null,
               officeId: input.officeId ?? null,
               employeeNumber: input.employeeNumber ?? null,
+              managerId: input.managerId ?? null,
             }
           : {}),
         createdById: actor.id,
@@ -313,7 +382,13 @@ export class UsersService {
             hireDate: true,
             department: { select: { id: true, name: true } },
             office: { select: { id: true, name: true } },
-            manager: { select: { id: true, email: true } },
+            manager: {
+                  select: {
+                    id: true,
+                    email: true,
+                    profile: { select: { firstName: true, lastName: true } },
+                  },
+                },
           },
         },
         roles: { select: { role: { select: { key: true, name: true } } } },

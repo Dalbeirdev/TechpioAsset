@@ -9,6 +9,7 @@ import { apiFetch, apiBaseUrl, getAccessToken, ApiError } from '@/lib/api-client
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
 import { AuthAvatar } from '@/components/auth-avatar';
+import { ApprovalDelegation } from '@/components/profile/approval-delegation';
 import { Card, Skeleton } from '@/components/ui';
 
 /**
@@ -309,6 +310,10 @@ export default function ProfilePage() {
           />
         </dl>
       </Card>
+
+      {/* Only approvers can hand approvals on, so only they see the card - for
+          everybody else it would be a section about a job they do not do. */}
+      {can(PERMISSIONS.REQUESTS_APPROVE) ? <ApprovalDelegation /> : null}
 
       <Card className="flex flex-wrap items-center justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
