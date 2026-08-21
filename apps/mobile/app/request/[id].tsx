@@ -11,11 +11,14 @@ import { useSession } from '../../src/providers/session';
 import { useTheme, type Scheme } from '../../src/theme';
 import { personName, formatMoney } from '../../src/lib/format';
 import { Button, Card, Field, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
+import { PERMISSIONS } from '@techpioasset/domain';
 
 interface ApprovalStep {
   id: string;
   stepName: string;
   decision: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED';
+  /** v2.26 - APPROVAL steps are decided; the other two are done. */
+  kind: 'APPROVAL' | 'INVENTORY_CHECK' | 'COST_ASSESSMENT';
   comment: string | null;
   reviewStartedAt: string | null;
   reviewStartedBy: { profile: { firstName: string | null; lastName: string | null } | null } | null;
@@ -51,7 +54,7 @@ interface RequestDetail {
 /** Request detail with approve / reject (spec section 12). */
 export default function RequestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { api } = useSession();
+  const { api, user } = useSession();
   const router = useRouter();
   const { c, scheme, spacing } = useTheme();
   const palette = scheme === 'dark' ? TONE_PALETTE_DARK : TONE_PALETTE_LIGHT;
@@ -77,6 +80,41 @@ export default function RequestDetailScreen() {
       await load();
     } catch {
       Alert.alert('Could not mark this', 'You may no longer be the approver for this step.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Answer the inventory check from the phone (v2.26).
+   *
+   * The screen offered Approve on this stage, which the server always refuses -
+   * it is completed by recording the answer, not by agreeing with it - and
+   * offered no way to record that answer at all. So the one step most likely to
+   * be done away from a desk, standing in the stockroom looking at a shelf,
+   * was the one step a phone could not finish.
+   *
+   * Only the yes/no lives here. Pricing wants a vendor, tax and shipping, and
+   * that form belongs on a bigger screen; the cost stage says so rather than
+   * pretending otherwise.
+   */
+  async function answerStock(purchaseRequired: boolean) {
+    if (!request) return;
+    setBusy(true);
+    try {
+      await api.request(`/requests/${request.id}/assessment`, {
+        method: 'PATCH',
+        body: { inventoryAvailable: !purchaseRequired, purchaseRequired },
+      });
+      Alert.alert(
+        'Recorded',
+        purchaseRequired
+          ? 'Marked as needing a purchase — it moves on to be costed.'
+          : 'Filled from stock — no purchase, so finance approval is skipped.',
+      );
+      router.back();
+    } catch {
+      Alert.alert('Could not record this', 'You may no longer be able to assess this request.');
     } finally {
       setBusy(false);
     }
@@ -116,6 +154,12 @@ export default function RequestDetailScreen() {
   }
 
   const tone = palette[REQUEST_STATUS_TOKENS[request.status].tone];
+  const currentStep = request.approvals.find((a) => a.decision === 'PENDING') ?? null;
+  const isAssessmentStage = Boolean(currentStep) && currentStep!.kind !== 'APPROVAL';
+  // Same rule the web panel uses: the permission, and never on your own request.
+  const canAssess =
+    !!user?.permissions.includes(PERMISSIONS.REQUESTS_ASSESS) &&
+    request.requester?.email !== user?.email;
 
   return (
     <Screen scroll>
@@ -213,6 +257,46 @@ export default function RequestDetailScreen() {
         ))}
       </Card>
 
+      {/* v2.26 - what this step needs depends on what kind it is. An assessment
+          stage is completed by recording an answer, so Approve is not offered:
+          the server refuses it, and a button that always fails is worse than no
+          button. Declining still applies - somebody has to be able to stop a
+          request that should not go ahead. */}
+      {currentStep && currentStep.kind !== 'APPROVAL' && canAssess ? (
+        <Card>
+          <Text style={{ color: c.text, fontWeight: '700', marginBottom: spacing.xs }}>
+            {currentStep.kind === 'INVENTORY_CHECK' ? 'Is a purchase required?' : 'Cost assessment'}
+          </Text>
+          {currentStep.kind === 'INVENTORY_CHECK' ? (
+            <>
+              <Text style={{ color: c.muted, fontSize: 12, marginBottom: spacing.md }}>
+                Answering this completes the step — there is nothing to approve.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                <Button
+                  label="No — in stock"
+                  variant="secondary"
+                  onPress={() => void answerStock(false)}
+                  disabled={busy}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  label="Yes — needs buying"
+                  onPress={() => void answerStock(true)}
+                  loading={busy}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </>
+          ) : (
+            <Text style={{ color: c.muted, fontSize: 12 }}>
+              The price, vendor and tax are recorded in the web app — that form does not fit a
+              phone, and the figure decides whether finance approval applies.
+            </Text>
+          )}
+        </Card>
+      ) : null}
+
       {request.canDecide ? (
         <Card>
           {!request.approvals.some((a) => a.decision === 'PENDING' && a.reviewStartedAt) ? (
@@ -233,8 +317,16 @@ export default function RequestDetailScreen() {
             multiline
           />
           <View style={{ flexDirection: 'row', gap: spacing.md }}>
-            <Button label="Reject" variant="danger" onPress={() => void decide('REJECTED')} disabled={busy} style={{ flex: 1 }} />
-            <Button label="Approve" icon="checkmark" onPress={() => void decide('APPROVED')} loading={busy} style={{ flex: 1 }} />
+            <Button
+              label={isAssessmentStage ? 'Decline request' : 'Reject'}
+              variant="danger"
+              onPress={() => void decide('REJECTED')}
+              disabled={busy}
+              style={{ flex: 1 }}
+            />
+            {isAssessmentStage ? null : (
+              <Button label="Approve" icon="checkmark" onPress={() => void decide('APPROVED')} loading={busy} style={{ flex: 1 }} />
+            )}
           </View>
         </Card>
       ) : null}
