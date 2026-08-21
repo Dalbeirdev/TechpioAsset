@@ -144,6 +144,63 @@ describe('an employee cannot price their own request', () => {
   });
 });
 
+/**
+ * v2.26 - the two tests above pass for the wrong reason.
+ *
+ * `s.employee` holds no `requests:assess`, so the route guard refuses them
+ * before anything looks at who raised the request. The roles that DO hold the
+ * permission - IT, Office and Finance - also raise requests of their own, and
+ * for them nothing was checking. An IT administrator could put the price on
+ * their own laptop request, and that price is what decides whether Finance ever
+ * sees it. Found on a live request: REQ-2026-000010, raised by an IT
+ * administrator, sitting on the inventory-check stage.
+ */
+describe('nor can a requester who does hold requests:assess', () => {
+  const raiseAs = async (who: Session) => {
+    const created = await api(app)
+      .post('/api/v1/requests')
+      .set(auth(who))
+      .send({
+        type: 'ADDITIONAL_EQUIPMENT',
+        businessReason: 'Required for software development work.',
+        items: [{ description: `Laptop ${Math.random().toString(36).slice(2, 9)}`, quantity: 1 }],
+      });
+    expect(created.status, JSON.stringify(created.body)).toBeLessThan(300);
+    return created.body.data.id as string;
+  };
+
+  for (const who of ['itAdmin', 'officeAdmin', 'finance'] as const) {
+    it(`refuses ${who} pricing their own request`, async () => {
+      const id = await raiseAs(s[who]);
+      const res = await api(app)
+        .patch(`/api/v1/requests/${id}/assessment`)
+        .set(auth(s[who]))
+        .send({ purchaseRequired: true, unitPrice: '1.00', quantity: 1 });
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(res.body)).toContain('your own request');
+
+      // And nothing was written on the way to being refused.
+      const stored = await prisma.client.requestAssessment.findUnique({ where: { requestId: id } });
+      expect(stored).toBeNull();
+    });
+
+    it(`refuses ${who} reading the commercial side of their own request`, async () => {
+      const id = await raiseAs(s[who]);
+      const res = await api(app).get(`/api/v1/requests/${id}/assessment`).set(auth(s[who]));
+      expect(res.status).toBe(403);
+    });
+  }
+
+  it('still lets them assess a request somebody else raised', async () => {
+    const id = await raiseAs(s.employee);
+    const res = await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ purchaseRequired: true, unitPrice: '100.00', quantity: 1 });
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+  });
+});
+
 describe('the total is computed, never asserted', () => {
   it('adds tax and shipping and subtracts the discount', async () => {
     const id = await raise();
