@@ -181,7 +181,6 @@ export function DisposalPanel({
             <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
               Method
               <select
-                aria-label="Disposal method"
                 value={method}
                 onChange={(e) => setMethod(e.target.value as Method)}
                 className={selectCls}
@@ -197,7 +196,6 @@ export function DisposalPanel({
               Date
               <Input
                 type="date"
-                aria-label="Disposal date"
                 value={disposedAt}
                 onChange={(e) => setDisposedAt(e.target.value)}
                 required
@@ -209,7 +207,6 @@ export function DisposalPanel({
             <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
               {method === 'SOLD' ? 'Sale proceeds' : 'Proceeds (if any)'}
               <Input
-                aria-label="Proceeds"
                 inputMode="decimal"
                 value={proceeds}
                 onChange={(e) => setProceeds(e.target.value)}
@@ -223,7 +220,6 @@ export function DisposalPanel({
                   ? 'Buyer'
                   : 'Recipient (optional)'}
               <Input
-                aria-label="Recipient"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 placeholder="Company, charity or person"
@@ -234,7 +230,6 @@ export function DisposalPanel({
           <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
             Reason
             <Input
-              aria-label="Disposal reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Beyond economical repair after screen failure…"

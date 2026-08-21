@@ -7,7 +7,7 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Field, Skeleton } from '@/components/ui';
 import { TonePill, fmtDate, inputCls } from '@/components/procurement/shared';
 
 interface Level {
@@ -429,8 +429,12 @@ function NewLocationCard({ onCreated }: { onCreated: () => void }) {
       <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
         New location
       </p>
-      <input aria-label="Location code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Code (e.g. WH-BLR)" className={inputCls} />
-      <input aria-label="Location name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className={inputCls} />
+      <Field label="Code" htmlFor="loc-code" hint="Short, uppercase — e.g. WH-BLR">
+        <input id="loc-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} className={inputCls} />
+      </Field>
+      <Field label="Name" htmlFor="loc-name">
+        <input id="loc-name" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+      </Field>
       <Button size="sm" loading={create.isPending} disabled={code.trim().length < 2 || name.trim().length < 2} onClick={() => create.mutate()}>
         <Plus className="size-3.5" /> Create
       </Button>

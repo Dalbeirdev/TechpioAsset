@@ -68,7 +68,10 @@ export const NativeSelect = forwardRef<
   <select
     ref={ref}
     className={cn(
-      'h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm',
+      // h-10 to match Input. They had been h-9 against a h-10 Input, so a
+      // select sat 4px short of the field beside it - visible in every filter
+      // bar (search box next to a dropdown) and in every two-column form row.
+      'h-10 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm',
       // min-w-0 so a long option cannot push its grid column wider than the
       // track; without it one 40-character name reflows the whole row. Width
       // itself is the caller's to set - filter-bar selects size to their
