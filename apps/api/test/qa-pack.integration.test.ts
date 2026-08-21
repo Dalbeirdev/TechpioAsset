@@ -33,7 +33,20 @@ async function createAndSubmit(actor: Session, overrides: Record<string, unknown
       priority: 'NORMAL',
       businessReason: 'QA pack verification run for epic #30 definition of done.',
       estimatedCost: '1699.00',
-      items: [{ description: 'QA probe laptop', quantity: 1, estimatedCost: '1699.00' }],
+      // Unique per probe. A fixed description trips the duplicate-request guard
+      // ("you already have an open request about this") as soon as an earlier
+      // probe survives the run - which happens whenever a test fails before its
+      // cancel, or the suite is simply run twice against the same database. The
+      // failures land on whichever tests happen to come after, so the suite
+      // looked like it had a flaky approvals bug rather than a fixture that
+      // cannot be re-run.
+      items: [
+        {
+          description: `QA probe laptop ${Math.random().toString(36).slice(2, 10)}`,
+          quantity: 1,
+          estimatedCost: '1699.00',
+        },
+      ],
       ...overrides,
     });
   expect(created.status, JSON.stringify(created.body)).toBe(201);

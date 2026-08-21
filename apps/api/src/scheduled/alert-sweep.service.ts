@@ -227,10 +227,62 @@ export class AlertSweepService implements OnModuleInit {
   /**
    * v2.2 Workstream D — escalates approval steps whose SLA has lapsed.
    *
-   * A PENDING step past its `slaDueAt` is escalated to the request's manager (or
-   * the requester's line manager) with an APPROVAL_ESCALATED notification, and
-   * marked `escalatedAt` so it escalates exactly once however often the sweep runs.
+   * A PENDING step past its `slaDueAt` raises an APPROVAL_ESCALATED
+   * notification and is marked `escalatedAt`, so it escalates exactly once
+   * however often the sweep runs.
+   *
+   * v2.26 — it used to escalate ONLY to the request's manager or the
+   * requester's line manager, and do nothing at all when there was neither.
+   * Since nothing could write a line manager until now, that was every request:
+   * the step was quietly stamped escalated, nobody was told, and because
+   * `escalatedAt` bars a rescan the alert was gone for good. An overdue
+   * approval that notifies nobody is worse than one that is merely overdue,
+   * because the status says it was handled.
+   *
+   * So the recipient is now the first of: the manager it should go up to, or
+   * failing that whoever the step is actually waiting on - a chase rather than
+   * an escalation, but it reaches a desk that can move the request.
    */
+  private async escalationRecipients(approval: {
+    approverId: string | null;
+    approverType: string;
+    approverRoleId: string | null;
+    request: {
+      companyId: string;
+      managerId: string | null;
+      requesterId: string;
+      requester: { profile: { managerId: string | null } | null };
+    };
+  }): Promise<string[]> {
+    const upward = approval.request.managerId ?? approval.request.requester.profile?.managerId;
+    if (upward) return [upward];
+
+    // Self-approval is refused at the decide guard, so escalating to the
+    // requester would send somebody to a button they cannot press.
+    const notRequester = (ids: string[]) =>
+      ids.filter((id) => id !== approval.request.requesterId);
+
+    if (approval.approverId) return notRequester([approval.approverId]);
+
+    // Mirrors RequestsService.resolveStepApprovers: a LINE_MANAGER step with no
+    // recorded manager falls back to the Manager role, which is exactly who has
+    // been carrying these approvals in practice.
+    const where =
+      approval.approverType === 'LINE_MANAGER'
+        ? { role: { companyId: approval.request.companyId, key: 'MANAGER' } }
+        : approval.approverRoleId
+          ? { roleId: approval.approverRoleId }
+          : null;
+    if (!where) return [];
+
+    const holders = await this.prisma.client.userRole.findMany({
+      where: { ...where, user: { deletedAt: null, status: 'ACTIVE' as const } },
+      select: { userId: true },
+      take: 25,
+    });
+    return notRequester(holders.map((h) => h.userId));
+  }
+
   async runApprovalEscalationSweep(now: Date = new Date()): Promise<number> {
     const overdue = await this.prisma.client.requestApproval.findMany({
       where: { decision: 'PENDING', escalatedAt: null, slaDueAt: { lt: now } },
@@ -238,10 +290,14 @@ export class AlertSweepService implements OnModuleInit {
         id: true,
         stepName: true,
         requestId: true,
+        approverId: true,
+        approverType: true,
+        approverRoleId: true,
         request: {
           select: {
             companyId: true,
             managerId: true,
+            requesterId: true,
             requester: { select: { profile: { select: { managerId: true } } } },
           },
         },
@@ -250,12 +306,11 @@ export class AlertSweepService implements OnModuleInit {
 
     let raised = 0;
     for (const approval of overdue) {
-      const recipientId =
-        approval.request.managerId ?? approval.request.requester.profile?.managerId ?? null;
-      if (recipientId) {
+      const recipients = await this.escalationRecipients(approval);
+      for (const userId of recipients) {
         await this.notifications.notify({
           companyId: approval.request.companyId,
-          userId: recipientId,
+          userId,
           type: 'APPROVAL_ESCALATED',
           title: 'Approval overdue',
           body: `The "${approval.stepName}" approval step has passed its SLA and needs attention.`,
@@ -263,10 +318,18 @@ export class AlertSweepService implements OnModuleInit {
           entityType: 'AssetRequest',
           entityId: approval.requestId,
         });
-        raised += 1;
       }
-      // Mark escalated regardless of whether a recipient existed, so an
-      // orphaned step is not rescanned on every sweep.
+      // Counts STEPS escalated, not notifications sent - a step waiting on a
+      // three-person role is one overdue approval, not three.
+      if (recipients.length > 0) raised += 1;
+      else {
+        // Genuinely nobody to tell. Rare now, but it must not pass in silence:
+        // this is a request that will sit until a human goes looking.
+        this.logger.warn(
+          `Overdue approval ${approval.id} ("${approval.stepName}") has no one to escalate to`,
+        );
+      }
+      // Marked regardless, so an orphaned step is not rescanned every sweep.
       await this.prisma.client.requestApproval.update({
         where: { id: approval.id },
         data: { escalatedAt: now },

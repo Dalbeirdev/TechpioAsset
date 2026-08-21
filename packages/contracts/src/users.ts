@@ -86,6 +86,17 @@ export const adminUpdateProfileSchema = updateMyProfileSchema.extend({
   officeId: z.string().optional().nullable(),
   employeeNumber: z.string().trim().max(40).optional().nullable(),
   /**
+   * v2.26 - the line manager, at last settable. The column has existed since
+   * v2.2 and the approval chain has always read it, but nothing ever wrote it,
+   * so every LINE_MANAGER step fell back to whoever holds the MANAGER role.
+   *
+   * Admin-only, and for a sharper reason than department or office: this field
+   * decides who approves this person's requests. Self-service would let anyone
+   * nominate their own approver, which is not a placement mistake but a way to
+   * pick the person who signs off your own spending.
+   */
+  managerId: z.string().optional().nullable(),
+  /**
    * v2.22 - per-person exception to the company's request policy. null follows
    * the company setting; true always allows; false blocks this account.
    */

@@ -18,6 +18,7 @@ import { useToast } from '@/providers/toast-provider';
 import { useConfirm } from '@/providers/confirm-provider';
 import { useFocusTrap } from '@/lib/use-focus-trap';
 import { downloadCsv } from '@/lib/download-csv';
+import { fetchColleagues, colleagueName } from '@/lib/colleagues';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
@@ -34,6 +35,12 @@ interface UserRow {
     canRaiseRequests?: boolean | null;
     department: { id: string; name: string } | null;
     office: { id: string; name: string } | null;
+    /** v2.26 - who approves this person's requests. */
+    manager: {
+      id: string;
+      email: string;
+      profile: { firstName: string; lastName: string } | null;
+    } | null;
   } | null;
   roles: { role: { key: string; name: string } }[];
 }
@@ -207,6 +214,7 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     employeeNumber: user.profile?.employeeNumber ?? '',
     departmentId: user.profile?.department?.id ?? '',
     officeId: user.profile?.office?.id ?? '',
+    managerId: user.profile?.manager?.id ?? '',
     // '' means inherit the company setting; 'allow' and 'block' are exceptions.
     requests:
       user.profile?.canRaiseRequests === true
@@ -227,6 +235,15 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     queryFn: () => apiFetch<{ id: string; name: string }[]>('/offices'),
     staleTime: 60_000,
   });
+  // Candidate line managers: every active colleague. Anyone may be somebody's
+  // manager - the approval step checks authority at decide time, so the picker
+  // does not second-guess who is "senior enough".
+  const colleagues = useQuery({
+    queryKey: ['colleagues'],
+    enabled: canStatus,
+    queryFn: fetchColleagues,
+    staleTime: 60_000,
+  });
 
   const saveDetails = useMutation({
     mutationFn: () =>
@@ -239,6 +256,10 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
           employeeNumber: details.employeeNumber.trim() || null,
           ...(details.departmentId ? { departmentId: details.departmentId } : {}),
           ...(details.officeId ? { officeId: details.officeId } : {}),
+          // Sent unconditionally, unlike department and office above: clearing a
+          // line manager has to be possible, and the omit-when-empty pattern can
+          // only ever set one.
+          managerId: details.managerId || null,
           canRaiseRequests:
             details.requests === 'allow' ? true : details.requests === 'block' ? false : null,
         },
@@ -382,6 +403,23 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                       {o.name}
                     </option>
                   ))}
+                </select>
+                {/* v2.26 - the line manager. Full width because the names are
+                    long and a half-width select truncates them to ambiguity. */}
+                <select
+                  aria-label="Line manager"
+                  value={details.managerId}
+                  onChange={(e) => setDetails((d) => ({ ...d, managerId: e.target.value }))}
+                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm sm:col-span-2"
+                >
+                  <option value="">Line manager: none (falls back to the Manager role)</option>
+                  {(colleagues.data ?? [])
+                    .filter((c) => c.id !== user.id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        Line manager: {colleagueName(c)}
+                      </option>
+                    ))}
                 </select>
                 {/* v2.22 - the per-person exception to the company's request
                     policy. Most people inherit; this is for the individual
