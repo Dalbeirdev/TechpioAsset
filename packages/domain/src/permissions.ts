@@ -435,6 +435,20 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   // Stockroom / warehouse. Renamed+widened from the legacy "Asset Manager".
   INVENTORY_MANAGER: [
     P.ASSETS_READ,
+    /**
+     * v2.26 - an Inventory Manager could not see a request at all, let alone
+     * answer one. The role owns stock, and "is this already on the shelf?" is
+     * the inventory question in the request flow: the Inventory check stage
+     * exists to ask it. Without these two the role could be named on that stage
+     * and still be refused at the door - which is exactly what happened when
+     * the owner assigned it and the request stayed invisible.
+     *
+     * READ and ASSESS only. Assessing is recording what stock says; approving
+     * is a judgement about whether the company should spend, and that stays
+     * with the approving roles.
+     */
+    P.REQUESTS_READ,
+    P.REQUESTS_ASSESS,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_RECEIVE,
     P.PURCHASE_ORDERS_READ,

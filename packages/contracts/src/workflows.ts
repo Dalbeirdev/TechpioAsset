@@ -28,6 +28,13 @@ export const updateWorkflowStepSchema = z
     isSkippable: z.boolean().optional(),
     /** Hours before the step is considered overdue and escalates. */
     slaHours: z.number().int().min(1).max(2160).nullable().optional(),
+    /**
+     * Which role staffs this step (v2.26). Previously fixed at the moment a
+     * workflow was created, with no way to change it: an owner who decided the
+     * Inventory check belonged with the Inventory Manager rather than the
+     * Office Administrator had no screen that could say so.
+     */
+    approverRoleKey: z.string().trim().min(1).max(60).optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
