@@ -207,7 +207,6 @@ export function CustodyPanel({
           <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
             {mode === 'reassign' ? 'Hand over to' : 'Assign to'}
             <select
-              aria-label="Recipient"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
               className={selectCls}
@@ -226,7 +225,6 @@ export function CustodyPanel({
             <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
               Condition coming back from {holderName ?? 'the current holder'}
               <select
-                aria-label="Condition in"
                 value={conditionIn}
                 onChange={(e) => {
                   const next = e.target.value as AssetCondition;
@@ -252,7 +250,6 @@ export function CustodyPanel({
             <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
               Condition when issued
               <select
-                aria-label="Condition out"
                 value={conditionOut}
                 onChange={(e) => setConditionOut(e.target.value as AssetCondition)}
                 className={selectCls}
@@ -268,7 +265,6 @@ export function CustodyPanel({
               Expected back (optional)
               <Input
                 type="date"
-                aria-label="Expected return date"
                 value={expectedReturnAt}
                 onChange={(e) => setExpectedReturnAt(e.target.value)}
               />
@@ -278,7 +274,6 @@ export function CustodyPanel({
           <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
             Accessories issued (optional)
             <Input
-              aria-label="Accessories issued"
               value={accessories}
               onChange={(e) => setAccessories(e.target.value)}
               placeholder="Charger, sleeve, dock…"
@@ -308,7 +303,6 @@ export function CustodyPanel({
             <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
               Condition it came back in
               <select
-                aria-label="Condition in"
                 value={conditionIn}
                 onChange={(e) => setConditionIn(e.target.value as AssetCondition)}
                 className={selectCls}
@@ -323,7 +317,6 @@ export function CustodyPanel({
             <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
               Where it goes next
               <select
-                aria-label="Resulting status"
                 value={resultingStatus}
                 onChange={(e) => setResultingStatus(e.target.value as AssetStatus)}
                 className={selectCls}
@@ -340,7 +333,6 @@ export function CustodyPanel({
           <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
             Damage or missing items (optional)
             <Input
-              aria-label="Damage notes"
               value={damageNotes}
               onChange={(e) => setDamageNotes(e.target.value)}
               placeholder="Cracked hinge, charger not returned…"

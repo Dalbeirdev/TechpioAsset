@@ -121,7 +121,6 @@ export function TransferPanel({
           <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
             Where it lands
             <select
-              aria-label="Landing status"
               value={landing}
               onChange={(e) => setLanding(e.target.value as 'AVAILABLE' | 'IN_STORAGE')}
               className={selectCls}
@@ -171,7 +170,6 @@ export function TransferPanel({
           <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
             Destination office
             <select
-              aria-label="Destination office"
               value={toOfficeId}
               onChange={(e) => setToOfficeId(e.target.value)}
               className={selectCls}
@@ -188,7 +186,6 @@ export function TransferPanel({
           <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
             Reason (optional)
             <Input
-              aria-label="Transfer reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="New starter in the Berlin office…"

@@ -841,33 +841,52 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
                 someone else.
               </p>
 
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Input aria-label="First name" placeholder="First name" value={form.firstName} onChange={set('firstName')} />
-                <Input aria-label="Last name" placeholder="Last name" value={form.lastName} onChange={set('lastName')} />
-                <div className="col-span-2">
-                  <Input aria-label="Email" type="email" placeholder="Work email" value={form.email} onChange={set('email')} />
+              {/* Same labelling as the manage panel above - these were
+                  placeholder-only too, so a half-filled invite showed six
+                  boxes and no way to tell which was which. */}
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="First name" htmlFor="iu-first">
+                  <Input id="iu-first" value={form.firstName} onChange={set('firstName')} />
+                </Field>
+                <Field label="Last name" htmlFor="iu-last">
+                  <Input id="iu-last" value={form.lastName} onChange={set('lastName')} />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Work email" htmlFor="iu-email" hint="Where their invitation link is sent.">
+                    <Input id="iu-email" type="email" value={form.email} onChange={set('email')} />
+                  </Field>
                 </div>
-                <Input aria-label="Job title" placeholder="Job title (optional)" value={form.jobTitle} onChange={set('jobTitle')} />
-                <NativeSelect
-                  aria-label="Department"
-                  value={form.departmentId}
-                  onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value }))}
-                >
-                  <option value="">No department</option>
-                  {(departments.data ?? []).map((d) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </NativeSelect>
-                <NativeSelect
-                  aria-label="Office"
-                  value={form.officeId}
-                  onChange={(e) => setForm((f) => ({ ...f, officeId: e.target.value }))}
-                >
-                  <option value="">No office</option>
-                  {(offices.data ?? []).map((o) => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
-                  ))}
-                </NativeSelect>
+                <Field label="Job title" htmlFor="iu-title" hint="Optional">
+                  <Input id="iu-title" value={form.jobTitle} onChange={set('jobTitle')} />
+                </Field>
+                <Field label="Department" htmlFor="iu-dept">
+                  <NativeSelect
+                    id="iu-dept"
+                    className="w-full"
+                    value={form.departmentId}
+                    onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value }))}
+                  >
+                    <option value="">No department</option>
+                    {(departments.data ?? []).map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Office" htmlFor="iu-office">
+                    <NativeSelect
+                      id="iu-office"
+                      className="w-full"
+                      value={form.officeId}
+                      onChange={(e) => setForm((f) => ({ ...f, officeId: e.target.value }))}
+                    >
+                      <option value="">No office</option>
+                      {(offices.data ?? []).map((o) => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                </div>
               </div>
 
               <fieldset className="mt-4">
