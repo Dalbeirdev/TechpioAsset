@@ -70,7 +70,35 @@ export class RequestsService {
       select: { id: true, email: true, profile: { select: { firstName: true, lastName: true } } },
     },
     items: { select: { id: true, description: true, quantity: true } },
+    /**
+     * The step the request is actually sitting on (v2.26).
+     *
+     * A list row could only say its STATUS, and several steps share one:
+     * Inventory check and Cost assessment both resolve to
+     * OFFICE_ADMIN_REVIEW_PENDING, so both rendered as "Office review" - a
+     * label matching no step, no role and no permission, which sent people
+     * looking through the roles screen for an "Office review" they would never
+     * find. One row per request, from an indexed column, so the cost is small.
+     */
+    approvals: {
+      where: { decision: 'PENDING' },
+      orderBy: { stepOrder: 'asc' },
+      take: 1,
+      select: { stepName: true, kind: true },
+    },
   } satisfies Prisma.AssetRequestSelect;
+
+  /** Flattens the single pending approval into a `currentStep` field. */
+  private withCurrentStep<T extends { approvals: { stepName: string; kind: string }[] }>(
+    row: T,
+  ): Omit<T, 'approvals'> & { currentStep: { name: string; kind: string } | null } {
+    const { approvals, ...rest } = row;
+    const current = approvals[0];
+    return {
+      ...rest,
+      currentStep: current ? { name: current.stepName, kind: current.kind } : null,
+    };
+  }
 
   /**
    * ANDed, never spread — a caller-supplied filter must not widen scope. Same
@@ -133,14 +161,16 @@ export class RequestsService {
 
     return paginate(query, {
       count: () => this.prisma.client.assetRequest.count({ where }),
-      findMany: ({ skip, take }) =>
-        this.prisma.client.assetRequest.findMany({
+      findMany: async ({ skip, take }) => {
+        const rows = await this.prisma.client.assetRequest.findMany({
           where,
           skip,
           take,
           orderBy: buildOrderBy(query.sort, query.order, SORTABLE, 'createdAt'),
           select: this.listSelect,
-        }),
+        });
+        return rows.map((row) => this.withCurrentStep(row));
+      },
     });
   }
 

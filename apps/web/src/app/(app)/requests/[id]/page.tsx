@@ -230,7 +230,13 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-semibold tracking-tight">{data.requestNumber}</h1>
-            <StatusBadge token={REQUEST_STATUS_TOKENS[data.status]} size="sm" />
+            {/* Names the live step, matching the row in the list and the chain
+                below - the status alone is coarser than both. */}
+            <StatusBadge
+              token={REQUEST_STATUS_TOKENS[data.status]}
+              size="sm"
+              label={data.approvals.find((a) => a.decision === 'PENDING')?.stepName}
+            />
             <Link
               href={`/requests/${id}/print`}
               className="print-hidden inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2.5 text-xs font-medium hover:bg-[var(--color-surface-sunken)]"

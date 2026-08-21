@@ -28,6 +28,8 @@ interface RequestRow {
   requestNumber: string;
   type: string;
   status: RequestStatus;
+  /** The step it is actually on, when it is on one. */
+  currentStep: { name: string; kind: string } | null;
   priority: string;
   businessReason: string;
   estimatedCost: string | null;
@@ -289,7 +291,11 @@ function RequestsTable() {
                         : row.requester.email}
                     </td>
                     <td className="px-4 py-2.5">
-                      <StatusBadge token={REQUEST_STATUS_TOKENS[row.status]} size="sm" />
+                      <StatusBadge
+                        token={REQUEST_STATUS_TOKENS[row.status]}
+                        size="sm"
+                        label={row.currentStep?.name}
+                      />
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
                       {row.estimatedCost && Number(row.estimatedCost) > 0
