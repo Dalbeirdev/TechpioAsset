@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Calculator, PackageCheck, ShoppingCart } from 'lucide-react';
 import type { RequestAssessment } from '@techpioasset/contracts';
-import { apiFetch, ApiError } from '@/lib/api-client';
+import { apiFetch, apiFetchPage, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card, Field } from '@/components/ui';
+import { Button, Card, Field, NativeSelect } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
 /**
@@ -38,6 +38,15 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
   });
 
   const [purchaseRequired, setPurchaseRequired] = useState<boolean | null>(null);
+  /**
+   * Which unit off the shelf fills this (v2.26).
+   *
+   * The stage asks "is it on the shelf?" and the answer used to be an
+   * unverifiable yes: the record said something was in stock without saying
+   * what, so nobody could check it, reserve it, or hand it over. The field has
+   * been on the assessment since v2.25 with no screen to set it.
+   */
+  const [suitableAssetId, setSuitableAssetId] = useState<string>('');
   const [form, setForm] = useState({
     suggestedProduct: '',
     unitPrice: '',
@@ -54,6 +63,7 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
   useEffect(() => {
     if (!loaded) return;
     setPurchaseRequired(loaded.purchaseRequired);
+    setSuitableAssetId(loaded.suitableAsset?.id ?? '');
     setForm({
       suggestedProduct: loaded.suggestedProduct ?? '',
       unitPrice: loaded.unitPrice ?? '',
@@ -101,16 +111,34 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
             money(form.discount),
         );
 
+  // Only what is genuinely on the shelf: AVAILABLE means received, unassigned
+  // and not reserved for something else.
+  const available = useQuery({
+    queryKey: ['available-stock'],
+    enabled: purchaseRequired === false,
+    queryFn: () =>
+      apiFetchPage<{ id: string; assetTag: string; name: string }>(
+        '/assets?status=AVAILABLE&pageSize=100&sort=assetTag&order=asc',
+      ).then((r) => r.data),
+    staleTime: 30_000,
+  });
+
   if (assessment.isPending) return null;
 
   const submit = () => {
     if (purchaseRequired === false) {
-      save.mutate({ inventoryAvailable: true, purchaseRequired: false, notes: form.notes || null });
+      save.mutate({
+        inventoryAvailable: true,
+        purchaseRequired: false,
+        suitableAssetId: suitableAssetId || null,
+        notes: form.notes || null,
+      });
       return;
     }
     save.mutate({
       inventoryAvailable: false,
       purchaseRequired: true,
+      suitableAssetId: null,
       suggestedProduct: form.suggestedProduct || null,
       unitPrice: form.unitPrice.trim() || null,
       quantity: Number(form.quantity) || 1,
@@ -141,16 +169,49 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
             active={purchaseRequired === false}
             onClick={() => setPurchaseRequired(false)}
             icon={<PackageCheck aria-hidden="true" className="size-3.5" />}
-            label="No — available in stock"
+            label="No — fill from stock"
           />
           <ChoiceButton
             active={purchaseRequired === true}
             onClick={() => setPurchaseRequired(true)}
             icon={<ShoppingCart aria-hidden="true" className="size-3.5" />}
-            label="Yes — needs buying"
+            label="Yes — buy it"
           />
         </div>
       </fieldset>
+
+      {/* v2.26 - "fill from stock" now says WHICH unit. Optional, because the
+          shelf answer is still useful without it, but recorded when given so
+          the next person can find the thing that was promised. */}
+      {purchaseRequired === false ? (
+        <div className="mt-4">
+          <Field
+            label="Which item?"
+            htmlFor="pa-suitable"
+            hint={
+              available.isPending
+                ? 'Looking for available stock…'
+                : (available.data?.length ?? 0) === 0
+                  ? 'Nothing is showing as available right now — you can still record the answer.'
+                  : 'Optional. Naming it lets the next person find what was promised.'
+            }
+          >
+            <NativeSelect
+              id="pa-suitable"
+              className="w-full"
+              value={suitableAssetId}
+              onChange={(e) => setSuitableAssetId(e.target.value)}
+            >
+              <option value="">Not specified</option>
+              {(available.data ?? []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.assetTag} · {a.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+        </div>
+      ) : null}
 
       {purchaseRequired === true ? (
         <div className="mt-4 grid gap-3">

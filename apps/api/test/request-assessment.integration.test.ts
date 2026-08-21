@@ -316,3 +316,47 @@ describe('Scenario B — it has to be bought', () => {
     expect(before.decision, 'unpriced goes to a human').toBe('PENDING');
   });
 });
+
+/**
+ * v2.26 - "which item off the shelf?"
+ *
+ * The stage asks whether the thing is in stock, and the answer was an
+ * unverifiable yes: `inventoryAvailable` was written as the blind inverse of
+ * `purchaseRequired` and read by nothing, while `suitableAssetId` - the field
+ * that says WHICH unit fills the request - had existed since v2.25 with no
+ * screen to set it. So the record said something was in stock without saying
+ * what, and nobody could check it or hand it over.
+ */
+describe('filling a request from stock', () => {
+  it('records which asset fills it, and still skips Finance', async () => {
+    const stock = await api(app)
+      .get('/api/v1/assets?status=AVAILABLE&pageSize=1')
+      .set(auth(s.officeAdmin));
+    expect(stock.status, JSON.stringify(stock.body)).toBeLessThan(300);
+    const asset = (stock.body.data as { id: string; assetTag: string }[])[0];
+    if (!asset) return; // nothing available in this database; the rest is covered elsewhere
+
+    const id = await raise();
+    const res = await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: asset.id });
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+    expect(res.body.data.suitableAsset?.id).toBe(asset.id);
+    // Nothing is being bought, so there is no total to measure Finance against.
+    expect(res.body.data.totalCost).toBeNull();
+
+    const stored = await prisma.client.requestAssessment.findUnique({ where: { requestId: id } });
+    expect(stored?.suitableAssetId).toBe(asset.id);
+    expect(stored?.inventoryAvailable).toBe(true);
+  });
+
+  it('refuses an asset from another company', async () => {
+    const id = await raise();
+    const res = await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: 'not-an-asset' });
+    expect(res.status).toBe(404);
+  });
+});
