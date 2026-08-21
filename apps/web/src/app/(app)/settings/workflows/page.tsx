@@ -8,7 +8,7 @@ import type { WorkflowDefinition, WorkflowStep } from '@techpioasset/contracts';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
+import { Button, Card, ErrorState, NativeSelect, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 
@@ -60,6 +60,29 @@ export default function WorkflowSettingsPage() {
     onError: (e) =>
       toast.error(
         e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not change the stages',
+      ),
+  });
+
+  // The tenant's own roles, so the picker offers what this company actually has.
+  const roles = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => apiFetch<{ key: string; name: string }[]>('/roles'),
+    staleTime: 60_000,
+  });
+
+  const setRole = useMutation({
+    mutationFn: (input: { stepId: string; approverRoleKey: string }) =>
+      apiFetch(`/workflows/steps/${input.stepId}`, {
+        method: 'PATCH',
+        body: { approverRoleKey: input.approverRoleKey },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      toast.success('Step reassigned — requests already waiting on it moved too');
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : 'Could not reassign the step',
       ),
   });
 
@@ -131,6 +154,9 @@ export default function WorkflowSettingsPage() {
                 onDraft={(v) => setDraft((prev) => ({ ...prev, [step.id]: v }))}
                 onSave={(costThreshold) => save.mutate({ stepId: step.id, costThreshold })}
                 saving={save.isPending}
+                roles={roles.data ?? []}
+                onRole={(approverRoleKey) => setRole.mutate({ stepId: step.id, approverRoleKey })}
+                settingRole={setRole.isPending}
               />
             ))}
           </ol>
@@ -146,12 +172,18 @@ function StepRow({
   onDraft,
   onSave,
   saving,
+  roles,
+  onRole,
+  settingRole,
 }: {
   step: WorkflowStep;
   draft: string | undefined;
   onDraft: (value: string) => void;
   onSave: (costThreshold: string | null) => void;
   saving: boolean;
+  roles: { key: string; name: string }[];
+  onRole: (approverRoleKey: string) => void;
+  settingRole: boolean;
 }) {
   const current = step.costThreshold ?? '';
   const value = draft ?? current;
@@ -165,11 +197,38 @@ function StepRow({
           {step.stepOrder}. {step.name}
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-content-muted)]">
-          <span>
-            {step.approverType === 'LINE_MANAGER'
-              ? 'The requester’s manager, or the Manager role'
-              : (step.approverRoleName ?? titleCase(step.approverType))}
-          </span>
+          {step.approverType === 'LINE_MANAGER' ? (
+            <span>The requester’s manager, or the Manager role</span>
+          ) : (
+            // v2.26 - who staffs a step is now a choice. It was fixed when the
+            // workflow was created, so an owner who decided the Inventory check
+            // belonged with the Inventory Manager rather than the Office
+            // Administrator had no screen that could say so - they assigned the
+            // role and nothing happened.
+            <label className="inline-flex items-center gap-1.5">
+              <span className="sr-only">Who does {step.name}</span>
+              <NativeSelect
+                aria-label={`Who does ${step.name}`}
+                className="h-7 text-xs"
+                disabled={settingRole}
+                value={step.approverRoleKey ?? ''}
+                onChange={(e) => {
+                  if (e.target.value && e.target.value !== step.approverRoleKey) {
+                    onRole(e.target.value);
+                  }
+                }}
+              >
+                {step.approverRoleKey ? null : (
+                  <option value="">{step.approverRoleName ?? titleCase(step.approverType)}</option>
+                )}
+                {roles.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          )}
           <span
             className="inline-flex items-center gap-1"
             style={unstaffed ? { color: 'var(--tone-critical-fg)' } : undefined}

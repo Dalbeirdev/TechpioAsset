@@ -258,10 +258,56 @@ export class WorkflowsService {
     if (input.isSkippable !== undefined) data.isSkippable = input.isSkippable;
     if (input.slaHours !== undefined) data.slaHours = input.slaHours;
 
+    let newRoleId: string | null = null;
+    if (input.approverRoleKey !== undefined) {
+      const role = await this.prisma.client.role.findFirst({
+        where: { companyId: actor.companyId, key: input.approverRoleKey },
+        select: { id: true, key: true, name: true },
+      });
+      if (!role) throw AppError.notFound('Role', input.approverRoleKey);
+      newRoleId = role.id;
+      data.approverRole = { connect: { id: role.id } };
+      // A step pointed at a role is a ROLE step, whatever it was before -
+      // otherwise the resolver keeps reading it as LINE_MANAGER and ignores the
+      // role that was just chosen.
+      data.approverType = 'ROLE';
+    }
+
     const updated = await this.prisma.client.workflowStep.update({
       where: { id: stepId },
       data,
     });
+
+    /**
+     * Re-point the requests already in flight (v2.26).
+     *
+     * A chain is snapshotted when a request is submitted, so changing the
+     * definition alone would only affect future requests - the ones already
+     * waiting would keep pointing at the old role, and the person who was just
+     * given the job still would not see them. That is precisely the confusion
+     * this change exists to end.
+     *
+     * Only steps nobody has decided yet, only requests raised from THIS
+     * workflow, and only those still carrying the role we are moving away from:
+     * a chain somebody has already redirected by hand is left alone, and no
+     * decision already taken is rewritten.
+     */
+    let movedInFlight = 0;
+    if (newRoleId && step.approverRoleId !== newRoleId) {
+      const moved = await this.prisma.client.requestApproval.updateMany({
+        where: {
+          stepName: step.name,
+          decision: { in: ['WAITING', 'PENDING'] },
+          approverRoleId: step.approverRoleId,
+          request: {
+            companyId: actor.companyId,
+            workflowDefinitionId: step.workflowDefinitionId,
+          },
+        },
+        data: { approverRoleId: newRoleId },
+      });
+      movedInFlight = moved.count;
+    }
 
     // Changing who has to approve what is a governance change; it leaves the
     // same trail a role change does.
@@ -277,11 +323,18 @@ export class WorkflowsService {
         costThreshold: step.costThreshold ? step.costThreshold.toString() : null,
         isSkippable: step.isSkippable,
         slaHours: step.slaHours,
+        approverRoleId: step.approverRoleId,
+        approverType: step.approverType,
       },
       newValues: {
         costThreshold: updated.costThreshold ? updated.costThreshold.toString() : null,
         isSkippable: updated.isSkippable,
         slaHours: updated.slaHours,
+        approverRoleId: updated.approverRoleId,
+        approverType: updated.approverType,
+        // Says how far the change reached, so the trail shows the requests it
+        // moved and not just the setting it changed.
+        inFlightRequestsMoved: movedInFlight,
       },
     });
 

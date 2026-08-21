@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { ROLE_PERMISSIONS } from '@techpioasset/domain';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
@@ -170,5 +171,107 @@ describe('clearing a threshold', () => {
       .set(auth(s.superAdmin))
       .send({ costThreshold: '-5' });
     expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+});
+
+/**
+ * v2.26 - the Inventory Manager case.
+ *
+ * Reported from production: the owner gave Tanvi the Inventory Manager role so
+ * she could do an inventory check, and the request stayed invisible to her.
+ * Two reasons, both fixed here:
+ *
+ *   1. INVENTORY_MANAGER held no `requests:*` permission at all, so opening the
+ *      request was refused outright - the role could be named on the stage and
+ *      still be turned away at the door.
+ *   2. The stage was staffed by OFFICE_ADMIN and no screen could change that,
+ *      so assigning a different role could never have worked.
+ *
+ * And because a chain is snapshotted at submission, changing the workflow had
+ * to move the requests already waiting too, or the person just given the job
+ * still would not see them.
+ */
+describe('reassigning who staffs a step', () => {
+  it('an Inventory Manager can read and assess requests', () => {
+    const perms = ROLE_PERMISSIONS.INVENTORY_MANAGER as readonly string[];
+    expect(perms).toContain('requests:read');
+    expect(perms).toContain('requests:assess');
+    // Assessing is recording what stock says; approving spend is not its job.
+    expect(perms).not.toContain('requests:approve');
+  });
+
+  it('moves the step, and the requests already waiting on it', async () => {
+    const defs = await api(app).get('/api/v1/workflows').set(auth(s.superAdmin));
+    const definition = (defs.body.data as { id: string; steps: { id: string; name: string; approverRoleKey: string | null }[] }[])
+      .find((d) => d.steps.some((x) => x.approverRoleKey === 'OFFICE_ADMIN'));
+    expect(definition, 'a step staffed by Office Admin to move').toBeTruthy();
+    const step = definition!.steps.find((x) => x.approverRoleKey === 'OFFICE_ADMIN')!;
+
+    const before = await prisma.client.requestApproval.count({
+      where: {
+        stepName: step.name,
+        decision: { in: ['WAITING', 'PENDING'] },
+        request: { workflowDefinitionId: definition!.id },
+        approverRole: { key: 'OFFICE_ADMIN' },
+      },
+    });
+
+    const res = await api(app)
+      .patch(`/api/v1/workflows/steps/${step.id}`)
+      .set(auth(s.superAdmin))
+      .send({ approverRoleKey: 'INVENTORY_MANAGER' });
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+
+    const moved = (res.body.data as { id: string; steps: { id: string; approverRoleKey: string | null }[] }[])
+      .flatMap((d) => d.steps)
+      .find((x) => x.id === step.id);
+    expect(moved?.approverRoleKey).toBe('INVENTORY_MANAGER');
+
+    // The chains already in flight followed it.
+    const stillOld = await prisma.client.requestApproval.count({
+      where: {
+        stepName: step.name,
+        decision: { in: ['WAITING', 'PENDING'] },
+        request: { workflowDefinitionId: definition!.id },
+        approverRole: { key: 'OFFICE_ADMIN' },
+      },
+    });
+    expect(stillOld, 'no undecided step left pointing at the old role').toBe(0);
+
+    const nowNew = await prisma.client.requestApproval.count({
+      where: {
+        stepName: step.name,
+        decision: { in: ['WAITING', 'PENDING'] },
+        request: { workflowDefinitionId: definition!.id },
+        approverRole: { key: 'INVENTORY_MANAGER' },
+      },
+    });
+    expect(nowNew).toBe(before);
+
+    // Put it back so the rest of the suite sees what it expects.
+    await api(app)
+      .patch(`/api/v1/workflows/steps/${step.id}`)
+      .set(auth(s.superAdmin))
+      .send({ approverRoleKey: 'OFFICE_ADMIN' });
+  });
+
+  it('refuses a role that does not exist', async () => {
+    const defs = await api(app).get('/api/v1/workflows').set(auth(s.superAdmin));
+    const step = (defs.body.data as { steps: { id: string }[] }[])[0]!.steps[0]!;
+    const res = await api(app)
+      .patch(`/api/v1/workflows/steps/${step.id}`)
+      .set(auth(s.superAdmin))
+      .send({ approverRoleKey: 'NOT_A_ROLE' });
+    expect(res.status).toBe(404);
+  });
+
+  it('needs workflows:configure', async () => {
+    const defs = await api(app).get('/api/v1/workflows').set(auth(s.superAdmin));
+    const step = (defs.body.data as { steps: { id: string }[] }[])[0]!.steps[0]!;
+    const res = await api(app)
+      .patch(`/api/v1/workflows/steps/${step.id}`)
+      .set(auth(s.officeAdmin))
+      .send({ approverRoleKey: 'INVENTORY_MANAGER' });
+    expect(res.status).toBe(403);
   });
 });
