@@ -40,7 +40,11 @@ export function LoginShowcase() {
     >
       <Backdrop />
 
-      <div className="relative flex h-full flex-col justify-center gap-8 px-10 py-14 xl:px-14">
+      {/* Height-based, not width-based. What runs out on a laptop is vertical
+          room, and a width breakpoint cannot see that: 1366x768 and 1366x1050
+          are the same screen to `lg:`. The gaps and padding tighten first, and
+          only then does content drop. */}
+      <div className="relative flex h-full flex-col justify-center gap-5 px-10 py-8 [@media(min-height:800px)]:gap-8 [@media(min-height:800px)]:py-14 xl:px-14">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-1.5 text-xs font-semibold text-[var(--color-content-muted)]">
             <ShieldCheck aria-hidden="true" className="size-3.5 text-[var(--color-brand)]" />
@@ -59,7 +63,9 @@ export function LoginShowcase() {
           </p>
         </div>
 
-        <ul className="grid gap-3 sm:grid-cols-3">
+        {/* Below this the three cards cannot fit without squeezing the heading
+            and the form beside it; the heading says the same thing. */}
+        <ul className="grid gap-3 sm:grid-cols-3 [@media(max-height:600px)]:hidden">
           {FEATURES.map(({ icon: Icon, title, body }) => (
             <li
               key={title}
@@ -74,7 +80,20 @@ export function LoginShowcase() {
           ))}
         </ul>
 
-        <DashboardPreview />
+        {/* The mockup is taller than the space left over, and always was - it
+            used to simply run off the bottom of the page, cut through the
+            middle of a table row. It now bleeds off the panel behind a fade,
+            which is the same crop made deliberate, and drops out entirely when
+            there is not enough height left for it to read as anything. */}
+        <div
+          className="relative -mb-8 min-h-0 flex-1 [@media(max-height:720px)]:hidden"
+          style={{
+            maskImage: 'linear-gradient(to bottom, black 68%, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, black 68%, transparent 100%)',
+          }}
+        >
+          <DashboardPreview />
+        </div>
       </div>
     </section>
   );
@@ -101,8 +120,13 @@ function Backdrop() {
           WebkitMaskImage: 'radial-gradient(ellipse at 70% 0%, rgba(0,0,0,0.7), transparent 60%)',
         }}
       />
+      {/* A corner accent, and it has to stay one. At 34rem it clears the copy
+          on a tall panel, but the panel centres its content: shorten the window
+          and the text comes down to meet the circle, which put the heading in
+          dark blue on mid blue. It shrinks with the height so it stays in the
+          corner it belongs to. */}
       <div
-        className="absolute -bottom-40 -left-40 size-[34rem] rounded-full opacity-90"
+        className="absolute -bottom-24 -left-24 size-64 rounded-full opacity-90 [@media(min-height:760px)]:-bottom-40 [@media(min-height:760px)]:-left-40 [@media(min-height:760px)]:size-[34rem]"
         style={{ background: 'linear-gradient(135deg, #1d4ed8, #2563eb 60%, #3b82f6)' }}
       />
     </div>
