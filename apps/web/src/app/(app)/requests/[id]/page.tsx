@@ -220,6 +220,20 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
   const isAssessmentStage = Boolean(currentStep) && currentStep!.kind !== 'APPROVAL';
   const canAct =
     Boolean(currentStep) && !isAssessmentStage && can(PERMISSIONS.REQUESTS_APPROVE) && data.canDecide;
+  /**
+   * Declining from an assessment stage (v2.26).
+   *
+   * The server refuses APPROVE here - the stage is completed by recording the
+   * answer, not by agreeing with it - but it has always accepted REJECT. The
+   * page hid the whole decision panel on these stages, so that exit did not
+   * exist on screen: somebody who found the request unjustified or a duplicate
+   * had to answer the stock question and push it on to Finance to be stopped.
+   *
+   * Approving is still not offered. Stopping a request is a judgement, so it
+   * needs `requests:approve` - recording what stock says does not.
+   */
+  const canDeclineOnly =
+    Boolean(currentStep) && isAssessmentStage && can(PERMISSIONS.REQUESTS_APPROVE) && data.canDecide;
 
   return (
     <div className="mx-auto grid max-w-4xl gap-4">
@@ -402,6 +416,46 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
               nobody is offered a form that is going to be refused. */}
           {can(PERMISSIONS.REQUESTS_ASSESS) && data.requester.id !== user?.id ? (
             <ProcurementAssessment requestId={id} />
+          ) : null}
+
+          {canDeclineOnly ? (
+            <Card className="p-5">
+              <h2 className="text-sm font-semibold">Stop this request</h2>
+              <p className="mt-1 text-xs text-[var(--color-content-muted)]">
+                {currentStep?.stepName} is completed by answering above. Use this only if the
+                request should not go ahead at all — the requester is told, and it goes no further.
+              </p>
+              <label htmlFor="decline-reason" className="mt-3 block text-xs font-medium">
+                Reason
+              </label>
+              <textarea
+                id="decline-reason"
+                rows={2}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="e.g. Duplicate of REQ-2026-000008."
+                className="mt-1 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-2.5 text-sm"
+              />
+              {actionError ? (
+                <p role="alert" className="mt-2 text-xs" style={{ color: 'var(--tone-critical-fg)' }}>
+                  {actionError}
+                </p>
+              ) : null}
+              <div className="mt-3 flex justify-end">
+                {/* Required, unlike the ordinary decision panel: this ends the
+                    request at a stage whose job was only to answer a question,
+                    so "why" is the least the requester is owed. */}
+                <Button
+                  variant="danger"
+                  size="sm"
+                  loading={decide.isPending}
+                  disabled={comment.trim().length === 0 || decide.isPending}
+                  onClick={() => decide.mutate('REJECTED')}
+                >
+                  Decline request
+                </Button>
+              </div>
+            </Card>
           ) : null}
 
           {canAct ? (
