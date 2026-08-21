@@ -7,7 +7,7 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { apiFetch } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card, Skeleton } from '@/components/ui';
+import { Button, Card, controlCls as inputCls, Skeleton } from '@/components/ui';
 
 /**
  * Office management (v2.11). Offices were seed-only reference data until now:
@@ -44,8 +44,7 @@ const EMPTY: Draft = {
   timezone: '',
 };
 
-const inputCls =
-  'h-9 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm';
+
 
 function OfficeForm({
   initial,

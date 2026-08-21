@@ -49,12 +49,36 @@ export const Button = forwardRef<
 export const Input = ShadInput;
 
 /**
+ * The class string for a raw <input>/<textarea> in the app (v2.26).
+ *
+ * Not every control can be an <Input> - a <textarea>, a date field inside a
+ * table row, a number cell in an order line. Those take this instead, so a
+ * hand-rolled control still matches the components beside it.
+ *
+ * It replaces five copies that had drifted apart: four identical at h-9, and
+ * one that had grown its own h-10 with a focus border of its own. So a raw
+ * input was 4px shorter than the <Input> beside it, and one screen's fields
+ * highlighted differently from every other screen's.
+ *
+ * h-10 and px-3 to match Input, so the two are interchangeable in a row.
+ */
+export const controlCls = [
+  'h-10 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)]',
+  'bg-[var(--color-surface-raised)] px-3 text-sm',
+  'placeholder:text-[var(--color-content-subtle)]',
+  // No focus style here on purpose. globals.css carries one global
+  // :focus-visible outline - "more reliable than remembering a focus style on
+  // every interactive component" - and a local focus-visible:outline-none would
+  // suppress it, leaving the control with no keyboard indicator at all.
+  'disabled:cursor-not-allowed disabled:opacity-50',
+].join(' ');
+
+/**
  * A plain <select>, styled once (v2.26).
  *
  * The same class string had been pasted into seventeen selects across five
- * screens, which is how they drifted: a couple were missing the focus ring, and
- * nothing stopped a long option from stretching its grid column. Consolidated
- * so there is one place to change.
+ * screens, which is how they drifted, and nothing stopped a long option from
+ * stretching its grid column. Consolidated so there is one place to change.
  *
  * Deliberately native rather than the Radix Select used on three other screens.
  * A native select gets keyboard type-ahead for free, and the pickers here run to
@@ -77,7 +101,8 @@ export const NativeSelect = forwardRef<
       // itself is the caller's to set - filter-bar selects size to their
       // content, and defaulting to w-full here would stretch every one of them.
       'min-w-0',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-1',
+      // Focus comes from the global :focus-visible rule in globals.css; see
+      // controlCls above for why nothing is set here.
       'disabled:cursor-not-allowed disabled:opacity-50',
       className,
     )}

@@ -87,5 +87,4 @@ export function expiryLabel(expiryDate: string | null): string {
   });
 }
 
-export const inputCls =
-  'h-9 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm';
+export { controlCls as inputCls } from '@/components/ui';

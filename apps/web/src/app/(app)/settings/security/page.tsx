@@ -8,7 +8,7 @@ import type { SessionInfo } from '@techpioasset/contracts';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card, Skeleton } from '@/components/ui';
+import { Button, Card, controlCls as inputCls, Skeleton } from '@/components/ui';
 import { PasswordInput } from '@/components/ui/password-input';
 
 /**
@@ -21,8 +21,7 @@ import { PasswordInput } from '@/components/ui/password-input';
  * fetched again: refreshing this page after enrolment shows state, not secrets.
  */
 
-const inputCls =
-  'h-9 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm';
+
 
 export default function SecuritySettingsPage() {
   const { user, refresh } = useAuth();

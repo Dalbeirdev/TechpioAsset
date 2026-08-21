@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Clock, Mail, MapPin, Send } from 'lucide-react';
 import { HeroAccent, HeroBackdrop, HeroBadge } from '@/components/marketing/hero-backdrop';
-import { PhoneField } from '@/components/marketing/form-fields';
+import { fieldCls as inputCls, PhoneField } from '@/components/marketing/form-fields';
 
 const CONTACT_EMAIL = 'proapps@techpio.com';
 
@@ -180,8 +180,7 @@ export default function ContactPage() {
   );
 }
 
-const inputCls =
-  'h-11 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-content)] placeholder:text-[var(--color-content-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]';
+
 
 function Field({
   label,
