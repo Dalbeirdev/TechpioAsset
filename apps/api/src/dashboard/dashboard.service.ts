@@ -3,6 +3,7 @@ import type { AuthUser } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assetScopeFilter, tenantFilter } from '../common/scope.js';
+import { awaitingMeFilter } from '../requests/awaiting-me.js';
 
 /** A single KPI tile. The frontend maps `icon` (Lucide) + `tone` to styling. */
 export interface DashboardTile {
@@ -64,8 +65,12 @@ export class DashboardService {
 
     // Approvers: what is waiting on them right now.
     if (has(PERMISSIONS.REQUESTS_APPROVE)) {
+      // The same predicate the inbox uses. It counted only `approverId` before,
+      // which a role-based step does not carry until it is decided - so this
+      // tile read 0 for an approver with a full inbox, while linking to the
+      // list that showed them.
       const awaiting = await db.assetRequest.count({
-        where: { ...tenant, approvals: { some: { decision: 'PENDING', approverId: actor.id } } },
+        where: { ...tenant, ...awaitingMeFilter(actor) },
       });
       tiles.push({
         key: 'awaiting-approval',
