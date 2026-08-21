@@ -367,3 +367,58 @@ describe('the dashboard tile agrees with the inbox', () => {
     expect(tile!.value, 'tile must not read 0 while the inbox has items').toBe(waiting);
   });
 });
+
+describe('stopping a request at an assessment stage', () => {
+  /**
+   * v2.26 - approving an assessment stage is refused (the work is recording the
+   * answer, not agreeing with it), but declining has always been accepted. The
+   * page hid the whole decision panel on these stages, so on screen there was
+   * no way to stop a request here at all: somebody who found it unjustified had
+   * to answer the stock question and push it to Finance to be rejected.
+   *
+   * Pinned because the two halves are easy to drift apart - the API rule lives
+   * in requests.service, the affordance in the request page.
+   */
+  it('refuses approve but accepts decline, and the decline settles it', async () => {
+    await enableStages();
+    const id = await raise();
+    const stage = await walkToStage(id);
+    expect(stage?.stepName).toBe('Inventory check');
+
+    const approving = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s.officeAdmin))
+      .send({ decision: 'APPROVED' });
+    expect(approving.status).toBeGreaterThanOrEqual(400);
+
+    const declining = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s.officeAdmin))
+      .send({ decision: 'REJECTED', comment: 'Duplicate of an open request.' });
+    expect(declining.status, JSON.stringify(declining.body)).toBeLessThan(300);
+
+    const after = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    expect(after.body.data.status).toBe('REJECTED');
+    const step = (after.body.data.approvals as { stepName: string; decision: string; comment: string | null }[])
+      .find((a) => a.stepName === 'Inventory check')!;
+    expect(step.decision).toBe('REJECTED');
+    expect(step.comment).toContain('Duplicate');
+  });
+
+  it('assessing is not enough to decline - that is a judgement', async () => {
+    await enableStages();
+    const id = await raise();
+    await walkToStage(id);
+
+    // The Inventory Manager may record what stock says (requests:assess) but
+    // holds no requests:approve, so it cannot end somebody's request.
+    const perms = (await api(app).get('/api/v1/auth/me').set(auth(s.superAdmin))).status;
+    expect(perms).toBeLessThan(300);
+
+    const res = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s.employee))
+      .send({ decision: 'REJECTED', comment: 'no' });
+    expect(res.status).toBe(403);
+  });
+});
