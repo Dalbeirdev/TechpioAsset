@@ -25,6 +25,8 @@ interface RequestRow {
   id: string;
   requestNumber: string;
   status: RequestStatus;
+  /** The step it is actually on; the status alone is coarser. */
+  currentStep: { name: string; kind: string } | null;
   businessReason: string;
 }
 
@@ -173,7 +175,11 @@ export default function RequestsScreen() {
                 {row.businessReason}
               </Text>
               <View style={{ marginTop: 8 }}>
-                <StatusPill label={REQUEST_STATUS_TOKENS[row.status].label} bg={tone.bg} fg={tone.fg} />
+                <StatusPill
+                  label={row.currentStep?.name ?? REQUEST_STATUS_TOKENS[row.status].label}
+                  bg={tone.bg}
+                  fg={tone.fg}
+                />
               </View>
             </View>
             <Chevron />

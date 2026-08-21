@@ -23,6 +23,8 @@ interface RequestRow {
   requestNumber: string;
   type: string;
   status: RequestStatus;
+  /** The step it is actually on, when it is on one. */
+  currentStep: { name: string; kind: string } | null;
   priority: string;
   createdAt: string;
   items: { description: string }[];
@@ -105,7 +107,11 @@ export default function MyRequestsPage() {
                     {row.items.map((i) => i.description).join(', ') || '—'}
                   </td>
                   <td className="px-4 py-2.5">
-                    <StatusBadge token={REQUEST_STATUS_TOKENS[row.status]} size="sm" />
+                    <StatusBadge
+                        token={REQUEST_STATUS_TOKENS[row.status]}
+                        size="sm"
+                        label={row.currentStep?.name}
+                      />
                   </td>
                   <td className="px-4 py-2.5 text-[var(--color-content-muted)]">
                     {new Date(row.createdAt).toLocaleDateString()}

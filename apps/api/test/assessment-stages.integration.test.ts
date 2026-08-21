@@ -283,3 +283,51 @@ describe('Scenario B — it has to be bought', () => {
     expect(JSON.stringify(told)).not.toMatch(/1000|price|vendor/i);
   });
 });
+
+describe('a list row names the step it is on', () => {
+  /**
+   * v2.26 - the reason this exists. A row could only report its STATUS, and
+   * Inventory check and Cost assessment both resolve to
+   * OFFICE_ADMIN_REVIEW_PENDING, so both rendered as "Office review" - wording
+   * that matches no step, no role and no permission. It sent the owner through
+   * every role looking for an "Office review" permission that does not exist.
+   */
+  it('reports the live step, not just the status', async () => {
+    await enableStages();
+    const id = await raise();
+    await walkToStage(id);
+
+    const res = await api(app)
+      .get(`/api/v1/requests?pageSize=100`)
+      .set(auth(s.superAdmin));
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+
+    const row = (res.body.data as { id: string; status: string; currentStep: { name: string; kind: string } | null }[])
+      .find((r) => r.id === id);
+    expect(row, 'the request should be in the list').toBeTruthy();
+    expect(row!.status).toBe('OFFICE_ADMIN_REVIEW_PENDING');
+    // The status is the coarse one; the step is what a person can act on.
+    expect(row!.currentStep?.name).toBe('Inventory check');
+    expect(row!.currentStep?.kind).toBe('INVENTORY_CHECK');
+
+    // Answer it, and the row should move on to the next stage by name.
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: false, purchaseRequired: true });
+
+    const after = await api(app).get(`/api/v1/requests?pageSize=100`).set(auth(s.superAdmin));
+    const moved = (after.body.data as { id: string; currentStep: { name: string } | null }[])
+      .find((r) => r.id === id);
+    expect(moved!.currentStep?.name).toBe('Cost assessment');
+  });
+
+  it('has no step to name once nothing is pending', async () => {
+    const id = await raise();
+    await api(app).post(`/api/v1/requests/${id}/cancel`).set(auth(s.employee)).send({});
+
+    const res = await api(app).get(`/api/v1/requests?pageSize=100`).set(auth(s.superAdmin));
+    const row = (res.body.data as { id: string; currentStep: unknown }[]).find((r) => r.id === id);
+    expect(row!.currentStep, 'a cancelled request is on no step').toBeNull();
+  });
+});

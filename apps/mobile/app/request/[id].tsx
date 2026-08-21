@@ -122,7 +122,14 @@ export default function RequestDetailScreen() {
       <Card style={{ marginBottom: spacing.xl }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ color: c.text, fontSize: 18, fontWeight: '800' }}>{request.requestNumber}</Text>
-          <StatusPill label={REQUEST_STATUS_TOKENS[request.status].label} bg={tone.bg} fg={tone.fg} />
+          <StatusPill
+            label={
+              request.approvals.find((a) => a.decision === 'PENDING')?.stepName ??
+              REQUEST_STATUS_TOKENS[request.status].label
+            }
+            bg={tone.bg}
+            fg={tone.fg}
+          />
         </View>
         <View style={{ marginTop: spacing.md, gap: 8 }}>
           <Row label="Requested by" value={personName(request.requester)} />

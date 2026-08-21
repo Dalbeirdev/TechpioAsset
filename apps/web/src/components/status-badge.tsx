@@ -7,6 +7,15 @@ interface StatusBadgeProps {
   size?: 'sm' | 'md';
   showIcon?: boolean;
   className?: string;
+  /**
+   * Overrides the token's own wording, keeping its colour and icon (v2.26).
+   *
+   * A request's status is coarser than the step it is on - Inventory check and
+   * Cost assessment are both OFFICE_ADMIN_REVIEW_PENDING - so the status label
+   * named neither. Callers that know the live step pass it here; the tone still
+   * comes from the status, because that is what decides how it should read.
+   */
+  label?: string;
 }
 
 function toneVars(tone: Tone): React.CSSProperties {
@@ -24,7 +33,13 @@ function toneVars(tone: Tone): React.CSSProperties {
  * The label is always rendered as text - colour alone never carries the meaning,
  * which is WCAG 1.4.1 and part of the section 26 AA target.
  */
-export function StatusBadge({ token, size = 'md', showIcon = true, className }: StatusBadgeProps) {
+export function StatusBadge({
+  token,
+  size = 'md',
+  showIcon = true,
+  className,
+  label,
+}: StatusBadgeProps) {
   const Icon = showIcon ? resolveIcon(token.icon) : undefined;
 
   return (
@@ -37,7 +52,7 @@ export function StatusBadge({ token, size = 'md', showIcon = true, className }: 
       )}
     >
       {Icon ? <Icon aria-hidden="true" className={size === 'sm' ? 'size-3' : 'size-3.5'} /> : null}
-      {token.label}
+      {label ?? token.label}
     </span>
   );
 }

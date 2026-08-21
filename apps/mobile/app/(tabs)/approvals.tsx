@@ -16,6 +16,7 @@ interface ApprovalRow {
   id: string;
   requestNumber: string;
   status: RequestStatus;
+  currentStep: { name: string; kind: string } | null;
   businessReason: string;
   estimatedCost: string | null;
   currency: string;
@@ -89,7 +90,11 @@ export default function ApprovalsScreen() {
                   >
                     {item.requestNumber}
                   </Text>
-                  <StatusPill label={REQUEST_STATUS_TOKENS[item.status].label} bg={tone.bg} fg={tone.fg} />
+                  <StatusPill
+                    label={item.currentStep?.name ?? REQUEST_STATUS_TOKENS[item.status].label}
+                    bg={tone.bg}
+                    fg={tone.fg}
+                  />
                 </View>
                 <Text style={{ color: c.muted, fontSize: 12, marginTop: 2 }}>{who}</Text>
               </View>
