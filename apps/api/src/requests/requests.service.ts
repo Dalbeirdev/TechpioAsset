@@ -12,6 +12,7 @@ import {
   type RequestCreationPolicy,
 } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
+import { awaitingMeFilter } from './awaiting-me.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
 import { requestScopeFilter, tenantFilter } from '../common/scope.js';
 import { AppConfig } from '../config/config.module.js';
@@ -121,37 +122,7 @@ export class RequestsService {
             ],
           }
         : {}),
-      ...(query.awaitingMe
-        ? {
-            approvals: {
-              some: {
-                decision: ApprovalDecision.PENDING,
-                OR: [
-                  // Named approver.
-                  { approverId: actor.id },
-                  // Role-based step: anyone currently holding the role.
-                  { approverRole: { users: { some: { userId: actor.id } } } },
-                  // Line-manager step carries neither an approverId nor a role -
-                  // the approver is whoever manages the beneficiary - so it is
-                  // matched through the request's denormalised managerId.
-                  // Without this branch, manager approvals never appear in an
-                  // inbox and simply stall.
-                  { approverType: 'LINE_MANAGER', request: { managerId: actor.id } },
-                  // v2.24 - no manager recorded: the Manager role stands in, so
-                  // those requests land in every Manager-role holder's inbox.
-                  ...(actor.roles.includes('MANAGER')
-                    ? [
-                        {
-                          approverType: 'LINE_MANAGER' as const,
-                          request: { managerId: null, requesterId: { not: actor.id } },
-                        },
-                      ]
-                    : []),
-                ],
-              },
-            },
-          }
-        : {}),
+      ...(query.awaitingMe ? awaitingMeFilter(actor) : {}),
     };
     return { AND: [requestScopeFilter(actor), filters] };
   }

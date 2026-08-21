@@ -331,3 +331,39 @@ describe('a list row names the step it is on', () => {
     expect(row!.currentStep, 'a cancelled request is on no step').toBeNull();
   });
 });
+
+describe('the dashboard tile agrees with the inbox', () => {
+  /**
+   * v2.26 - they disagreed. The tile counted only steps carrying
+   * `approverId: actor.id`, but a role-based step has no approverId until it is
+   * decided, so it counted almost nothing. An Office Administrator with a full
+   * inbox saw "Awaiting my approval: 0" on a tile linking to the very list that
+   * showed them all. Found by opening the mobile app and reading the home
+   * screen next to the approvals tab.
+   */
+  it('counts a role-based step the same way the list does', async () => {
+    await enableStages();
+    const id = await raise();
+    const stage = await walkToStage(id);
+    expect(stage?.stepName).toBe('Inventory check');
+
+    const inbox = await api(app)
+      .get('/api/v1/requests?awaitingMe=true&pageSize=100')
+      .set(auth(s.officeAdmin));
+    // The page is capped; the tile counts everything, so compare against the
+    // total rather than the page length.
+    const waiting = inbox.body.meta.page.totalItems as number;
+    expect(waiting, 'the inventory stage should be in the inbox').toBeGreaterThan(0);
+    expect(
+      (inbox.body.data as { id: string }[]).some((r) => r.id === id),
+      'this request specifically should be in it',
+    ).toBe(true);
+
+    const dash = await api(app).get('/api/v1/dashboard').set(auth(s.officeAdmin));
+    const tile = (dash.body.data.tiles as { key: string; value: number }[]).find(
+      (t) => t.key === 'awaiting-approval',
+    );
+    expect(tile, 'the tile should be present for an approver').toBeTruthy();
+    expect(tile!.value, 'tile must not read 0 while the inbox has items').toBe(waiting);
+  });
+});
