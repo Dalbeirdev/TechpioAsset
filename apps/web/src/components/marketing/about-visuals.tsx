@@ -7,6 +7,7 @@ import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { demoRequestSchema, type DemoRequestInput } from '@techpioasset/contracts';
 import { apiFetch } from '@/lib/api-client';
 import { PhoneField } from './form-fields';
+import { fieldCls as inputCls } from '@/components/marketing/form-fields';
 
 /**
  * About-page visuals (2026-08): the "digital asset map" hero and the compact
@@ -106,8 +107,7 @@ export function AssetTree() {
 
 /* ── compact editorial contact form ─────────────────────────────────────── */
 
-const inputCls =
-  'h-11 w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3.5 text-sm outline-none transition-colors focus:border-[var(--color-brand)]';
+
 
 export function AboutContactForm() {
   const [sent, setSent] = useState(false);

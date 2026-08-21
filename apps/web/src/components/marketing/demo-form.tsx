@@ -7,6 +7,7 @@ import { ArrowRight, CheckCircle2, Mail } from 'lucide-react';
 import { demoRequestSchema, type DemoRequestInput } from '@techpioasset/contracts';
 import { apiFetch } from '@/lib/api-client';
 import { FancySelect, PhoneField, type SelectOption } from './form-fields';
+import { fieldCls as inputCls } from '@/components/marketing/form-fields';
 
 /**
  * Lead form for pioassets.com. Validates with the same zod schema the API
@@ -21,8 +22,7 @@ const ASSET_OPTIONS: SelectOption[] = [
   { value: 'OVER_1000', label: '1,000+' },
 ];
 
-const inputCls =
-  'h-11 w-full rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3.5 text-sm outline-none transition-colors focus:border-[var(--color-brand)]';
+
 const labelCls = 'text-sm font-medium';
 const errCls = 'mt-1 text-xs text-[var(--tone-critical-fg)]';
 

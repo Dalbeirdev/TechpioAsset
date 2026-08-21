@@ -29,8 +29,9 @@ export function TonePill({ label, tone }: { label: string; tone: string }) {
   );
 }
 
-export const inputCls =
-  'h-9 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm';
+// Re-exported under its historical name so the six screens importing it from
+// here do not all have to change; the definition lives in components/ui.
+export { controlCls as inputCls } from '@/components/ui';
 
 export const fmtDate = (iso: string | null | undefined) =>
   iso

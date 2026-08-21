@@ -20,7 +20,7 @@ import {
 } from '@techpioasset/domain';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, controlCls as inputCls } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -1245,8 +1245,7 @@ function UncataloguedDialog({
       .slice(0, 4);
   }, [catalog, q]);
 
-  const inputCls =
-    'h-10 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-sm outline-none focus:border-[var(--color-brand)]';
+
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Add uncatalogued item">
