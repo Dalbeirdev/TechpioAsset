@@ -19,7 +19,7 @@ import { useConfirm } from '@/providers/confirm-provider';
 import { useFocusTrap } from '@/lib/use-focus-trap';
 import { downloadCsv } from '@/lib/download-csv';
 import { fetchColleagues, colleagueName } from '@/lib/colleagues';
-import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Field, NativeSelect, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
 interface UserRow {
@@ -353,87 +353,113 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
               <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--color-content-subtle)]">
                 Details
               </legend>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Input
-                  aria-label="First name"
-                  value={details.firstName}
-                  onChange={(e) => setDetails((d) => ({ ...d, firstName: e.target.value }))}
-                  placeholder="First name"
-                />
-                <Input
-                  aria-label="Last name"
-                  value={details.lastName}
-                  onChange={(e) => setDetails((d) => ({ ...d, lastName: e.target.value }))}
-                  placeholder="Last name"
-                />
-                <Input
-                  aria-label="Job title"
-                  value={details.jobTitle}
-                  onChange={(e) => setDetails((d) => ({ ...d, jobTitle: e.target.value }))}
-                  placeholder="Job title"
-                />
-                <Input
-                  aria-label="Employee number"
-                  value={details.employeeNumber}
-                  onChange={(e) => setDetails((d) => ({ ...d, employeeNumber: e.target.value }))}
-                  placeholder="Employee number"
-                />
-                <select
-                  aria-label="Department"
-                  value={details.departmentId}
-                  onChange={(e) => setDetails((d) => ({ ...d, departmentId: e.target.value }))}
-                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
-                >
-                  <option value="">No department</option>
-                  {(departments.data ?? []).map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Office"
-                  value={details.officeId}
-                  onChange={(e) => setDetails((d) => ({ ...d, officeId: e.target.value }))}
-                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
-                >
-                  <option value="">No office</option>
-                  {(offices.data ?? []).map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-                {/* v2.26 - the line manager. Full width because the names are
-                    long and a half-width select truncates them to ambiguity. */}
-                <select
-                  aria-label="Line manager"
-                  value={details.managerId}
-                  onChange={(e) => setDetails((d) => ({ ...d, managerId: e.target.value }))}
-                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm sm:col-span-2"
-                >
-                  <option value="">Line manager: none (falls back to the Manager role)</option>
-                  {(colleagues.data ?? [])
-                    .filter((c) => c.id !== user.id)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Line manager: {colleagueName(c)}
+              {/* v2.26 - every control carries a visible label, like the rest
+                  of the app. They were placeholder-only, so the moment a field
+                  had a value there was nothing left to say what it was: "Ravi |
+                  Menon | Field Engineer | EMP-0008 | Engineering | Mohali" and
+                  no headings. The two selects had to repeat their own label
+                  inside all 148 options to compensate. */}
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="First name" htmlFor="pm-first">
+                  <Input
+                    id="pm-first"
+                    value={details.firstName}
+                    onChange={(e) => setDetails((d) => ({ ...d, firstName: e.target.value }))}
+                  />
+                </Field>
+                <Field label="Last name" htmlFor="pm-last">
+                  <Input
+                    id="pm-last"
+                    value={details.lastName}
+                    onChange={(e) => setDetails((d) => ({ ...d, lastName: e.target.value }))}
+                  />
+                </Field>
+                <Field label="Job title" htmlFor="pm-title">
+                  <Input
+                    id="pm-title"
+                    value={details.jobTitle}
+                    onChange={(e) => setDetails((d) => ({ ...d, jobTitle: e.target.value }))}
+                  />
+                </Field>
+                <Field label="Employee number" htmlFor="pm-empno">
+                  <Input
+                    id="pm-empno"
+                    value={details.employeeNumber}
+                    onChange={(e) => setDetails((d) => ({ ...d, employeeNumber: e.target.value }))}
+                  />
+                </Field>
+                <Field label="Department" htmlFor="pm-dept">
+                  <NativeSelect
+                    className="w-full"
+                    id="pm-dept"
+                    value={details.departmentId}
+                    onChange={(e) => setDetails((d) => ({ ...d, departmentId: e.target.value }))}
+                  >
+                    <option value="">No department</option>
+                    {(departments.data ?? []).map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
                       </option>
                     ))}
-                </select>
+                  </NativeSelect>
+                </Field>
+                <Field label="Office" htmlFor="pm-office">
+                  <NativeSelect
+                    className="w-full"
+                    id="pm-office"
+                    value={details.officeId}
+                    onChange={(e) => setDetails((d) => ({ ...d, officeId: e.target.value }))}
+                  >
+                    <option value="">No office</option>
+                    {(offices.data ?? []).map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                {/* Full width: the names are long, and a half-width select
+                    truncates them to ambiguity. */}
+                <div className="sm:col-span-2">
+                  <Field
+                    label="Line manager"
+                    htmlFor="pm-manager"
+                    hint="Who approves this person's requests. With nobody named, approvals fall back to whoever holds the Manager role."
+                  >
+                    <NativeSelect
+                      className="w-full"
+                      id="pm-manager"
+                      value={details.managerId}
+                      onChange={(e) => setDetails((d) => ({ ...d, managerId: e.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {(colleagues.data ?? [])
+                        .filter((c) => c.id !== user.id)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {colleagueName(c)}
+                          </option>
+                        ))}
+                    </NativeSelect>
+                  </Field>
+                </div>
                 {/* v2.22 - the per-person exception to the company's request
                     policy. Most people inherit; this is for the individual
                     cases the company setting cannot express. */}
-                <select
-                  aria-label="Can raise requests"
-                  value={details.requests}
-                  onChange={(e) => setDetails((d) => ({ ...d, requests: e.target.value }))}
-                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm sm:col-span-2"
-                >
-                  <option value="">Requests: {REQUEST_OVERRIDE_LABELS.inherit}</option>
-                  <option value="allow">Requests: {REQUEST_OVERRIDE_LABELS.allow}</option>
-                  <option value="block">Requests: {REQUEST_OVERRIDE_LABELS.block}</option>
-                </select>
+                <div className="sm:col-span-2">
+                  <Field label="Can raise requests" htmlFor="pm-requests">
+                    <NativeSelect
+                      className="w-full"
+                      id="pm-requests"
+                      value={details.requests}
+                      onChange={(e) => setDetails((d) => ({ ...d, requests: e.target.value }))}
+                    >
+                      <option value="">{REQUEST_OVERRIDE_LABELS.inherit}</option>
+                      <option value="allow">{REQUEST_OVERRIDE_LABELS.allow}</option>
+                      <option value="block">{REQUEST_OVERRIDE_LABELS.block}</option>
+                    </NativeSelect>
+                  </Field>
+                </div>
               </div>
               <Button
                 className="mt-3"
@@ -822,28 +848,26 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
                   <Input aria-label="Email" type="email" placeholder="Work email" value={form.email} onChange={set('email')} />
                 </div>
                 <Input aria-label="Job title" placeholder="Job title (optional)" value={form.jobTitle} onChange={set('jobTitle')} />
-                <select
+                <NativeSelect
                   aria-label="Department"
                   value={form.departmentId}
                   onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value }))}
-                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
                 >
                   <option value="">No department</option>
                   {(departments.data ?? []).map((d) => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
-                </select>
-                <select
+                </NativeSelect>
+                <NativeSelect
                   aria-label="Office"
                   value={form.officeId}
                   onChange={(e) => setForm((f) => ({ ...f, officeId: e.target.value }))}
-                  className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm"
                 >
                   <option value="">No office</option>
                   {(offices.data ?? []).map((o) => (
                     <option key={o.id} value={o.id}>{o.name}</option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
 
               <fieldset className="mt-4">
@@ -1056,14 +1080,14 @@ function PeopleTable() {
             className="pl-9"
           />
         </div>
-        <select
+        <NativeSelect
           aria-label="Filter by role"
           value={role}
           onChange={(e) => {
             setRole(e.target.value);
             setPage(1);
           }}
-          className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm"
+          className="bg-[var(--color-surface)]"
         >
           <option value="">All roles</option>
           {SYSTEM_ROLES.map((key) => (
@@ -1071,7 +1095,7 @@ function PeopleTable() {
               {roleLabel(key)}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         {hasFilters ? (
           <Button
             variant="secondary"

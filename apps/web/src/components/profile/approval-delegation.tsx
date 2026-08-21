@@ -6,7 +6,7 @@ import { UserRoundCheck, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { fetchColleagues, colleagueName, type Colleague } from '@/lib/colleagues';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, Field, Input, NativeSelect } from '@/components/ui';
 
 /**
  * Cover for absence (v2.26).
@@ -107,9 +107,6 @@ export function ApprovalDelegation() {
   const given = delegations.data?.given ?? [];
   const received = delegations.data?.received ?? [];
 
-  const field =
-    'h-9 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-2 text-sm';
-
   return (
     <Card className="p-5">
       <h2 className="mb-1 flex items-center gap-3 text-base font-semibold">
@@ -125,49 +122,45 @@ export function ApprovalDelegation() {
       </p>
 
       {/* ── Arrange cover ─────────────────────────────────────────────── */}
-      <div className="grid gap-2 sm:grid-cols-2">
-        <select
-          aria-label="Who covers for you"
-          value={delegateId}
-          onChange={(e) => setDelegateId(e.target.value)}
-          className={`${field} sm:col-span-2`}
-        >
-          <option value="">Choose who covers for you…</option>
-          {(colleagues.data ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {nameOf(c)}
-            </option>
-          ))}
-        </select>
-        <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
-          From (optional)
-          <input
-            type="date"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
-            className={field}
-          />
-        </label>
-        <label className="grid gap-1 text-xs text-[var(--color-content-subtle)]">
-          Until (optional)
-          <input
-            type="date"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-            className={field}
-          />
-        </label>
-        <input
-          aria-label="Reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="Reason — e.g. Annual leave"
-          className={`${field} sm:col-span-2`}
-        />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Field label="Who covers for you" htmlFor="ac-who">
+            <NativeSelect
+              id="ac-who"
+              className="w-full"
+              value={delegateId}
+              onChange={(e) => setDelegateId(e.target.value)}
+            >
+              <option value="">Choose someone…</option>
+              {(colleagues.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {nameOf(c)}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+        </div>
+        <Field label="From" htmlFor="ac-from" hint="Optional">
+          <Input id="ac-from" type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+        </Field>
+        <Field label="Until" htmlFor="ac-until" hint="Optional">
+          <Input id="ac-until" type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field
+            label="Reason"
+            htmlFor="ac-reason"
+            hint="Leave both dates empty and the cover starts now and runs until you end it."
+          >
+            <Input
+              id="ac-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Annual leave"
+            />
+          </Field>
+        </div>
       </div>
-      <p className="mt-2 text-xs text-[var(--color-content-subtle)]">
-        Leave both dates empty and the cover starts now and runs until you end it.
-      </p>
       <Button
         className="mt-3"
         size="sm"

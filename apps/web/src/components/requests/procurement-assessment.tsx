@@ -6,7 +6,7 @@ import { Calculator, PackageCheck, ShoppingCart } from 'lucide-react';
 import type { RequestAssessment } from '@techpioasset/contracts';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useToast } from '@/providers/toast-provider';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, Field } from '@/components/ui';
 import { Input } from '@/components/ui/input';
 
 /**
@@ -154,56 +154,56 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
 
       {purchaseRequired === true ? (
         <div className="mt-4 grid gap-3">
-          <Labelled label="Product / model" htmlFor="pa-product">
+          <Field label="Product / model" htmlFor="pa-product">
             <Input
               id="pa-product"
               value={form.suggestedProduct}
               placeholder="Dell Latitude 7450"
               onChange={(e) => setForm({ ...form, suggestedProduct: e.target.value })}
             />
-          </Labelled>
+          </Field>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Labelled label="Unit price" htmlFor="pa-unit">
+            <Field label="Unit price" htmlFor="pa-unit">
               <Input
                 id="pa-unit"
                 inputMode="decimal"
                 value={form.unitPrice}
                 onChange={(e) => setForm({ ...form, unitPrice: e.target.value })}
               />
-            </Labelled>
-            <Labelled label="Quantity" htmlFor="pa-qty">
+            </Field>
+            <Field label="Quantity" htmlFor="pa-qty">
               <Input
                 id="pa-qty"
                 inputMode="numeric"
                 value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })}
               />
-            </Labelled>
-            <Labelled label="Tax" htmlFor="pa-tax">
+            </Field>
+            <Field label="Tax" htmlFor="pa-tax">
               <Input
                 id="pa-tax"
                 inputMode="decimal"
                 value={form.taxAmount}
                 onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
               />
-            </Labelled>
-            <Labelled label="Shipping" htmlFor="pa-ship">
+            </Field>
+            <Field label="Shipping" htmlFor="pa-ship">
               <Input
                 id="pa-ship"
                 inputMode="decimal"
                 value={form.shipping}
                 onChange={(e) => setForm({ ...form, shipping: e.target.value })}
               />
-            </Labelled>
-            <Labelled label="Discount" htmlFor="pa-disc">
+            </Field>
+            <Field label="Discount" htmlFor="pa-disc">
               <Input
                 id="pa-disc"
                 inputMode="decimal"
                 value={form.discount}
                 onChange={(e) => setForm({ ...form, discount: e.target.value })}
               />
-            </Labelled>
+            </Field>
           </div>
 
           {preview !== null ? (
@@ -221,7 +221,7 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
 
       {purchaseRequired !== null ? (
         <div className="mt-3 grid gap-3">
-          <Labelled label="Notes" htmlFor="pa-notes">
+          <Field label="Notes" htmlFor="pa-notes">
             <textarea
               id="pa-notes"
               rows={2}
@@ -229,7 +229,7 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
               className="w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-2.5 text-sm"
             />
-          </Labelled>
+          </Field>
           <Button
             size="sm"
             className="justify-self-start"
@@ -282,24 +282,5 @@ function ChoiceButton({
       {icon}
       {label}
     </button>
-  );
-}
-
-function Labelled({
-  label,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="grid gap-1">
-      <label htmlFor={htmlFor} className="text-xs font-medium">
-        {label}
-      </label>
-      {children}
-    </div>
   );
 }
