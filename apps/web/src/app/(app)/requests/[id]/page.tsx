@@ -390,7 +390,13 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
             </Card>
           ) : null}
 
-          {can(PERMISSIONS.REQUESTS_ASSESS) ? <ProcurementAssessment requestId={id} /> : null}
+          {/* Not on your own request, however senior you are - IT, Office and
+              Finance all hold requests:assess and all raise requests of their
+              own. The server refuses it either way; hiding the panel means
+              nobody is offered a form that is going to be refused. */}
+          {can(PERMISSIONS.REQUESTS_ASSESS) && data.requester.id !== user?.id ? (
+            <ProcurementAssessment requestId={id} />
+          ) : null}
 
           {canAct ? (
             <Card className="p-5">

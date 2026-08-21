@@ -49,7 +49,8 @@ export class AssessmentsService {
   }
 
   async get(actor: AuthUser, requestId: string) {
-    await this.assertRequestVisible(actor, requestId);
+    const request = await this.assertRequestVisible(actor, requestId);
+    this.assertNotOwnRequest(actor, request);
     const row = await this.prisma.client.requestAssessment.findUnique({
       where: { requestId },
       include: {
@@ -63,6 +64,7 @@ export class AssessmentsService {
 
   async upsert(actor: AuthUser, requestId: string, input: UpsertAssessmentInput) {
     const request = await this.assertRequestVisible(actor, requestId);
+    this.assertNotOwnRequest(actor, request);
 
     if (request.status === 'COMPLETED' || request.status === 'CANCELLED') {
       throw new AppError(
@@ -169,11 +171,34 @@ export class AssessmentsService {
     return this.present(saved);
   }
 
+  /**
+   * Nobody assesses their own request (v2.26).
+   *
+   * The permission was the only gate here, and three roles that carry
+   * `requests:assess` - IT, Office and Finance - also raise requests of their
+   * own. So an IT administrator could state the price on their own laptop
+   * request, and that price is what decides whether Finance ever sees it. That
+   * is the exact thing moving pricing away from the requester was meant to
+   * stop; the rule simply was not enforced on this route the way BR-04 enforces
+   * it on the decide route.
+   *
+   * Reading is refused too, not only writing: the commercial side of your own
+   * request is not yours to see, which is what the route's own description has
+   * claimed since it was written.
+   */
+  private assertNotOwnRequest(actor: AuthUser, request: { requesterId: string }) {
+    if (request.requesterId === actor.id) {
+      throw AppError.forbidden(
+        'You cannot assess or price your own request. Ask Office Administration or Finance.',
+      );
+    }
+  }
+
   /** The request must be one the actor can already see; 404 otherwise. */
   private async assertRequestVisible(actor: AuthUser, requestId: string) {
     const request = await this.prisma.client.assetRequest.findFirst({
       where: { id: requestId, companyId: actor.companyId },
-      select: { id: true, status: true, currency: true },
+      select: { id: true, status: true, currency: true, requesterId: true },
     });
     if (!request) throw AppError.notFound('Request', requestId);
     return request;
