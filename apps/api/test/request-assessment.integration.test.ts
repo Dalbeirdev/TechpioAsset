@@ -330,10 +330,25 @@ describe('Scenario B — it has to be bought', () => {
 describe('filling a request from stock', () => {
   it('records which asset fills it, and still skips Finance', async () => {
     const stock = await api(app)
-      .get('/api/v1/assets?status=AVAILABLE&pageSize=1')
+      .get('/api/v1/assets?status=AVAILABLE&pageSize=100')
       .set(auth(s.officeAdmin));
     expect(stock.status, JSON.stringify(stock.body)).toBeLessThan(300);
-    const asset = (stock.body.data as { id: string; assetTag: string }[])[0];
+    // Unclaimed, not merely available - see the note on freeAsset below.
+    const claimed = new Set(
+      (
+        await prisma.client.requestAssessment.findMany({
+          where: {
+            suitableAssetId: { not: null },
+            purchaseRequired: false,
+            request: { status: { notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'] } },
+          },
+          select: { suitableAssetId: true },
+        })
+      ).map((a) => a.suitableAssetId),
+    );
+    const asset = (stock.body.data as { id: string; assetTag: string }[]).find(
+      (a) => !claimed.has(a.id),
+    )!;
     if (!asset) return; // nothing available in this database; the rest is covered elsewhere
 
     const id = await raise();
@@ -455,5 +470,115 @@ describe('correcting a wrong stock answer', () => {
     const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
     // Unwinding something already acted on is a conversation, not a write.
     expect(detail.body.data.status).toBe('INVENTORY_RESERVED');
+  });
+});
+
+/**
+ * v2.26 - a promise on a unit has to hold it.
+ *
+ * Naming an asset recorded a preference and nothing else: it stayed AVAILABLE,
+ * so the same laptop could be promised to two people and both requests would
+ * close as "filled from existing stock". Found by doing exactly that.
+ */
+describe('promising a unit from stock', () => {
+  let definitionId: string;
+
+  beforeAll(async () => {
+    const definition = await prisma.client.workflowDefinition.findFirstOrThrow({
+      where: { companyId: s.superAdmin.user.companyId, requestType: null, isActive: true },
+      select: { id: true },
+    });
+    definitionId = definition.id;
+    await api(app)
+      .patch(`/api/v1/workflows/${definitionId}/assessment-stages`)
+      .set(auth(s.superAdmin))
+      .send({ enabled: true });
+  });
+
+  afterAll(async () => {
+    await api(app)
+      .patch(`/api/v1/workflows/${definitionId}/assessment-stages`)
+      .set(auth(s.superAdmin))
+      .send({ enabled: false });
+  });
+
+  /**
+   * Available AND unclaimed. A shared database accumulates requests that named
+   * a unit, so "first available" is not the same as "free to promise" - and
+   * picking a claimed one makes this test fail on the guard it is testing.
+   */
+  const freeAsset = async () => {
+    const res = await api(app)
+      .get('/api/v1/assets?status=AVAILABLE&pageSize=100')
+      .set(auth(s.superAdmin));
+    const claimed = new Set(
+      (
+        await prisma.client.requestAssessment.findMany({
+          where: {
+            suitableAssetId: { not: null },
+            purchaseRequired: false,
+            request: { status: { notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'] } },
+          },
+          select: { suitableAssetId: true },
+        })
+      ).map((a) => a.suitableAssetId),
+    );
+    return (
+      (res.body.data as { id: string; assetTag: string }[]).find((a) => !claimed.has(a.id)) ?? null
+    );
+  };
+
+  const toInventory = async () => {
+    const id = await raise();
+    for (const who of ['manager', 'hr', 'itAdmin'] as const) {
+      await api(app).post(`/api/v1/requests/${id}/decision`).set(auth(s[who])).send({ decision: 'APPROVED' });
+    }
+    return id;
+  };
+
+  it('reserves it, and refuses to promise it twice', async () => {
+    const asset = await freeAsset();
+    if (!asset) return;
+
+    const first = await toInventory();
+    const ok = await api(app)
+      .patch(`/api/v1/requests/${first}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: asset.id });
+    expect(ok.status, JSON.stringify(ok.body)).toBeLessThan(300);
+
+    const held = await prisma.client.asset.findUnique({ where: { id: asset.id }, select: { status: true } });
+    expect(held?.status, 'the promised unit is held').toBe('RESERVED');
+
+    const second = await toInventory();
+    const clash = await api(app)
+      .patch(`/api/v1/requests/${second}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: asset.id });
+    expect(clash.status, 'the same unit cannot fill two requests').toBeGreaterThanOrEqual(400);
+    expect(JSON.stringify(clash.body)).toContain('already promised');
+  });
+
+  it('gives it back when the answer changes to "must be bought"', async () => {
+    const asset = await freeAsset();
+    if (!asset) return;
+
+    const id = await toInventory();
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: asset.id });
+    expect((await prisma.client.asset.findUnique({ where: { id: asset.id }, select: { status: true } }))?.status)
+      .toBe('RESERVED');
+
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: false, purchaseRequired: true, unitPrice: '95000', quantity: 1 });
+
+    expect(
+      (await prisma.client.asset.findUnique({ where: { id: asset.id }, select: { status: true } }))?.status,
+      'nothing is being filled from stock any more, so the unit is free',
+    ).toBe('AVAILABLE');
   });
 });
