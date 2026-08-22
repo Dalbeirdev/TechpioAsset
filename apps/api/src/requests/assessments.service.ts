@@ -26,6 +26,83 @@ export class AssessmentsService {
     private readonly requests: RequestsService,
   ) {}
 
+
+  /**
+   * Hold the unit that was promised (v2.26).
+   *
+   * Naming an asset recorded a preference and nothing more: the asset stayed
+   * AVAILABLE, so the same laptop could be promised to two people and both
+   * requests would close as "filled from existing stock". One of them was
+   * always going to be disappointed, and nothing in the system knew.
+   *
+   * So promising a unit reserves it, promising one already promised is
+   * refused, and changing the answer gives it back. Reserved rather than
+   * assigned: it is spoken for, but nobody has handed it over yet, and that
+   * handover is its own step with its own record.
+   */
+  private async syncStockReservation(
+    actor: AuthUser,
+    requestId: string,
+    previousAssetId: string | null,
+    nextAssetId: string | null,
+    fillingFromStock: boolean,
+  ): Promise<void> {
+    const holding = fillingFromStock ? nextAssetId : null;
+
+    if (previousAssetId && previousAssetId !== holding) {
+      // Only ever release something this request is holding.
+      await this.prisma.client.asset.updateMany({
+        where: { id: previousAssetId, companyId: actor.companyId, status: 'RESERVED' },
+        data: { status: 'AVAILABLE' },
+      });
+    }
+    if (!holding) return;
+
+    const asset = await this.prisma.client.asset.findFirst({
+      where: { id: holding, companyId: actor.companyId, deletedAt: null },
+      select: { id: true, assetTag: true, status: true },
+    });
+    if (!asset) throw AppError.notFound('Asset', holding);
+
+    // Somebody else's promise on the same unit.
+    const claimed = await this.prisma.client.requestAssessment.findFirst({
+      where: {
+        suitableAssetId: holding,
+        requestId: { not: requestId },
+        purchaseRequired: false,
+        request: { status: { notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'] } },
+      },
+      select: { request: { select: { requestNumber: true } } },
+    });
+    if (claimed) {
+      // The message is not what reaches the caller - `detail` is - so the unit
+      // and the request holding it belong in there, or the reader is told
+      // "Conflict" and left to guess which item and whose request.
+      throw new AppError(
+        'CONFLICT',
+        `${asset.assetTag} is already promised to ${claimed.request.requestNumber}`,
+        {
+          detail:
+            `${asset.assetTag} is already promised to ${claimed.request.requestNumber}. ` +
+            'Choose a different unit, or clear it from that request first — two requests cannot ' +
+            'be filled from the same item.',
+        },
+      );
+    }
+    if (asset.status !== 'AVAILABLE' && asset.status !== 'RESERVED') {
+      throw new AppError('CONFLICT', `${asset.assetTag} is not free stock`, {
+        detail:
+          `${asset.assetTag} is ${asset.status.toLowerCase().replace(/_/g, ' ')}, not free stock. ` +
+          'Only an available item can be promised against a request.',
+      });
+    }
+
+    await this.prisma.client.asset.update({
+      where: { id: holding },
+      data: { status: 'RESERVED' },
+    });
+  }
+
   /** (unit price x quantity) + tax + shipping - discount, or null if unpriced. */
   private computeTotal(a: {
     unitPrice: Prisma.Decimal | null;
@@ -117,6 +194,14 @@ export class AssessmentsService {
     // and a purchase total together would leave two answers on the record.
     const totalCost =
       merged.purchaseRequired === false ? null : this.computeTotal(merged);
+
+    await this.syncStockReservation(
+      actor,
+      requestId,
+      existing?.suitableAssetId ?? null,
+      merged.suitableAssetId,
+      merged.purchaseRequired === false,
+    );
 
     const saved = await this.prisma.client.requestAssessment.upsert({
       where: { requestId },
