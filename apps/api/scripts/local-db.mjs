@@ -12,8 +12,11 @@
  *   node scripts/local-db.mjs          start and stay in the foreground
  *   node scripts/local-db.mjs --stop   stop a running instance
  */
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 import { config as loadEnv } from 'dotenv';
 import EmbeddedPostgres from 'embedded-postgres';
 
@@ -49,14 +52,59 @@ const pg = new EmbeddedPostgres({
   onLog: () => {},
 });
 
+/**
+ * Shut the cluster down by DATA DIRECTORY rather than by object handle.
+ *
+ * `pg.stop()` only knows about a server this same process started. Run from a
+ * second terminal - which is the whole point of `--stop` - it has no handle,
+ * stops nothing, and still resolves: the command printed "Local PostgreSQL
+ * stopped." while the server carried on serving on 5432. A stop command that
+ * lies is worse than one that fails, because the next thing you do is assume
+ * the port is free.
+ *
+ * `pg_ctl` acts on the directory, so it works from anywhere and reports the
+ * truth either way. `-m fast` rolls back open transactions and closes cleanly,
+ * rather than leaving the cluster to recover on next start.
+ */
+async function stopByDataDir() {
+  // The binaries live in a per-platform package that resolves only from inside
+  // embedded-postgres' own folder, so reuse the resolver it ships rather than
+  // guessing at a path that changes with the package manager's layout.
+  const entry = createRequire(path.join(process.cwd(), 'package.json')).resolve('embedded-postgres');
+  const { default: getBinaries } = await import(
+    pathToFileURL(path.join(path.dirname(entry), 'binary.js')).href
+  );
+  const { pg_ctl: pgCtl } = await getBinaries();
+
+  const result = spawnSync(pgCtl, ['-D', DATA_DIR, '-m', 'fast', 'stop'], { encoding: 'utf8' });
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+
+  if (result.status === 0) {
+    console.log('Local PostgreSQL stopped.');
+    return;
+  }
+  // pg_ctl exits non-zero when there was nothing to stop, and says so two ways:
+  // "no server running" when the PID file is stale, and 'PID file ... does not
+  // exist / Is server running?' when it is absent. Both mean the cluster is
+  // down, which is the state being asked for - so report it and succeed, rather
+  // than failing a teardown step for doing its job.
+  if (/no server running|does not exist|is server running\?/i.test(output)) {
+    console.log('Local PostgreSQL was not running.');
+    return;
+  }
+  console.error(output || `pg_ctl exited with ${result.status}`);
+  process.exitCode = 1;
+}
+
+/** In-process shutdown: this script owns the server, so the handle is real. */
 async function stop() {
   await pg.stop();
   console.log('Local PostgreSQL stopped.');
 }
 
 if (process.argv.includes('--stop')) {
-  await stop();
-  process.exit(0);
+  await stopByDataDir();
+  process.exit(process.exitCode ?? 0);
 }
 
 const { existsSync } = await import('node:fs');
