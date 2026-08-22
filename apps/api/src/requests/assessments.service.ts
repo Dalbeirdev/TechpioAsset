@@ -248,6 +248,13 @@ export class AssessmentsService {
       },
     });
 
+    // Filed under its author, rather than written over the shared string. The
+    // request's comment thread already carries a name and a time on every
+    // entry, which is exactly what a note about somebody's spending needs.
+    if (input.note) {
+      await this.requests.addComment(actor, requestId, input.note, true);
+    }
+
     // A corrected answer has to undo what the wrong one settled. Answering
     // "filled from stock" skips the costing and Finance and approves the
     // request; saying afterwards that it does need buying used to change this

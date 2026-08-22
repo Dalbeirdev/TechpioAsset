@@ -31,6 +31,13 @@ export const upsertAssessmentSchema = z
     discount: moneyString.nullable().optional(),
 
     notes: z.string().trim().max(2000).nullable().optional(),
+    /**
+     * A note to file against this request (v2.26). Write-only, and NOT the same
+     * as `notes`: that is one string everybody shares, so the last person to
+     * save replaced what came before and the record credited them for it. This
+     * becomes an internal comment with its own author and timestamp.
+     */
+    note: z.string().trim().min(1).max(4000).optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'Nothing to record');
