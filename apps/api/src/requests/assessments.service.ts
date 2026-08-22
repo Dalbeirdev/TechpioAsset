@@ -163,6 +163,14 @@ export class AssessmentsService {
       },
     });
 
+    // A corrected answer has to undo what the wrong one settled. Answering
+    // "filled from stock" skips the costing and Finance and approves the
+    // request; saying afterwards that it does need buying used to change this
+    // record and leave that chain closed, so the correction was cosmetic.
+    if (saved.purchaseRequired === true && existing?.purchaseRequired === false) {
+      await this.requests.reopenStagesSkippedByStockAnswer(actor, requestId);
+    }
+
     // An inventory-check or cost-assessment stage is completed by doing the
     // work, so recording the answer is what moves the chain on - not a second
     // click on a button asking the same question again.

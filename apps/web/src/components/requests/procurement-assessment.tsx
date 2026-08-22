@@ -161,24 +161,46 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
       </p>
 
       <fieldset className="mt-4">
+        {/* v2.26 - ask the question the person is answering.
+            "Is a purchase required?" put a No against the stock check in a
+            reader's head: somebody checking the shelf thinks "available? no",
+            clicks the No, and files "filled from existing stock". It happened -
+            a replacement closed itself as fulfilled, Finance skipped, with
+            "sorry not available in my stock" typed in the notes beside it. The
+            stock question is the one being answered, so it is the one asked;
+            the purchase follows from it and is spelled out underneath. */}
         <legend className="text-xs font-medium text-[var(--color-content-muted)]">
-          Is a purchase required?
+          Is this available in stock?
         </legend>
         <div className="mt-2 flex flex-wrap gap-2">
           <ChoiceButton
             active={purchaseRequired === false}
             onClick={() => setPurchaseRequired(false)}
             icon={<PackageCheck aria-hidden="true" className="size-3.5" />}
-            label="No — fill from stock"
+            label="Yes — fill from stock"
           />
           <ChoiceButton
             active={purchaseRequired === true}
             onClick={() => setPurchaseRequired(true)}
             icon={<ShoppingCart aria-hidden="true" className="size-3.5" />}
-            label="Yes — buy it"
+            label="No — it must be bought"
           />
         </div>
       </fieldset>
+
+      {purchaseRequired !== null ? (
+        <p
+          className="mt-2 text-xs"
+          style={{
+            color:
+              purchaseRequired === false ? 'var(--tone-warning-fg)' : 'var(--color-content-muted)',
+          }}
+        >
+          {purchaseRequired === false
+            ? 'This closes the request as fulfilled — nothing is bought, and Finance will not review it.'
+            : 'This sends it on to be costed, and to Finance if it clears the threshold.'}
+        </p>
+      ) : null}
 
       {/* v2.26 - "fill from stock" now says WHICH unit. Optional, because the
           shelf answer is still useful without it, but recorded when given so
