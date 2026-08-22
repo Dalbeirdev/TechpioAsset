@@ -1,7 +1,16 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
+import {
+  ACCOUNTS,
+  api,
+  auth,
+  createTestApp,
+  login,
+  loginAll,
+  type AccountKey,
+  type Session,
+} from './harness.js';
 
 /**
  * v2.25 - the employee states a requirement, somebody authorised states the
@@ -741,5 +750,116 @@ describe('issuing the reserved unit', () => {
 
     const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
     expect(detail.body.data.status).not.toBe('ASSIGNED');
+  });
+});
+
+/**
+ * v2.27 - the stage owner can stop the request, without being able to approve it.
+ *
+ * Reported from production. The owner moved the Inventory check to Inventory
+ * Manager, which is the right home for "is this already on the shelf?" - and
+ * that removed the only exit from the stage, because the decline path was gated
+ * on `requests:approve`. The person best placed to recognise a duplicate became
+ * the one person unable to stop it, and a duplicate answered honestly went on to
+ * Finance to be refused there.
+ *
+ * `requests:decline` splits the two rights. This walks the real chain: the same
+ * actor is refused an approval and allowed a refusal, on the same step.
+ */
+describe('whoever staffs a step can stop the request at it', () => {
+  let stepId: string;
+  let definitionId: string;
+  let inventoryManager: Session;
+  let originalRoles: string[];
+
+  beforeAll(async () => {
+    const defs = await api(app).get('/api/v1/workflows').set(auth(s.superAdmin));
+    const definition = (
+      defs.body.data as { id: string; requestType: string | null; steps: { id: string; name: string }[] }[]
+    ).find((d) => d.requestType === null)!;
+    definitionId = definition.id;
+
+    await api(app)
+      .patch(`/api/v1/workflows/${definitionId}/assessment-stages`)
+      .set(auth(s.superAdmin))
+      .send({ enabled: true });
+
+    const refreshed = await api(app).get('/api/v1/workflows').set(auth(s.superAdmin));
+    stepId = (refreshed.body.data as { id: string; steps: { id: string; name: string }[] }[])
+      .find((d) => d.id === definitionId)!
+      .steps.find((x) => x.name === 'Inventory check')!.id;
+
+    await api(app)
+      .patch(`/api/v1/workflows/steps/${stepId}`)
+      .set(auth(s.superAdmin))
+      .send({ approverRoleKey: 'INVENTORY_MANAGER' });
+
+    originalRoles = [...s.employee2.user.roles];
+    await api(app)
+      .patch(`/api/v1/users/${s.employee2.user.id}/roles`)
+      .set(auth(s.superAdmin))
+      .send({ roleKeys: ['INVENTORY_MANAGER'] });
+    inventoryManager = await login(app, ACCOUNTS.employee2);
+  });
+
+  afterAll(async () => {
+    // Put the tenant back: this file's other blocks assume Office Admin staffs
+    // the stage and that the stages are off entirely.
+    await api(app)
+      .patch(`/api/v1/workflows/steps/${stepId}`)
+      .set(auth(s.superAdmin))
+      .send({ approverRoleKey: 'OFFICE_ADMIN' });
+    await api(app)
+      .patch(`/api/v1/workflows/${definitionId}/assessment-stages`)
+      .set(auth(s.superAdmin))
+      .send({ enabled: false });
+    await api(app)
+      .patch(`/api/v1/users/${s.employee2.user.id}/roles`)
+      .set(auth(s.superAdmin))
+      .send({ roleKeys: originalRoles.length > 0 ? originalRoles : ['EMPLOYEE'] });
+  });
+
+  it('holds the two rights apart', () => {
+    expect(inventoryManager.user.permissions).toContain('requests:decline');
+    expect(inventoryManager.user.permissions).not.toContain('requests:approve');
+  });
+
+  it('refuses an approval and accepts a refusal, on the same step', async () => {
+    const id = await raise();
+    const current = await approveUntil(id, 'Inventory check');
+    expect(current?.stepName).toBe('Inventory check');
+
+    // The detail payload has to say the same thing the server will enforce,
+    // or the page offers a button that 403s on click.
+    const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(inventoryManager));
+    expect(detail.status, JSON.stringify(detail.body)).toBeLessThan(300);
+    expect(detail.body.data.canDecide).toBe(false);
+    expect(detail.body.data.canDecline).toBe(true);
+
+    const approved = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(inventoryManager))
+      .send({ decision: 'APPROVED' });
+    expect(approved.status, JSON.stringify(approved.body)).toBe(403);
+
+    const rejected = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(inventoryManager))
+      .send({ decision: 'REJECTED', comment: 'Duplicate of an open request.' });
+    expect(rejected.status, JSON.stringify(rejected.body)).toBeLessThan(300);
+
+    const after = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    expect(after.body.data.status).toBe('REJECTED');
+  });
+
+  it('still refuses someone the step does not belong to', async () => {
+    const id = await raise();
+    await approveUntil(id, 'Inventory check');
+    // Finance can decline in general, but not this step - it is not theirs.
+    const res = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s.finance))
+      .send({ decision: 'REJECTED', comment: 'Not mine to stop.' });
+    expect(res.status).toBe(403);
   });
 });

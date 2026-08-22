@@ -40,7 +40,7 @@ import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { AssessmentsService } from './assessments.service.js';
 import { toCsv } from '../common/csv.js';
 import { AppError } from '../common/errors/app-error.js';
-import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
+import { CurrentUser, RequireAnyPermission, RequirePermissions } from '../auth/decorators.js';
 import { RequestsService } from './requests.service.js';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -232,13 +232,16 @@ export class RequestsController {
   }
 
   @Post(':id/decision')
-  @RequirePermissions(PERMISSIONS.REQUESTS_APPROVE)
+  // Approving and refusing are different rights held by different roles, so the
+  // door opens to either and `decide` enforces which one the body asks for.
+  @RequireAnyPermission(PERMISSIONS.REQUESTS_APPROVE, PERMISSIONS.REQUESTS_DECLINE)
   @ApiOperation({
     summary: 'Approve or reject the current step',
     description:
-      'Holding requests:approve is not sufficient — the caller must also be the approver for the ' +
-      'step the request is currently waiting on (directly or via an active delegation). The ' +
-      'reverse also holds: a delegation alone is not enough without requests:approve.',
+      'Approving needs requests:approve; rejecting needs requests:approve or requests:decline. ' +
+      'Neither is sufficient alone — the caller must also be the approver for the step the ' +
+      'request is currently waiting on (directly or via an active delegation), and a delegation ' +
+      'alone is not enough without the permission.',
   })
   decide(
     @CurrentUser() actor: AuthUser,

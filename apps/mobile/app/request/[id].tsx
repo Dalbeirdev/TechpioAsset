@@ -49,6 +49,8 @@ interface RequestDetail {
   items: { id: string; description: string; quantity: number; estimatedCost: string | null }[];
   approvals: ApprovalStep[];
   canDecide: boolean;
+  /** Whether this step is the viewer's to stop - a different right to approving. */
+  canDecline: boolean;
 }
 
 /** Request detail with approve / reject (spec section 12). */
@@ -298,9 +300,16 @@ export default function RequestDetailScreen() {
         </Card>
       ) : null}
 
-      {request.canDecide ? (
+      {/*
+        Two rights, not one (v2.27). Whoever staffs the step may stop the
+        request; approving it additionally needs `requests:approve`. An
+        Inventory Manager reaches this card with only the Decline button on it -
+        and without "Mark as under review", whose endpoint they cannot call.
+      */}
+      {request.canDecide || request.canDecline ? (
         <Card>
-          {!request.approvals.some((a) => a.decision === 'PENDING' && a.reviewStartedAt) ? (
+          {request.canDecide &&
+          !request.approvals.some((a) => a.decision === 'PENDING' && a.reviewStartedAt) ? (
             <Button
               label="Mark as under review"
               icon="eye-outline"
@@ -325,7 +334,7 @@ export default function RequestDetailScreen() {
               disabled={busy}
               style={{ flex: 1 }}
             />
-            {isAssessmentStage ? null : (
+            {isAssessmentStage || !request.canDecide ? null : (
               <Button label="Approve" icon="checkmark" onPress={() => void decide('APPROVED')} loading={busy} style={{ flex: 1 }} />
             )}
           </View>

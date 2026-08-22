@@ -60,6 +60,22 @@ export const PERMISSIONS = {
    * whether Finance reviews the spend.
    */
   REQUESTS_ASSESS: 'requests:assess',
+  /**
+   * v2.27 - stop a request at a step that is yours.
+   *
+   * Separate from REQUESTS_APPROVE because owning a step and being trusted to
+   * approve spend are different things. An Inventory Manager staffing the
+   * Inventory check stage is the person best placed to spot a duplicate, but
+   * `requests:approve` would also hand them fulfilment (`/advance`), internal
+   * comments on every request, submit-on-behalf and an approval-delegation
+   * panel - none of which is "stop a duplicate", and all of which contradicts a
+   * role documented as read-and-assess only.
+   *
+   * Every role that can approve also holds this: approving a step has always
+   * implied being able to refuse it, and splitting the permission must not
+   * quietly remove that.
+   */
+  REQUESTS_DECLINE: 'requests:decline',
 
   // People
   EMPLOYEES_READ: 'employees:read',
@@ -181,7 +197,11 @@ const P = PERMISSIONS;
 
 /** Actions that only read. Used to prove the Auditor role can never mutate. */
 const WRITE_ACTION_PATTERN =
-  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal|convert|issue|receive|override|ingest|reconcile)$/;
+  // `assess` and `decline` were both missing (v2.27). Assessing writes prices
+  // and reserves stock, and declining ends a request outright - so without them
+  // the Auditor invariant classified two mutations as reads and would have let
+  // a read-only role through had either been granted to it.
+  /:(create|update|delete|assign|return|transfer|dispose|adjust|upload|verify|approve|decline|assess|cancel|manage|configure|import|correct-extraction|generate|print|fulfil|request|create-on-behalf|revoke|renew|reveal|convert|issue|receive|override|ingest|reconcile)$/;
 
 export function isReadOnlyPermission(permission: Permission): boolean {
   return !WRITE_ACTION_PATTERN.test(permission);
@@ -233,6 +253,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
+    P.REQUESTS_DECLINE,
     P.EMPLOYEES_READ,
     P.ONBOARDING_FULFIL,
     P.OFFBOARDING_FULFIL,
@@ -258,6 +279,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.REQUESTS_CREATE_ON_BEHALF,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
+    P.REQUESTS_DECLINE,
     P.EMPLOYEES_READ,
     P.EMPLOYEES_CREATE,
     P.EMPLOYEES_IMPORT,
@@ -288,6 +310,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
+    P.REQUESTS_DECLINE,
     P.EMPLOYEES_READ,
     P.ONBOARDING_FULFIL,
     P.OFFBOARDING_FULFIL,
@@ -335,6 +358,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
+    P.REQUESTS_DECLINE,
     P.REPORTS_READ,
     P.REPORTS_EXPORT,
     P.AI_REVIEW_RESULTS,
@@ -350,6 +374,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.REQUESTS_CANCEL,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
+    P.REQUESTS_DECLINE,
     P.EMPLOYEES_READ,
     P.REPORTS_READ,
   ],
@@ -434,6 +459,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.INVOICES_READ,
     P.REQUESTS_READ,
     P.REQUESTS_APPROVE,
+    P.REQUESTS_DECLINE,
     P.REPORTS_READ,
   ],
 
@@ -454,6 +480,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
      */
     P.REQUESTS_READ,
     P.REQUESTS_ASSESS,
+    P.REQUESTS_DECLINE,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_RECEIVE,
     P.PURCHASE_ORDERS_READ,
