@@ -69,6 +69,8 @@ interface RequestDetail {
     model?: string | null;
     referenceUrl?: string | null;
     category?: { id: string; name: string } | null;
+    /** The unit that actually filled this, once one has been issued. */
+    fulfilledAsset?: { id: string; assetTag: string; name: string } | null;
   }[];
   approvals: Approval[];
   /** Server-resolved: whether this caller may act on the current step. */
@@ -360,6 +362,21 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
                       {' '}
                       × {Number(item.quantity)}
                     </span>
+                    {/* v2.26 - name what they were actually given. The request
+                        said "issued, confirm receipt" without saying which
+                        machine, which is not something anybody can confirm. */}
+                    {item.fulfilledAsset ? (
+                      <span className="mt-1 block text-xs text-[var(--color-content-muted)]">
+                        Issued:{' '}
+                        <Link
+                          href={`/assets/${item.fulfilledAsset.id}`}
+                          className="font-medium underline underline-offset-2"
+                        >
+                          {item.fulfilledAsset.assetTag}
+                        </Link>{' '}
+                        · {item.fulfilledAsset.name}
+                      </span>
+                    ) : null}
                     {item.isUncatalogued ? (
                       <span className="mt-1 block">
                         <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-tint-amber)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-tint-amber-fg)]">

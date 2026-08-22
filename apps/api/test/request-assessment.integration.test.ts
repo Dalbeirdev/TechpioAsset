@@ -37,6 +37,19 @@ beforeAll(async () => {
     },
     data: { costThreshold: '250' },
   });
+  // Pin the stages off too. Most of this file walks a chain of approval steps
+  // only, and its step-to-account map has no entry for an assessment stage - so
+  // if anything left them switched on, four unrelated tests fail with "no
+  // account mapped for step Inventory check" and look like a bug in the code
+  // under test. The blocks that need the stages turn them on for themselves.
+  const definition = await prisma.client.workflowDefinition.findFirstOrThrow({
+    where: { companyId: s.superAdmin.user.companyId, requestType: null, isActive: true },
+    select: { id: true },
+  });
+  await api(app)
+    .patch(`/api/v1/workflows/${definition.id}/assessment-stages`)
+    .set(auth(s.superAdmin))
+    .send({ enabled: false });
 });
 
 afterAll(async () => {
@@ -547,8 +560,10 @@ describe('promising a unit from stock', () => {
       .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: asset.id });
     expect(ok.status, JSON.stringify(ok.body)).toBeLessThan(300);
 
+    // Recorded at the inventory stage, so the chain settles and the unit is
+    // issued in the same breath - it does not linger on the shelf as RESERVED.
     const held = await prisma.client.asset.findUnique({ where: { id: asset.id }, select: { status: true } });
-    expect(held?.status, 'the promised unit is held').toBe('RESERVED');
+    expect(held?.status, 'the promised unit leaves stock').toBe('ASSIGNED');
 
     const second = await toInventory();
     const clash = await api(app)
@@ -563,13 +578,18 @@ describe('promising a unit from stock', () => {
     const asset = await freeAsset();
     if (!asset) return;
 
-    const id = await toInventory();
+    // Promised while the request is still at Manager review - assessing is not
+    // step-bound - so the unit is held but not yet issued. That is the window
+    // in which a correction can still hand it back.
+    const id = await raise();
     await api(app)
       .patch(`/api/v1/requests/${id}/assessment`)
       .set(auth(s.officeAdmin))
       .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: asset.id });
-    expect((await prisma.client.asset.findUnique({ where: { id: asset.id }, select: { status: true } }))?.status)
-      .toBe('RESERVED');
+    expect(
+      (await prisma.client.asset.findUnique({ where: { id: asset.id }, select: { status: true } }))?.status,
+      'held, not issued - the chain has not finished',
+    ).toBe('RESERVED');
 
     await api(app)
       .patch(`/api/v1/requests/${id}/assessment`)
@@ -629,5 +649,94 @@ describe('notes on an assessment', () => {
       .send({ purchaseRequired: true, unitPrice: '100' });
     const comments = await prisma.client.requestComment.count({ where: { requestId: id } });
     expect(comments).toBe(0);
+  });
+});
+
+/**
+ * v2.26 - the promised unit reaches the person.
+ *
+ * A request filled from stock used to reach the end of its chain and stop: the
+ * unit reserved, the request approved, the laptop still on the shelf. Somebody
+ * had to notice, find the asset and assign it by hand, with nothing linking the
+ * two - so "approved" and "they have their laptop" were separated by a manual
+ * step nobody was told to take.
+ */
+describe('issuing the reserved unit', () => {
+  let definitionId: string;
+
+  beforeAll(async () => {
+    const definition = await prisma.client.workflowDefinition.findFirstOrThrow({
+      where: { companyId: s.superAdmin.user.companyId, requestType: null, isActive: true },
+      select: { id: true },
+    });
+    definitionId = definition.id;
+    await api(app).patch(`/api/v1/workflows/${definitionId}/assessment-stages`).set(auth(s.superAdmin)).send({ enabled: true });
+  });
+
+  afterAll(async () => {
+    await api(app).patch(`/api/v1/workflows/${definitionId}/assessment-stages`).set(auth(s.superAdmin)).send({ enabled: false });
+  });
+
+  it('assigns it to the requester and asks them to confirm receipt', async () => {
+    const stock = await api(app).get('/api/v1/assets?status=AVAILABLE&pageSize=100').set(auth(s.superAdmin));
+    const claimed = new Set(
+      (
+        await prisma.client.requestAssessment.findMany({
+          where: {
+            suitableAssetId: { not: null },
+            purchaseRequired: false,
+            request: { status: { notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'] } },
+          },
+          select: { suitableAssetId: true },
+        })
+      ).map((a) => a.suitableAssetId),
+    );
+    const asset = (stock.body.data as { id: string; assetTag: string }[]).find((a) => !claimed.has(a.id));
+    if (!asset) return;
+
+    const id = await raise();
+    for (const who of ['manager', 'hr', 'itAdmin'] as const) {
+      await api(app).post(`/api/v1/requests/${id}/decision`).set(auth(s[who])).send({ decision: 'APPROVED' });
+    }
+
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false, suitableAssetId: asset.id });
+
+    const held = await prisma.client.asset.findUnique({
+      where: { id: asset.id },
+      select: { status: true, assignedUserId: true },
+    });
+    expect(held?.status, 'the unit is out of stock and in somebody name').toBe('ASSIGNED');
+    expect(held?.assignedUserId, 'assigned to whoever it was for').toBe(s.employee.user.id);
+
+    const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    expect(detail.body.data.status, 'issued, not yet confirmed received').toBe('ASSIGNED');
+
+    // The request now answers "what did they actually get?".
+    const item = (detail.body.data.items as { fulfilledAsset: { id: string } | null }[])[0];
+    expect(item?.fulfilledAsset?.id).toBe(asset.id);
+
+    // And there is a real assignment record behind it, not just a status.
+    const assignment = await prisma.client.assetAssignment.findFirst({
+      where: { assetId: asset.id, userId: s.employee.user.id },
+      orderBy: { assignedAt: 'desc' },
+    });
+    expect(assignment, 'a handover is a record, not a flag').toBeTruthy();
+  });
+
+  it('leaves a bought request alone - there is nothing to issue yet', async () => {
+    const id = await raise();
+    for (const who of ['manager', 'hr', 'itAdmin'] as const) {
+      await api(app).post(`/api/v1/requests/${id}/decision`).set(auth(s[who])).send({ decision: 'APPROVED' });
+    }
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: false, purchaseRequired: true, unitPrice: '10', quantity: 1 });
+
+    const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    expect(detail.body.data.status).not.toBe('ASSIGNED');
   });
 });
