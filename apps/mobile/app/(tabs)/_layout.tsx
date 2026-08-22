@@ -26,7 +26,8 @@ export default function TabsLayout() {
   if (status !== 'authenticated' || !user) return <Redirect href="/login" />;
 
   const can = (permission: string) => user.permissions.includes(permission);
-  const gate = (permission: string) => (can(permission) ? undefined : null);
+  /** Visible when the user holds ANY of the listed permissions. */
+  const gate = (...permissions: string[]) => (permissions.some(can) ? undefined : null);
 
   return (
     <Tabs
@@ -65,12 +66,21 @@ export default function TabsLayout() {
         name="requests"
         options={{ title: 'Requests', tabBarIcon: icon('document-text-outline') }}
       />
+      {/*
+        Named and gated for the queue, not for approving (v2.27).
+
+        An assessment stage - an Inventory check - is cleared by recording an
+        answer, which needs REQUESTS_ASSESS alone. Gating the tab on approval
+        hid it from exactly the people those stages are assigned to, so the work
+        sat in a queue they had no way to open. The screen behind it already
+        asks for `awaitingMe=true`, which resolves assessment stages too.
+      */}
       <Tabs.Screen
         name="approvals"
         options={{
-          title: 'Approvals',
+          title: 'Awaiting me',
           tabBarIcon: icon('checkmark-done-outline'),
-          href: gate(PERMISSIONS.REQUESTS_APPROVE),
+          href: gate(PERMISSIONS.REQUESTS_APPROVE, PERMISSIONS.REQUESTS_ASSESS),
         }}
       />
       <Tabs.Screen name="more" options={{ title: 'More', tabBarIcon: icon('grid-outline') }} />

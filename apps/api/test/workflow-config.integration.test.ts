@@ -2,7 +2,16 @@ import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { ROLE_PERMISSIONS } from '@techpioasset/domain';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
+import {
+  ACCOUNTS,
+  api,
+  auth,
+  createTestApp,
+  login,
+  loginAll,
+  type AccountKey,
+  type Session,
+} from './harness.js';
 
 /**
  * v2.24 - configuring approval workflows from the application.
@@ -267,6 +276,49 @@ describe('reassigning who staffs a step', () => {
       .patch(`/api/v1/workflows/steps/${step.id}`)
       .set(auth(s.superAdmin))
       .send({ approverRoleKey: 'OFFICE_ADMIN' });
+  });
+
+  /**
+   * v2.27 - the third way the same person still saw nothing.
+   *
+   * The role could read and assess, and the stage had been handed to it. But
+   * the dashboard tile announcing "something is waiting on you" was gated on
+   * `requests:approve`, which an Inventory Manager deliberately does not hold -
+   * so moving the stage to them removed the only place their queue was
+   * advertised. The request was in their inbox and every screen said it was
+   * not, which is indistinguishable from the bug that was just fixed.
+   */
+  it('an assess-only holder is still told something is waiting on them', async () => {
+    const target = s.employee2.user;
+    const restore = target.roles.length > 0 ? [...target.roles] : ['EMPLOYEE'];
+
+    try {
+      const granted = await api(app)
+        .patch(`/api/v1/users/${target.id}/roles`)
+        .set(auth(s.superAdmin))
+        .send({ roleKeys: ['INVENTORY_MANAGER'] });
+      expect(granted.status, JSON.stringify(granted.body)).toBeLessThan(300);
+
+      // Permissions ride on the token, so the new role needs a fresh sign-in -
+      // the same thing the real user does.
+      const session = await login(app, ACCOUNTS.employee2);
+      expect(session.user.permissions).toContain('requests:assess');
+      expect(session.user.permissions).not.toContain('requests:approve');
+
+      const dash = await api(app).get('/api/v1/dashboard').set(auth(session));
+      expect(dash.status, JSON.stringify(dash.body)).toBeLessThan(300);
+      const tiles = dash.body.data.tiles as { key: string; label: string }[];
+      const queue = tiles.find((t) => t.key === 'awaiting-approval');
+
+      expect(queue, 'an Inventory Manager must be shown the queue their stage lands in').toBeTruthy();
+      // And it must not promise an approval they cannot give.
+      expect(queue!.label.toLowerCase()).not.toContain('approval');
+    } finally {
+      await api(app)
+        .patch(`/api/v1/users/${target.id}/roles`)
+        .set(auth(s.superAdmin))
+        .send({ roleKeys: restore });
+    }
   });
 
   it('refuses a role that does not exist', async () => {
