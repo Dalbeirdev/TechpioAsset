@@ -582,3 +582,52 @@ describe('promising a unit from stock', () => {
     ).toBe('AVAILABLE');
   });
 });
+
+/**
+ * v2.26 - an assessment note belongs to whoever wrote it.
+ *
+ * `notes` is one string shared by everybody who touches the request. The panel
+ * loaded it into an editable box, so a colleague's words appeared as your
+ * unsaved draft; saving replaced them, and `assessedById` then credited the
+ * replacement to whoever saved last. Reported after a note written by one
+ * person turned up in another's editor.
+ */
+describe('notes on an assessment', () => {
+  it('files a note under its author instead of overwriting the shared field', async () => {
+    const id = await raise();
+
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ purchaseRequired: true, unitPrice: '100', note: 'Checked the shelf — nothing there.' });
+
+    const comments = await prisma.client.requestComment.findMany({
+      where: { requestId: id },
+      include: { author: { select: { email: true } } },
+    });
+    const filed = comments.find((c) => c.body.includes('Checked the shelf'));
+    expect(filed, 'the note is filed as a comment').toBeTruthy();
+    expect(filed!.author?.email).toBe(s.officeAdmin.user.email);
+    expect(filed!.isInternal, 'assessment notes are not for the requester').toBe(true);
+
+    // A second person's note does not replace the first.
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.finance))
+      .send({ purchaseRequired: true, unitPrice: '120', note: 'Quote from the vendor attached.' });
+
+    const after = await prisma.client.requestComment.findMany({ where: { requestId: id } });
+    expect(after.filter((c) => c.body.includes('Checked the shelf'))).toHaveLength(1);
+    expect(after.filter((c) => c.body.includes('Quote from the vendor'))).toHaveLength(1);
+  });
+
+  it('does not file an empty note', async () => {
+    const id = await raise();
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ purchaseRequired: true, unitPrice: '100' });
+    const comments = await prisma.client.requestComment.count({ where: { requestId: id } });
+    expect(comments).toBe(0);
+  });
+});

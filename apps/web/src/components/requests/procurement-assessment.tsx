@@ -71,7 +71,11 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
       taxAmount: loaded.taxAmount ?? '',
       shipping: loaded.shipping ?? '',
       discount: loaded.discount ?? '',
-      notes: loaded.notes ?? '',
+      // Deliberately NOT loaded.notes. Filling this box with a colleague's
+      // words makes their note look like your unsaved draft, and saving
+      // silently replaced it - one shared string, last writer wins, attributed
+      // to whoever saved last rather than whoever wrote it.
+      notes: '',
     });
     // Keyed to the saved answer, not to `loaded` itself: re-running on every
     // render would overwrite what somebody is part-way through typing.
@@ -123,30 +127,41 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
     staleTime: 30_000,
   });
 
+  // What is already on file. Shown, never loaded into the box.
+  const savedNote = loaded?.notes?.trim() || '';
+
   if (assessment.isPending) return null;
 
+  /**
+   * A note is filed, not overwritten (v2.26).
+   *
+   * `notes` on the assessment is one string shared by everyone who touches the
+   * request: whoever saved last replaced what came before, and the record
+   * credited them for it. The request already has an internal comment thread
+   * with an author and a timestamp on every entry, so a new note goes there and
+   * the old string is left exactly as written.
+   */
   const submit = () => {
-    if (purchaseRequired === false) {
-      save.mutate({
-        inventoryAvailable: true,
-        purchaseRequired: false,
-        suitableAssetId: suitableAssetId || null,
-        notes: form.notes || null,
-      });
-      return;
-    }
-    save.mutate({
-      inventoryAvailable: false,
-      purchaseRequired: true,
-      suitableAssetId: null,
-      suggestedProduct: form.suggestedProduct || null,
-      unitPrice: form.unitPrice.trim() || null,
-      quantity: Number(form.quantity) || 1,
-      taxAmount: form.taxAmount.trim() || null,
-      shipping: form.shipping.trim() || null,
-      discount: form.discount.trim() || null,
-      notes: form.notes || null,
-    });
+    const note = form.notes.trim();
+    const body =
+      purchaseRequired === false
+        ? {
+            inventoryAvailable: true,
+            purchaseRequired: false,
+            suitableAssetId: suitableAssetId || null,
+          }
+        : {
+            inventoryAvailable: false,
+            purchaseRequired: true,
+            suitableAssetId: null,
+            suggestedProduct: form.suggestedProduct || null,
+            unitPrice: form.unitPrice.trim() || null,
+            quantity: Number(form.quantity) || 1,
+            taxAmount: form.taxAmount.trim() || null,
+            shipping: form.shipping.trim() || null,
+            discount: form.discount.trim() || null,
+          };
+    save.mutate({ ...body, ...(note ? { note } : {}) });
   };
 
   return (
@@ -304,7 +319,23 @@ export function ProcurementAssessment({ requestId }: { requestId: string }) {
 
       {purchaseRequired !== null ? (
         <div className="mt-3 grid gap-3">
-          <Field label="Notes" htmlFor="pa-notes">
+          {savedNote ? (
+            <div className="rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3">
+              <p className="text-xs font-medium text-[var(--color-content-muted)]">
+                Note already recorded
+              </p>
+              <p className="mt-1 text-sm whitespace-pre-wrap">{savedNote}</p>
+              <p className="mt-1 text-xs text-[var(--color-content-subtle)]">
+                Kept as it was written. Anything you add below is filed separately, under your name.
+              </p>
+            </div>
+          ) : null}
+
+          <Field
+            label="Add a note"
+            htmlFor="pa-notes"
+            hint="Optional. Filed against this request under your name, and hidden from the requester."
+          >
             <textarea
               id="pa-notes"
               rows={2}
