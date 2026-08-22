@@ -4,6 +4,7 @@ import type { AuthUser } from '@techpioasset/contracts';
 
 export const IS_PUBLIC_KEY = 'techpioasset:isPublic';
 export const REQUIRED_PERMISSIONS_KEY = 'techpioasset:requiredPermissions';
+export const REQUIRED_ANY_PERMISSIONS_KEY = 'techpioasset:requiredAnyPermissions';
 
 /**
  * Marks a route as reachable without authentication.
@@ -29,6 +30,21 @@ export const SkipRls = () => SetMetadata(SKIP_RLS_KEY, true);
  */
 export const RequirePermissions = (...permissions: Permission[]) =>
   SetMetadata(REQUIRED_PERMISSIONS_KEY, permissions);
+
+/**
+ * Requires at least ONE of the listed permissions (v2.27).
+ *
+ * For a handler that serves two audiences whose rights differ - deciding a
+ * request needs `requests:approve` to approve it and `requests:decline` to
+ * refuse it, and the two are held by different roles. ANDing them would lock
+ * out both; dropping the decorator would leave the route open to any signed-in
+ * user and push the whole check into the service.
+ *
+ * This is the door, not the decision: the handler must still enforce which of
+ * the two the caller actually holds against what they are asking to do.
+ */
+export const RequireAnyPermission = (...permissions: Permission[]) =>
+  SetMetadata(REQUIRED_ANY_PERMISSIONS_KEY, permissions);
 
 /** Injects the authenticated subject resolved by JwtAuthGuard. */
 export const CurrentUser = createParamDecorator(

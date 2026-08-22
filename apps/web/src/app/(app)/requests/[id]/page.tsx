@@ -75,6 +75,8 @@ interface RequestDetail {
   approvals: Approval[];
   /** Server-resolved: whether this caller may act on the current step. */
   canDecide: boolean;
+  /** Whether this step is the viewer's to stop - a different right to approving. */
+  canDecline: boolean;
   comments: {
     id: string;
     body: string;
@@ -231,11 +233,15 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
    * exist on screen: somebody who found the request unjustified or a duplicate
    * had to answer the stock question and push it on to Finance to be stopped.
    *
-   * Approving is still not offered. Stopping a request is a judgement, so it
-   * needs `requests:approve` - recording what stock says does not.
+   * Approving is still not offered here.
+   *
+   * v2.27 - this now follows `canDecline` rather than `canDecide`. Once the
+   * Inventory check moved to Inventory Manager, gating the exit on
+   * `requests:approve` meant nobody staffing the stage could take it: the role
+   * that spots a duplicate was the one role unable to stop it. `requests:decline`
+   * is the right the server checks, and the server is what decides.
    */
-  const canDeclineOnly =
-    Boolean(currentStep) && isAssessmentStage && can(PERMISSIONS.REQUESTS_APPROVE) && data.canDecide;
+  const canDeclineOnly = Boolean(currentStep) && isAssessmentStage && data.canDecline;
 
   return (
     <div className="mx-auto grid max-w-4xl gap-4">

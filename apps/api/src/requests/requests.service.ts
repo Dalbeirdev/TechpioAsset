@@ -304,13 +304,20 @@ export class RequestsService {
     if (!request) throw AppError.notFound('Request', id);
 
     // Resolved server-side: only the API knows the step's approver rules.
-    const canDecide =
-      actor.permissions.includes(PERMISSIONS.REQUESTS_APPROVE) &&
-      (await this.workflow.canDecide({
-        requestId: id,
-        actorId: actor.id,
-        actorRoleKeys: actor.roles,
-      }));
+    //
+    // Two flags, not one (v2.27). Whether the step is yours and what you may do
+    // with it are separate questions: an Inventory Manager owns the Inventory
+    // check and may stop the request there, but may not approve anything.
+    const stepIsMine = await this.workflow.canDecide({
+      requestId: id,
+      actorId: actor.id,
+      actorRoleKeys: actor.roles,
+    });
+    const canDecide = stepIsMine && actor.permissions.includes(PERMISSIONS.REQUESTS_APPROVE);
+    const canDecline =
+      stepIsMine &&
+      (actor.permissions.includes(PERMISSIONS.REQUESTS_APPROVE) ||
+        actor.permissions.includes(PERMISSIONS.REQUESTS_DECLINE));
 
     // The asset this request is about (upgrade/repair/replacement), as a
     // light reference the detail page can link to.
@@ -328,6 +335,7 @@ export class RequestsService {
       // oldest-first, which is how a conversation is followed.
       comments: [...request.comments].reverse(),
       canDecide,
+      canDecline,
       waitingOn: await this.describeCurrentStep(actor, id),
     };
   }
@@ -1197,6 +1205,13 @@ export class RequestsService {
 
   async decide(actor: AuthUser, id: string, decision: 'APPROVED' | 'REJECTED', comment?: string) {
     const request = await this.loadForWrite(actor, id);
+
+    // The route admits either right (v2.27); which one is needed depends on what
+    // is being asked. Refusing is open to both, so a role that staffs a step
+    // without being trusted to approve spend can still stop a duplicate.
+    if (decision === 'APPROVED' && !actor.permissions.includes(PERMISSIONS.REQUESTS_APPROVE)) {
+      throw AppError.forbidden('You may stop this request, but not approve it');
+    }
 
     // An assessment stage is work, not a judgement. Approving it would let the
     // chain move past an inventory check nobody performed, with the cost still

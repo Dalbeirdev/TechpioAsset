@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
-import { ROLE_PERMISSIONS } from '@techpioasset/domain';
+import { READ_ONLY_ROLES, ROLE_PERMISSIONS, isReadOnlyPermission } from '@techpioasset/domain';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import {
   ACCOUNTS,
@@ -318,6 +318,39 @@ describe('reassigning who staffs a step', () => {
         .patch(`/api/v1/users/${target.id}/roles`)
         .set(auth(s.superAdmin))
         .send({ roleKeys: restore });
+    }
+  });
+
+  /**
+   * v2.27 - stopping is not approving.
+   *
+   * Moving the Inventory check to Inventory Manager removed the only exit from
+   * that stage: the person best placed to spot a duplicate was the one person
+   * who could not stop it, because the decline path was gated on
+   * `requests:approve`. `requests:decline` splits the two rights so the stage
+   * can be staffed without handing over approval of spend.
+   */
+  it('an Inventory Manager may stop a request but never approve one', () => {
+    const perms = ROLE_PERMISSIONS.INVENTORY_MANAGER as readonly string[];
+    expect(perms).toContain('requests:decline');
+    expect(perms).not.toContain('requests:approve');
+  });
+
+  it('every role that can approve can also refuse', () => {
+    for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) {
+      const held = perms as readonly string[];
+      if (!held.includes('requests:approve')) continue;
+      expect(held, `${role} can approve but not refuse`).toContain('requests:decline');
+    }
+  });
+
+  it('declining counts as a write, so a read-only role can never hold it', () => {
+    // Both of these were missing from the write-action pattern, which would have
+    // let the Auditor invariant wave them through had either been granted.
+    expect(isReadOnlyPermission('requests:decline')).toBe(false);
+    expect(isReadOnlyPermission('requests:assess')).toBe(false);
+    for (const role of READ_ONLY_ROLES) {
+      expect(ROLE_PERMISSIONS[role] as readonly string[]).not.toContain('requests:decline');
     }
   });
 
