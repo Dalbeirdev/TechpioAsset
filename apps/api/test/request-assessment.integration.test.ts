@@ -360,3 +360,100 @@ describe('filling a request from stock', () => {
     expect(res.status).toBe(404);
   });
 });
+
+/**
+ * v2.26 - a wrong stock answer must be correctable.
+ *
+ * Answering "filled from stock" settles the chain: nothing is bought, so the
+ * costing and Finance are skipped and the request is approved. Right when the
+ * answer is right, and unrecoverable when it is not. It happened in production:
+ * a replacement laptop closed itself as fulfilled, Finance never saw it, and
+ * the notes on the same record read "sorry not available in my stock".
+ * Correcting the assessment changed the record and left the chain settled.
+ */
+describe('correcting a wrong stock answer', () => {
+  // Self-contained: the rest of this file assumes the stages are off, so this
+  // block turns them on for itself and puts them back.
+  let definitionId: string;
+
+  beforeAll(async () => {
+    const definition = await prisma.client.workflowDefinition.findFirstOrThrow({
+      where: { companyId: s.superAdmin.user.companyId, requestType: null, isActive: true },
+      select: { id: true },
+    });
+    definitionId = definition.id;
+    await api(app)
+      .patch(`/api/v1/workflows/${definitionId}/assessment-stages`)
+      .set(auth(s.superAdmin))
+      .send({ enabled: true });
+  });
+
+  afterAll(async () => {
+    await api(app)
+      .patch(`/api/v1/workflows/${definitionId}/assessment-stages`)
+      .set(auth(s.superAdmin))
+      .send({ enabled: false });
+  });
+
+  async function walkToInventory() {
+    const id = await raise();
+    for (const who of ['manager', 'hr', 'itAdmin'] as const) {
+      await api(app).post(`/api/v1/requests/${id}/decision`).set(auth(s[who])).send({ decision: 'APPROVED' });
+    }
+    return id;
+  }
+
+  it('reopens the costing and Finance it skipped', async () => {
+    const id = await walkToInventory();
+
+    // The mistake.
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false, notes: 'sorry not available in my stock' });
+
+    let detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    expect(detail.body.data.status, 'the wrong answer settles it').toBe('APPROVED');
+    const skippedFinance = (detail.body.data.approvals as { stepName: string; decision: string }[])
+      .find((a) => a.stepName === 'Finance approval');
+    expect(skippedFinance?.decision).toBe('SKIPPED');
+
+    // The correction.
+    const fix = await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: false, purchaseRequired: true, unitPrice: '95000', quantity: 1 });
+    expect(fix.status, JSON.stringify(fix.body)).toBeLessThan(300);
+
+    detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    const approvals = detail.body.data.approvals as { stepName: string; decision: string }[];
+    expect(
+      approvals.find((a) => a.stepName === 'Finance approval')?.decision,
+      'Finance must be back in play once something is being bought',
+    ).not.toBe('SKIPPED');
+    expect(detail.body.data.status, 'and the request is no longer settled').not.toBe('APPROVED');
+  });
+
+  it('leaves a request alone once it is being fulfilled', async () => {
+    const id = await walkToInventory();
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: true, purchaseRequired: false });
+
+    // Somebody has acted on the answer: stock is reserved against it.
+    await prisma.client.assetRequest.update({
+      where: { id },
+      data: { status: 'INVENTORY_RESERVED' },
+    });
+
+    await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ inventoryAvailable: false, purchaseRequired: true, unitPrice: '95000', quantity: 1 });
+
+    const detail = await api(app).get(`/api/v1/requests/${id}`).set(auth(s.superAdmin));
+    // Unwinding something already acted on is a conversation, not a write.
+    expect(detail.body.data.status).toBe('INVENTORY_RESERVED');
+  });
+});

@@ -265,24 +265,24 @@ export default function RequestDetailScreen() {
       {currentStep && currentStep.kind !== 'APPROVAL' && canAssess ? (
         <Card>
           <Text style={{ color: c.text, fontWeight: '700', marginBottom: spacing.xs }}>
-            {currentStep.kind === 'INVENTORY_CHECK' ? 'Is a purchase required?' : 'Cost assessment'}
+            {currentStep.kind === 'INVENTORY_CHECK' ? 'Is this available in stock?' : 'Cost assessment'}
           </Text>
           {currentStep.kind === 'INVENTORY_CHECK' ? (
             <>
               <Text style={{ color: c.muted, fontSize: 12, marginBottom: spacing.md }}>
-                One question, two answers. Answering it completes the step — there is nothing to
-                approve. Which item off the shelf is recorded in the web app.
+                Answering completes the step. Filling from stock closes the request without
+                finance approval; needing a purchase sends it on to be costed.
               </Text>
               <View style={{ flexDirection: 'row', gap: spacing.md }}>
                 <Button
-                  label="No — fill from stock"
+                  label="Yes — fill from stock"
                   variant="secondary"
                   onPress={() => void answerStock(false)}
                   disabled={busy}
                   style={{ flex: 1 }}
                 />
                 <Button
-                  label="Yes — buy it"
+                  label="No — must be bought"
                   onPress={() => void answerStock(true)}
                   loading={busy}
                   style={{ flex: 1 }}

@@ -1696,6 +1696,83 @@ export class RequestsService {
    * Loops, because answering both questions in one save should clear both
    * stages.
    */
+  /**
+   * Undo the steps a "filled from stock" answer skipped (v2.26).
+   *
+   * Answering the inventory check settles the chain: nothing is being bought,
+   * so Cost assessment and Finance are skipped and the request is approved.
+   * That is right when the answer is right - and unrecoverable when it is not.
+   * An owner testing the flow answered "fill from stock" while typing "sorry
+   * not available in my stock" in the notes, and a laptop replacement closed
+   * itself as fulfilled with Finance never seeing it. Correcting the assessment
+   * afterwards changed the record and left the chain settled, because these
+   * steps were already decided.
+   *
+   * So a corrected answer reopens exactly what its predecessor skipped: steps
+   * carrying the automatic "filled from existing stock" note, and only while
+   * the request is still in approval. Once it is being fulfilled - reserved,
+   * ordered, received - the answer has been acted on and unwinding it is a
+   * conversation, not a database write.
+   */
+  async reopenStagesSkippedByStockAnswer(
+    actor: AuthUser,
+    requestId: string,
+  ): Promise<boolean> {
+    const request = await this.prisma.client.assetRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        status: true,
+        requestNumber: true,
+        requesterId: true,
+        type: true,
+        replacesAssetId: true,
+        businessReason: true,
+        requester: { select: { profile: { select: { managerId: true } } } },
+      },
+    });
+    // Anything past approval has been acted on; anything settled is finished.
+    if (!request || request.status !== 'APPROVED') return false;
+
+    const skipped = await this.prisma.client.requestApproval.findMany({
+      where: {
+        requestId,
+        decision: ApprovalDecision.SKIPPED,
+        comment: { contains: 'filled from existing stock' },
+      },
+      orderBy: { stepOrder: 'asc' },
+      select: { id: true, stepName: true },
+    });
+    if (skipped.length === 0) return false;
+
+    const { current: nextStep, skipped: skippedAgain } = await this.prisma.client.$transaction(
+      async (tx) => {
+        await tx.requestApproval.updateMany({
+          where: { id: { in: skipped.map((x) => x.id) } },
+          data: { decision: ApprovalDecision.WAITING, comment: null, decidedAt: null },
+        });
+        return this.promoteUntilStaffed(tx, {
+          requestId,
+          companyId: actor.companyId,
+          requesterManagerId: request.requester.profile?.managerId ?? null,
+          requesterId: request.requesterId,
+        });
+      },
+    );
+
+    await this.settleAfterStep(actor, {
+      requestId,
+      requestNumber: request.requestNumber,
+      requesterId: request.requesterId,
+      type: request.type,
+      replacesAssetId: request.replacesAssetId,
+      businessReason: request.businessReason,
+      stepName: skipped[0]!.stepName,
+      nextStep,
+      skipped: skippedAgain,
+    });
+    return true;
+  }
+
   async completeAssessmentStages(actor: AuthUser, requestId: string): Promise<void> {
     for (let guard = 0; guard < 4; guard += 1) {
       const current = await this.prisma.client.requestApproval.findFirst({

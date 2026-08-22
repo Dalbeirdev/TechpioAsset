@@ -404,7 +404,7 @@ export default function RequestDetailPage({ params }: { params: Promise<{ id: st
               <p className="text-sm font-medium">Waiting on {currentStep!.stepName}</p>
               <p className="mt-1 text-xs text-[var(--color-content-muted)]">
                 {currentStep!.kind === 'INVENTORY_CHECK'
-                  ? 'This step is completed by answering whether a purchase is required — there is nothing to approve.'
+                  ? 'This step is completed by answering whether the item is available in stock — there is nothing to approve.'
                   : 'This step is completed by recording the cost — there is nothing to approve.'}
               </p>
             </Card>
