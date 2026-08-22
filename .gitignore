@@ -21,6 +21,12 @@ prisma/generated/
 .expo/
 .expo-shared/
 
+# `expo prebuild` output. The mobile app is a managed-workflow project, so these
+# are regenerated from app.json rather than edited - committing them means edits
+# there are silently discarded on the next prebuild.
+apps/mobile/android/
+apps/mobile/ios/
+
 # test output
 playwright-report/
 test-results/
