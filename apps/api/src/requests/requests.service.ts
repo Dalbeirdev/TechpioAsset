@@ -12,6 +12,7 @@ import {
   type RequestCreationPolicy,
 } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
+import { AssetsService } from '../assets/assets.service.js';
 import { awaitingMeFilter } from './awaiting-me.js';
 import { CLOSED_REQUEST_STATUSES } from '../dashboard/dashboard.service.js';
 import { buildOrderBy, paginate } from '../common/paginate.js';
@@ -45,6 +46,7 @@ export class RequestsService {
     private readonly webhooks: WebhooksService,
     private readonly storage: StorageProvider,
     private readonly config: AppConfig,
+    private readonly assets: AssetsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -964,6 +966,92 @@ export class RequestsService {
     }
 
     return this.findOne(actor, id);
+  }
+
+
+  /**
+   * Hand over the unit that was promised (v2.26).
+   *
+   * A request filled from stock reached the end of its chain and stopped: the
+   * unit was reserved, the request said approved, and the laptop stayed on the
+   * shelf. Somebody had to notice, find the asset, and assign it by hand, with
+   * nothing linking the two - so "approved" and "the person has their laptop"
+   * were separated by a manual step nobody was told to take.
+   *
+   * Issuing it here closes that gap without overstating it. The asset is
+   * assigned, which is what the reservation was for, and the request moves to
+   * ASSIGNED - "issued, confirm receipt" - rather than COMPLETED. The thing is
+   * out of stock and in somebody's name; whether it reached their hands is
+   * theirs to confirm, and that acknowledgement already exists.
+   *
+   * Best effort: a request that cannot be issued is still approved, and saying
+   * so in the log is better than failing the approval that just succeeded.
+   */
+  private async issueReservedStock(actor: AuthUser, requestId: string): Promise<void> {
+    const assessment = await this.prisma.client.requestAssessment.findUnique({
+      where: { requestId },
+      select: { purchaseRequired: true, suitableAssetId: true },
+    });
+    if (!assessment || assessment.purchaseRequired !== false || !assessment.suitableAssetId) return;
+
+    const request = await this.prisma.client.assetRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        requestNumber: true,
+        requesterId: true,
+        beneficiaryId: true,
+        items: { select: { id: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+      },
+    });
+    if (!request) return;
+
+    // Whoever the equipment is for, which is not always who asked for it.
+    const holderId = request.beneficiaryId ?? request.requesterId;
+    const asset = await this.prisma.client.asset.findFirst({
+      where: { id: assessment.suitableAssetId, companyId: actor.companyId, deletedAt: null },
+      select: { id: true, assetTag: true, name: true, condition: true, status: true },
+    });
+    if (!asset || asset.status !== 'RESERVED') return;
+
+    try {
+      await this.assets.assign(actor, asset.id, {
+        userId: holderId,
+        conditionOut: asset.condition,
+        notes: `Issued from stock against ${request.requestNumber}.`,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not issue ${asset.assetTag} for ${request.requestNumber}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+      return;
+    }
+
+    // The item now points at the thing that filled it, so the request answers
+    // "what did they actually get?" on its own page.
+    if (request.items[0]) {
+      await this.prisma.client.requestItem.update({
+        where: { id: request.items[0].id },
+        data: { fulfilledAssetId: asset.id, fulfilledAt: new Date() },
+      });
+    }
+
+    await this.prisma.client.assetRequest.update({
+      where: { id: requestId },
+      data: { status: 'ASSIGNED', version: { increment: 1 } },
+    });
+
+    await this.notifications.notify({
+      companyId: actor.companyId,
+      userId: holderId,
+      type: 'ASSET_READY',
+      title: `${request.requestNumber}: ${asset.assetTag} is yours`,
+      body: `${asset.name} has been issued to you from stock. Confirm receipt once you have it.`,
+      linkPath: `/requests/${requestId}`,
+      entityType: 'AssetRequest',
+      entityId: requestId,
+    });
   }
 
   private async recordSubmission(
@@ -1929,6 +2017,8 @@ export class RequestsService {
       assetId: ctx.replacesAssetId,
       businessReason: ctx.businessReason,
     });
+    // Filled from stock: the unit that was held is now handed over.
+    await this.issueReservedStock(actor, ctx.requestId);
   }
 
   private async pendingApproverIds(requestId: string): Promise<string[]> {
