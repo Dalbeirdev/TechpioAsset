@@ -190,6 +190,12 @@ export function isReadOnlyPermission(permission: Permission): boolean {
 export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]>> = {
   SUPER_ADMIN: ALL_PERMISSIONS,
 
+  /**
+   * No REQUESTS_ASSESS (v2.26). IT decides whether the equipment is warranted -
+   * that is the IT review step - but the price is what routes a request past
+   * Finance, and the rule is that only Office Admin, Finance and Super Admin
+   * may set it. IT held it for a while and never used it.
+   */
   IT_ADMIN: [
     P.ASSETS_READ,
     P.DISCOVERY_READ,
@@ -220,7 +226,6 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.INVOICES_READ,
     P.VENDORS_READ,
     P.PURCHASE_ORDERS_READ,
-    P.REQUESTS_ASSESS,
     P.REQUESTS_CREATE,
     // v2.24 - whoever may raise a request may withdraw their own. The route
     // is guarded by this permission, so without it a specialist who raised a
