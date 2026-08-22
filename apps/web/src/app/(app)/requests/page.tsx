@@ -87,7 +87,17 @@ function RequestsTable() {
     staleTime: 60_000,
   });
 
-  const canApprove = can(PERMISSIONS.REQUESTS_APPROVE);
+  /**
+   * Who gets the "Awaiting me" filter (v2.27).
+   *
+   * Approving is not the only way a step is cleared: an assessment stage is
+   * completed by recording an answer, which needs REQUESTS_ASSESS alone. Gating
+   * this on approval hid the filter from the very people an Inventory check is
+   * assigned to - so the request sat in their queue with nothing on screen that
+   * would show them a queue. The predicate behind the filter already resolves
+   * assessment stages; only the control was missing.
+   */
+  const canSeeOwnQueue = can(PERMISSIONS.REQUESTS_APPROVE) || can(PERMISSIONS.REQUESTS_ASSESS);
   const hasFilters = q !== '' || status !== '' || type !== '';
 
   return (
@@ -122,7 +132,7 @@ function RequestsTable() {
         </div>
 
         <div className="flex items-center gap-2">
-          {canApprove ? (
+          {canSeeOwnQueue ? (
             <div
               role="radiogroup"
               aria-label="Filter"

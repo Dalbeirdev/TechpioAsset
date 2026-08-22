@@ -27,7 +27,8 @@ interface ApprovalRow {
   items: { id: string; description: string; quantity: number }[];
 }
 
-/** Approvals inbox — requests awaiting the signed-in approver's decision. */
+/** The signed-in user's queue - every request whose live step points at them,
+ *  whether it is theirs to approve or theirs to answer. */
 export default function ApprovalsScreen() {
   const { api } = useSession();
   const router = useRouter();
@@ -65,7 +66,7 @@ export default function ApprovalsScreen() {
           <EmptyState
             icon="checkmark-done-outline"
             title="You're all caught up"
-            message="Nothing is waiting on your approval right now."
+            message="Nothing is waiting on you right now."
           />
         )
       }

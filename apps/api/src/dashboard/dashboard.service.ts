@@ -73,8 +73,15 @@ export class DashboardService {
       tone: 'progress',
     });
 
-    // Approvers: what is waiting on them right now.
-    if (has(PERMISSIONS.REQUESTS_APPROVE)) {
+    // Whoever the live step points at - which is not only approvers (v2.27).
+    //
+    // This was gated on REQUESTS_APPROVE alone, which was true only while every
+    // step was an approval. An assessment stage is completed by recording an
+    // answer, so its holder needs REQUESTS_ASSESS and nothing else - and an
+    // Inventory Manager holds exactly that. Gating on approval meant the moment
+    // a stock check was handed to them, the tile that would have shown it
+    // disappeared: the step was theirs, and the dashboard said nothing was.
+    if (has(PERMISSIONS.REQUESTS_APPROVE) || has(PERMISSIONS.REQUESTS_ASSESS)) {
       // The same predicate the inbox uses. It counted only `approverId` before,
       // which a role-based step does not carry until it is decided - so this
       // tile read 0 for an approver with a full inbox, while linking to the
@@ -84,7 +91,11 @@ export class DashboardService {
       });
       tiles.push({
         key: 'awaiting-approval',
-        label: 'Awaiting my approval',
+        // Named for the queue, not for one way of clearing it. "Awaiting my
+        // approval" promised an approval to someone who may only be able to
+        // answer a stock question - and it disagreed with the filter it links
+        // to, which has always been called "Awaiting me".
+        label: 'Awaiting me',
         value: awaiting,
         href: '/requests?awaitingMe=true',
         icon: 'UserCheck',
