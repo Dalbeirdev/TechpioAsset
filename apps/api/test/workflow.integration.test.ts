@@ -234,11 +234,13 @@ describe('laptop request end to end', () => {
 
 describe('cost thresholds (spec section 11)', () => {
   it('skips finance approval for a low-value kitchen request', async () => {
-    // v2.25 - raised by somebody who may price it (an employee's own figure is
-    // dropped now, precisely so a requester cannot decide whether Finance sees
-    // their request) - and NOT by the Office Admin, who has to approve step one:
-    // nobody approves their own request.
-    const created = await createRequest(s.itAdmin, {
+    // Raised by somebody who may price it - an employee's own figure is dropped,
+    // precisely so a requester cannot decide whether Finance sees their request.
+    // Not the Office Admin, who has to approve step one, and since v2.26 not the
+    // IT Administrator either: pricing is Office Admin, Finance and Super Admin
+    // only, so Finance raises it here. The Finance step is skipped on cost, so
+    // nobody ends up approving their own request.
+    const created = await createRequest(s.finance, {
       type: 'KITCHEN_REQUIREMENT',
       estimatedCost: '45.00',
       businessReason: 'The kettle in the second-floor kitchen has stopped working.',
@@ -253,7 +255,7 @@ describe('cost thresholds (spec section 11)', () => {
 
     const submitted = await api(app)
       .post(`/api/v1/requests/${created.id}/submit`)
-      .set(auth(s.itAdmin));
+      .set(auth(s.finance));
 
     // Kitchen workflow is Office review then Finance above 200.00. At 45.00
     // Finance does not apply - and since v2.25 the chain SAYS so rather than

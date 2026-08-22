@@ -182,7 +182,10 @@ describe('nor can a requester who does hold requests:assess', () => {
     return created.body.data.id as string;
   };
 
-  for (const who of ['itAdmin', 'officeAdmin', 'finance'] as const) {
+  // IT lost requests:assess in v2.26 - pricing is Office Admin, Finance and
+  // Super Admin - so it is no longer a case of "holds the permission but is the
+  // requester"; it is refused at the guard like any employee.
+  for (const who of ['officeAdmin', 'finance'] as const) {
     it(`refuses ${who} pricing their own request`, async () => {
       const id = await raiseAs(s[who]);
       const res = await api(app)

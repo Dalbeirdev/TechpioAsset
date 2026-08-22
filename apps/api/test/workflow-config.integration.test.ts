@@ -192,6 +192,20 @@ describe('clearing a threshold', () => {
  * still would not see them.
  */
 describe('reassigning who staffs a step', () => {
+  it('only Office Admin, Finance and the admins may price a request', () => {
+    // The owner's rule, pinned so it cannot drift back: the price is what routes
+    // a request past Finance, so the roles that can set it are the ones trusted
+    // with money. IT decides whether the equipment is warranted - that is the IT
+    // review step - not what it costs.
+    const holders = (Object.keys(ROLE_PERMISSIONS) as (keyof typeof ROLE_PERMISSIONS)[]).filter(
+      (role) => (ROLE_PERMISSIONS[role] as readonly string[]).includes('requests:assess'),
+    );
+    expect(holders).not.toContain('IT_ADMIN');
+    expect(holders).toEqual(
+      expect.arrayContaining(['OFFICE_ADMIN', 'FINANCE', 'INVENTORY_MANAGER']),
+    );
+  });
+
   it('an Inventory Manager can read and assess requests', () => {
     const perms = ROLE_PERMISSIONS.INVENTORY_MANAGER as readonly string[];
     expect(perms).toContain('requests:read');
