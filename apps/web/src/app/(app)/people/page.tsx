@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Send, AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Download, Mail, Search, Settings2, UserPlus } from 'lucide-react';
 import {
@@ -152,11 +152,17 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   }, [sodKey]);
   const sodBlocked = sodConflicts.length > 0 && !sodAcknowledged;
 
+  // Escape goes through the same guard as the Close button. Otherwise the
+  // quickest way out of the drawer is also the one that discards edits without
+  // asking - and it is the exit people reach for by reflex.
+  const closeGuardedRef = useRef<() => void>(() => onClose());
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeGuardedRef.current();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['people'] });
@@ -170,12 +176,32 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     toast.error(message);
   };
 
-  const saveRoles = useMutation({
-    mutationFn: () => apiFetch(`/users/${user.id}/roles`, { method: 'PATCH', body: { roleKeys } }),
+  /**
+   * One save for the whole drawer (v2.27).
+   *
+   * There were two - "Save details" above the roles section, "Save roles"
+   * below it - and each discarded the other's edits without a word. Setting a
+   * line manager and then pressing the lower, more prominent button threw the
+   * manager away silently. That is not hypothetical: it happened repeatedly on
+   * production, and every time the screen looked like it had saved.
+   *
+   * Only what actually changed is sent, so correcting a job title does not
+   * rewrite someone's roles - which would delete and recreate every grant and
+   * land in the audit trail as a role change that nobody made.
+   */
+  const save = useMutation({
+    mutationFn: async () => {
+      if (canStatus && detailsDirty) {
+        await apiFetch(`/users/${user.id}/profile`, { method: 'PATCH', body: detailsBody() });
+      }
+      if (canRoles && rolesDirty) {
+        await apiFetch(`/users/${user.id}/roles`, { method: 'PATCH', body: { roleKeys } });
+      }
+    },
     onSuccess: () => {
       setError(null);
       invalidate();
-      toast.success(`${name}'s roles updated`);
+      toast.success(`${name}'s changes saved`);
       onClose();
     },
     onError,
@@ -245,31 +271,19 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
     staleTime: 60_000,
   });
 
-  const saveDetails = useMutation({
-    mutationFn: () =>
-      apiFetch(`/users/${user.id}/profile`, {
-        method: 'PATCH',
-        body: {
-          firstName: details.firstName.trim(),
-          lastName: details.lastName.trim(),
-          jobTitle: details.jobTitle.trim() || null,
-          employeeNumber: details.employeeNumber.trim() || null,
-          ...(details.departmentId ? { departmentId: details.departmentId } : {}),
-          ...(details.officeId ? { officeId: details.officeId } : {}),
-          // Sent unconditionally, unlike department and office above: clearing a
-          // line manager has to be possible, and the omit-when-empty pattern can
-          // only ever set one.
-          managerId: details.managerId || null,
-          canRaiseRequests:
-            details.requests === 'allow' ? true : details.requests === 'block' ? false : null,
-        },
-      }),
-    onSuccess: () => {
-      setError(null);
-      invalidate();
-      toast.success(`${name}'s details updated`);
-    },
-    onError,
+  const detailsBody = () => ({
+    firstName: details.firstName.trim(),
+    lastName: details.lastName.trim(),
+    jobTitle: details.jobTitle.trim() || null,
+    employeeNumber: details.employeeNumber.trim() || null,
+    ...(details.departmentId ? { departmentId: details.departmentId } : {}),
+    ...(details.officeId ? { officeId: details.officeId } : {}),
+    // Sent unconditionally, unlike department and office above: clearing a
+    // line manager has to be possible, and the omit-when-empty pattern can
+    // only ever set one.
+    managerId: details.managerId || null,
+    canRaiseRequests:
+      details.requests === 'allow' ? true : details.requests === 'block' ? false : null,
   });
 
   // Sign in as this user: the provider swaps the in-memory token; the
@@ -325,12 +339,39 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
   const toggleRole = (key: string) =>
     setRoleKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
+  // What the drawer opened with, captured on first render. Comparing against
+  // this is what makes "unsaved" meaningful, and it keeps a section nobody
+  // touched from being written back over the top of itself.
+  const opened = useRef({ details, roles: [...roleKeys].sort().join(',') }).current;
+  const detailsDirty = JSON.stringify(details) !== JSON.stringify(opened.details);
+  const rolesDirty = [...roleKeys].sort().join(',') !== opened.roles;
+
   const busy =
-    saveRoles.isPending ||
-    setStatus.isPending ||
-    saveDetails.isPending ||
-    removeUser.isPending ||
-    resend.isPending;
+    save.isPending || setStatus.isPending || removeUser.isPending || resend.isPending;
+
+  /**
+   * Nothing is saved until the one button is pressed, so the drawer has to know
+   * what is still only on screen - both to enable that button and to stop a
+   * close from throwing the edits away in silence.
+   */
+  const dirty = detailsDirty || rolesDirty;
+  const namesMissing = !details.firstName.trim() || !details.lastName.trim();
+  // Roles cannot be emptied, and a flagged conflict has to be acknowledged
+  // first - but only when roles are actually part of what is being saved.
+  const blocked =
+    (rolesDirty && (roleKeys.length === 0 || sodBlocked)) || (detailsDirty && namesMissing);
+
+  const closeGuarded = async () => {
+    if (!dirty) return onClose();
+    const ok = await confirm({
+      title: 'Discard your changes?',
+      body: `Your edits to ${name} have not been saved yet. Closing now loses them.`,
+      confirmLabel: 'Discard',
+      destructive: true,
+    });
+    if (ok) onClose();
+  };
+  closeGuardedRef.current = () => void closeGuarded();
 
   return (
     <div
@@ -338,7 +379,7 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
       role="dialog"
       aria-modal="true"
       aria-label={`Manage ${name}`}
-      onClick={onClose}
+      onClick={() => void closeGuarded()}
     >
       <Card
         className="max-h-[85vh] w-full max-w-lg overflow-y-auto p-5"
@@ -461,15 +502,6 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                   </Field>
                 </div>
               </div>
-              <Button
-                className="mt-3"
-                size="sm"
-                loading={saveDetails.isPending}
-                disabled={busy || !details.firstName.trim() || !details.lastName.trim()}
-                onClick={() => saveDetails.mutate()}
-              >
-                Save details
-              </Button>
             </fieldset>
           ) : null}
 
@@ -530,16 +562,6 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
                   </label>
                 </div>
               ) : null}
-              <Button
-                className="mt-3"
-                size="sm"
-                loading={saveRoles.isPending}
-                disabled={roleKeys.length === 0 || busy || sodBlocked}
-                title={sodBlocked ? 'Acknowledge the segregation-of-duties warning first' : undefined}
-                onClick={() => saveRoles.mutate()}
-              >
-                Save roles
-              </Button>
             </fieldset>
           ) : null}
 
@@ -683,10 +705,33 @@ function ManageUserModal({ user, onClose }: { user: UserRow; onClose: () => void
             </p>
           ) : null}
 
-          <div className="mt-5 flex justify-end">
-            <Button variant="secondary" size="sm" onClick={onClose} disabled={busy}>
+          {/* One save, at the bottom, for everything above it. Where the two
+              buttons used to sit inside their own sections, which section you
+              happened to press decided which of your edits survived. */}
+          <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
+            {dirty ? (
+              <p className="mr-auto text-xs text-[var(--color-content-muted)]">
+                Unsaved changes
+              </p>
+            ) : null}
+            <Button variant="secondary" size="sm" onClick={() => void closeGuarded()} disabled={busy}>
               Close
             </Button>
+            {canStatus || canRoles ? (
+              <Button
+                size="sm"
+                loading={save.isPending}
+                disabled={!dirty || blocked || busy}
+                title={
+                  rolesDirty && sodBlocked
+                    ? 'Acknowledge the segregation-of-duties warning first'
+                    : undefined
+                }
+                onClick={() => save.mutate()}
+              >
+                Save changes
+              </Button>
+            ) : null}
           </div>
         </div>
       </Card>
