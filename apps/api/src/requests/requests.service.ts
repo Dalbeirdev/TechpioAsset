@@ -1132,11 +1132,31 @@ export class RequestsService {
       return;
     }
 
+    // Say what the step actually asks for (v2.27). Every step sent "Approval
+    // required ... is waiting on you", including the two that cannot be
+    // approved at all: their holder records an answer instead. An Inventory
+    // Manager was being emailed for an approval they hold no permission to
+    // give, and told to do the one thing the screen would not offer them.
+    const ask =
+      approval.kind === 'INVENTORY_CHECK'
+        ? {
+            title: `Stock check needed: ${requestNumber}`,
+            body: `${approval.stepName} is waiting on you for request ${requestNumber}. Is this already in stock, or does it need to be bought?`,
+          }
+        : approval.kind === 'COST_ASSESSMENT'
+          ? {
+              title: `Costing needed: ${requestNumber}`,
+              body: `${approval.stepName} is waiting on you for request ${requestNumber}. Record what it will cost so it can be routed for approval.`,
+            }
+          : {
+              title: `Approval required: ${requestNumber}`,
+              body: `${approval.stepName} is waiting on you for request ${requestNumber}.`,
+            };
+
     await this.notifications.notifyMany(recipients, {
       companyId,
       type: 'APPROVAL_REQUIRED',
-      title: `Approval required: ${requestNumber}`,
-      body: `${approval.stepName} is waiting on you for request ${requestNumber}.`,
+      ...ask,
       linkPath: `/requests/${requestId}`,
       entityType: 'AssetRequest',
       entityId: requestId,
