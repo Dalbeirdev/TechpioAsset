@@ -5,6 +5,7 @@ import { Platform, Pressable, Text, useColorScheme, View } from 'react-native';
 import { NativeOnlyNotice } from '../../src/components/native-only-notice';
 import { useSession } from '../../src/providers/session';
 import { colors } from '../../src/theme';
+import { qrTokenFrom } from '../../src/lib/qr';
 
 /**
  * QR / barcode scanner (spec section 15).
@@ -13,6 +14,11 @@ import { colors } from '../../src/theme';
  * /assets/by-qr endpoint, which enforces the same permission and scope rules as
  * every other read — so a scanned code leaks nothing, and an employee scanning
  * someone else's asset gets a not-found, exactly as the web enforces.
+ *
+ * v2.27 — what the camera reads is not what that endpoint takes. A printed
+ * label carries the address the token lives at, so the scanned string goes
+ * through `qrTokenFrom` first. Sending the address itself is what made every
+ * web-printed label report "does not match an asset you can access".
  */
 export default function ScanScreen() {
   const { api } = useSession();
@@ -41,8 +47,20 @@ export default function ScanScreen() {
     if (handling.current) return;
     handling.current = true;
     setError(null);
+    // The label encodes the address the token lives at, not the token, so
+    // what the camera reads is not what the endpoint takes.
+    const token = qrTokenFrom(code);
+    if (!token) {
+      // Only an empty read reaches here; a foreign code is looked up and
+      // allowed to miss, which says the same thing more honestly.
+      setError('Nothing was read from that code. Try again.');
+      setTimeout(() => {
+        handling.current = false;
+      }, 1500);
+      return;
+    }
     try {
-      const asset = await api.request<{ id: string }>(`/assets/by-qr/${encodeURIComponent(code)}`);
+      const asset = await api.request<{ id: string }>(`/assets/by-qr/${encodeURIComponent(token)}`);
       router.push(`/asset/${asset.id}`);
     } catch {
       setError('That code does not match an asset you can access.');
