@@ -918,3 +918,72 @@ describe('a damage report takes the short route', () => {
     expect(right.status, JSON.stringify(right.body)).toBeLessThan(300);
   });
 });
+
+/**
+ * v2.27 - a refused request is closed to the stages behind it.
+ *
+ * Every other door already closed on rejection: the remaining steps are marked
+ * SKIPPED, the decision endpoint answers 409, fulfilment answers 409. The
+ * assessment endpoint did not, because its guard listed COMPLETED and CANCELLED
+ * and not REJECTED.
+ *
+ * That was not a tidiness problem. Answering "we have one" writes a stock
+ * reservation, so a request somebody had already turned down could take a
+ * laptop out of AVAILABLE and hold it - and nothing would release it, because
+ * releasing happens when the request moves on and a rejected one never moves
+ * again. Found by asking what the next role can still do after a rejection.
+ */
+describe('a rejected request is closed to later stages', () => {
+  async function rejectedRequest() {
+    const id = await raise();
+    await approveUntil(id, 'HR confirmation');
+    const stopped = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s.hr))
+      .send({ decision: 'REJECTED', comment: 'Not justified.' });
+    expect(stopped.status, JSON.stringify(stopped.body).slice(0, 200)).toBeLessThan(300);
+    return id;
+  }
+
+  it('refuses to price it', async () => {
+    const id = await rejectedRequest();
+    const res = await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ purchaseRequired: true, unitPrice: '900.00', quantity: 1 });
+    expect(res.status).toBe(409);
+  });
+
+  it('will not let it hold a unit of stock', async () => {
+    const id = await rejectedRequest();
+    const free = await prisma.client.asset.findFirst({
+      where: { status: 'AVAILABLE', deletedAt: null },
+      select: { id: true },
+    });
+    expect(free, 'an available asset to attempt to reserve').toBeTruthy();
+
+    const res = await api(app)
+      .patch(`/api/v1/requests/${id}/assessment`)
+      .set(auth(s.officeAdmin))
+      .send({ purchaseRequired: false, suitableAssetId: free!.id });
+    expect(res.status).toBe(409);
+
+    // The load-bearing assertion: the laptop is still on the shelf.
+    const after = await prisma.client.asset.findUnique({
+      where: { id: free!.id },
+      select: { status: true },
+    });
+    expect(after?.status, 'a refused request must not hold stock').toBe('AVAILABLE');
+  });
+
+  it('still allows the conversation to continue', async () => {
+    // Closing the stages is not the same as closing the request to people. The
+    // requester is owed the chance to ask why, and an approver to answer.
+    const id = await rejectedRequest();
+    const res = await api(app)
+      .post(`/api/v1/requests/${id}/comments`)
+      .set(auth(s.itAdmin))
+      .send({ body: 'Rejected because the existing laptop is under warranty.', isInternal: false });
+    expect(res.status).toBeLessThan(300);
+  });
+});
