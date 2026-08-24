@@ -1,4 +1,10 @@
-import { PrismaClient, Prisma, type RequestType, type ApproverType } from '@prisma/client';
+import {
+  PrismaClient,
+  Prisma,
+  type RequestType,
+  type ApproverType,
+  type WorkflowStepKind,
+} from '@prisma/client';
 import { WORKFLOW_TEMPLATES, ONBOARDING_TEMPLATE } from '@techpioasset/domain';
 
 /**
@@ -36,6 +42,9 @@ export async function seedWorkflows(prisma: PrismaClient, companyId: string): Pr
         },
         update: {
           name: step.name,
+          // Was omitted, so every stage seeded as APPROVAL and a new tenant's
+          // inventory check asked to be approved rather than answered.
+          kind: (step.kind ?? 'APPROVAL') as WorkflowStepKind,
           approverType: step.approverType as ApproverType,
           approverRoleId: step.roleKey ? (roleByKey.get(step.roleKey) ?? null) : null,
           costThreshold: step.costThreshold ? new Prisma.Decimal(step.costThreshold) : null,
@@ -46,6 +55,7 @@ export async function seedWorkflows(prisma: PrismaClient, companyId: string): Pr
           workflowDefinitionId: definition.id,
           stepOrder: step.order,
           name: step.name,
+          kind: (step.kind ?? 'APPROVAL') as WorkflowStepKind,
           approverType: step.approverType as ApproverType,
           approverRoleId: step.roleKey ? (roleByKey.get(step.roleKey) ?? null) : null,
           costThreshold: step.costThreshold ? new Prisma.Decimal(step.costThreshold) : null,

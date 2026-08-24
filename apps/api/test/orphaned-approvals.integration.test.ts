@@ -34,6 +34,13 @@ afterAll(async () => {
   await app?.close();
 });
 
+/**
+ * The type is load-bearing (v2.27): this needs a chain long enough to have a
+ * second step to orphan and a Manager review to approve first. DAMAGE used to
+ * fit because it fell to the six-step catch-all; it now has its own short route
+ * starting at IT review, so it no longer does. ADDITIONAL_EQUIPMENT still takes
+ * the catch-all, which is what this test actually depends on.
+ */
 describe('a role step nobody holds', () => {
   it('notifies user-managers and lets them decide', async () => {
     const run = `${Date.now()}`;
@@ -52,7 +59,7 @@ describe('a role step nobody holds', () => {
       .post('/api/v1/requests')
       .set(auth(s.employee))
       .send({
-        type: 'DAMAGE',
+        type: 'ADDITIONAL_EQUIPMENT',
         businessReason: 'Orphaned-approval regression: hinge cracked on the lid',
         isReplacement: false,
         items: [{ description: `Repair hinge (${Math.random().toString(36).slice(2, 8)})`, quantity: 1 }],
@@ -105,7 +112,7 @@ describe('a role step nobody holds', () => {
       .post('/api/v1/requests')
       .set(auth(s.employee))
       .send({
-        type: 'DAMAGE',
+        type: 'ADDITIONAL_EQUIPMENT',
         businessReason: 'Second orphan-check request for the closed-door case',
         isReplacement: false,
         items: [{ description: `Check (${Math.random().toString(36).slice(2, 8)})`, quantity: 1 }],

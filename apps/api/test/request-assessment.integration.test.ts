@@ -863,3 +863,58 @@ describe('whoever staffs a step can stop the request at it', () => {
     expect(res.status).toBe(403);
   });
 });
+
+/**
+ * v2.27 - damage gets its own short route.
+ *
+ * DAMAGE had no definition of its own, so it fell to the six-step catch-all:
+ * reporting a broken laptop travelled exactly as far as asking for a new one,
+ * through a manager and HR first. Both are dropped here, and for the same
+ * reason - the device was already authorised once. Control over spending stays
+ * with the Finance threshold, which is the step that actually governs money.
+ */
+describe('a damage report takes the short route', () => {
+  // One request, not two. A second open DAMAGE report from the same person is
+  // refused as a duplicate - which is correct behaviour, and the reason this
+  // asserts the shape and the authority of the same chain rather than raising
+  // a fresh one for each. employee2 keeps it clear of the orphaned-approval
+  // suite, which files its own reports as employee.
+  it('starts at IT, skips the manager and HR, and only IT can act on it', async () => {
+    const created = await api(app)
+      .post('/api/v1/requests')
+      .set(auth(s.employee2))
+      .send({
+        type: 'DAMAGE',
+        businessReason: 'Screen cracked after a fall.',
+        items: [{ description: `Laptop screen ${Math.random().toString(36).slice(2, 8)}`, quantity: 1 }],
+      });
+    expect(created.status, JSON.stringify(created.body)).toBeLessThan(300);
+    const id = created.body.data.id as string;
+    const submitted = await api(app).post(`/api/v1/requests/${id}/submit`).set(auth(s.employee2));
+    expect(submitted.status, JSON.stringify(submitted.body)).toBeLessThan(300);
+
+    const names = (await chainOf(id)).map((a) => a.stepName);
+
+    expect(names, 'damage should not queue behind a manager').not.toContain('Manager review');
+    expect(names, 'employment was confirmed when the kit was issued').not.toContain(
+      'HR confirmation',
+    );
+    expect(names[0], 'IT decides repair or replace first').toBe('IT review');
+    expect(names).toContain('Inventory check');
+    // Shorter than the catch-all it used to take, which is the whole point.
+    expect(names.length).toBeLessThan(6);
+
+    // The manager holds requests:approve, but this step is not theirs.
+    const wrong = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s.manager))
+      .send({ decision: 'APPROVED' });
+    expect(wrong.status).toBe(403);
+
+    const right = await api(app)
+      .post(`/api/v1/requests/${id}/decision`)
+      .set(auth(s.itAdmin))
+      .send({ decision: 'APPROVED' });
+    expect(right.status, JSON.stringify(right.body)).toBeLessThan(300);
+  });
+});
