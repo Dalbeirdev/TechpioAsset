@@ -202,10 +202,31 @@ describe('approved DAMAGE/REPAIR requests raise a linked work order', () => {
     // Walk every pending step. Approval is strict about WHO decides (the
     // can-decide rules), so try each plausible approver and move on with
     // whichever the step accepts.
-    for (let step = 0; step < 6; step += 1) {
+    //
+    // v2.27 - two kinds of step now, and only one of them is approved. Damage
+    // takes its own route, which asks about stock before anything is bought, and
+    // an assessment stage is cleared by recording an answer. Approving one is
+    // refused, so the loop would spin on a stage it could never clear. For a
+    // repair on kit we already own the honest answer is that nothing is being
+    // bought, which also stands the costing and Finance steps aside.
+    for (let step = 0; step < 8; step += 1) {
       const detail = await api(app).get(`/api/v1/requests/${requestId}`).set(auth(s.superAdmin));
       const status = detail.body.data.status as string;
       if (!status.includes('PENDING')) break; // e.g. MANAGER_APPROVAL_PENDING
+
+      const current = (
+        detail.body.data.approvals as { decision: string; kind: string }[]
+      ).find((a) => a.decision === 'PENDING');
+
+      if (current && current.kind !== 'APPROVAL') {
+        const answered = await api(app)
+          .patch(`/api/v1/requests/${requestId}/assessment`)
+          .set(auth(s.officeAdmin))
+          .send({ purchaseRequired: false });
+        expect(answered.status, `could not answer ${current.kind}`).toBeLessThan(300);
+        continue;
+      }
+
       let decidedBy: string | null = null;
       for (const approver of [s.manager, s.itAdmin, s.hr, s.finance, s.officeAdmin, s.superAdmin]) {
         const decided = await api(app)

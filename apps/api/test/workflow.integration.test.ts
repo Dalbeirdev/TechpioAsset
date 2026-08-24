@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
@@ -21,7 +22,16 @@ import { api, auth, createTestApp, loginAll, type AccountKey, type Session } fro
 let app: INestApplication;
 let s: Record<AccountKey, Session>;
 let prisma: PrismaService;
-let removedStageIds: string[] = [];
+/**
+ * The stages this suite removes, kept whole so afterAll can put them back.
+ *
+ * It used to keep only the ids and never restore them, which is not a rollback -
+ * the rows were gone for every suite that ran afterwards. That stayed hidden
+ * because the other suites re-create their own stages through the workflows
+ * endpoint; a definition whose stages come from a migration, like the damage
+ * route, simply lost them and never got them back.
+ */
+let removedStages: Prisma.WorkflowStepUncheckedCreateInput[] = [];
 
 beforeAll(async () => {
   app = await createTestApp();
@@ -33,15 +43,22 @@ beforeAll(async () => {
       kind: { not: 'APPROVAL' },
       workflowDefinition: { companyId: s.superAdmin.user.companyId },
     },
-    select: { id: true },
   });
-  removedStageIds = stages.map((x) => x.id);
-  if (removedStageIds.length > 0) {
-    await prisma.client.workflowStep.deleteMany({ where: { id: { in: removedStageIds } } });
+  removedStages = stages;
+  if (removedStages.length > 0) {
+    await prisma.client.workflowStep.deleteMany({
+      where: { id: { in: removedStages.map((x) => x.id as string) } },
+    });
   }
 });
 
 afterAll(async () => {
+  // Put the stages back before anything else runs. Re-created with their own
+  // ids and step orders: nothing references a workflow step by id - an approval
+  // chain is snapshotted at submission - so restoring them is exact.
+  if (removedStages.length > 0) {
+    await prisma?.client.workflowStep.createMany({ data: removedStages, skipDuplicates: true });
+  }
   await app?.close();
 });
 

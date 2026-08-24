@@ -160,6 +160,58 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       { order: 1, name: 'IT review', approverType: 'ROLE', roleKey: 'IT_ADMIN', slaHours: 24 },
     ],
   },
+  {
+    key: 'damage',
+    name: 'Damage report',
+    description:
+      'Kit that is already issued and has broken. IT decides repair or replace, stock is ' +
+      'checked, and only a purchase reaches Finance.',
+    requestType: 'DAMAGE',
+    /**
+     * v2.27 - damage used to fall to the six-step catch-all, so reporting a
+     * broken laptop travelled exactly as far as asking for a brand new one.
+     *
+     * Manager review and HR confirmation are dropped deliberately, and the
+     * reason is the same for both: this device was already authorised once.
+     * HR confirms employment before someone is given equipment - they already
+     * have it. A manager authorises new spend for a report - restoring kit that
+     * was already approved is not a new want. Control over money is not lost:
+     * it moves to the Finance threshold, which is the step that actually
+     * governs spending.
+     *
+     * In practice this is usually two steps, not four. If there is a spare on
+     * the shelf, the inventory check answers yes and both the costing and
+     * Finance stand aside - nothing is bought, so nothing needs pricing.
+     */
+    steps: [
+      { order: 1, name: 'IT review', approverType: 'ROLE', roleKey: 'IT_ADMIN', slaHours: 24 },
+      {
+        order: 2,
+        name: 'Inventory check',
+        approverType: 'ROLE',
+        roleKey: 'OFFICE_ADMIN',
+        kind: 'INVENTORY_CHECK',
+        slaHours: 48,
+      },
+      {
+        order: 3,
+        name: 'Cost assessment',
+        approverType: 'ROLE',
+        roleKey: 'OFFICE_ADMIN',
+        kind: 'COST_ASSESSMENT',
+        slaHours: 48,
+      },
+      {
+        order: 4,
+        name: 'Finance approval',
+        approverType: 'ROLE',
+        roleKey: 'FINANCE',
+        costThreshold: '250.00',
+        isSkippable: true,
+        slaHours: 48,
+      },
+    ],
+  },
 ];
 
 export const ONBOARDING_TEMPLATE = {
