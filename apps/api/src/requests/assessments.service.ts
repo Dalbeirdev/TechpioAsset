@@ -143,10 +143,34 @@ export class AssessmentsService {
     const request = await this.assertRequestVisible(actor, requestId);
     this.assertNotOwnRequest(actor, request);
 
-    if (request.status === 'COMPLETED' || request.status === 'CANCELLED') {
+    /**
+     * A refused request is as finished as a cancelled one (v2.27).
+     *
+     * REJECTED was missing from this list, and it was the expensive omission:
+     * every other door closes on rejection - the remaining steps are marked
+     * SKIPPED, the decision endpoint answers 409, fulfilment answers 409 - but
+     * this one stayed open, so the commercial half of a refused request could
+     * still be filled in.
+     *
+     * Worse than untidy data. Answering "we have one" writes a stock
+     * reservation, so a request somebody had already turned down would take a
+     * laptop out of AVAILABLE and hold it. Nothing would ever release it,
+     * because releasing happens when the request moves on and this one never
+     * moves again.
+     */
+    if (
+      request.status === 'COMPLETED' ||
+      request.status === 'CANCELLED' ||
+      request.status === 'REJECTED'
+    ) {
       throw new AppError(
         'ILLEGAL_STATE_TRANSITION',
-        `A ${request.status.toLowerCase()} request cannot be re-assessed`,
+        `A ${request.status.toLowerCase()} request cannot be assessed`,
+        {
+          detail:
+            'This request was closed before it reached this stage, so there is nothing left to ' +
+            'price or fill from stock.',
+        },
       );
     }
 
