@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Send, AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Download, Mail, Search, Settings2, UserPlus } from 'lucide-react';
+import { Send, AlertTriangle, Check, Copy, Download, Mail, Search, Settings2, UserPlus } from 'lucide-react';
 import {
   PERMISSIONS,
   REQUEST_OVERRIDE_LABELS,
@@ -21,6 +21,7 @@ import { downloadCsv } from '@/lib/download-csv';
 import { fetchColleagues, colleagueName } from '@/lib/colleagues';
 import { Button, Card, EmptyState, ErrorState, Field, NativeSelect, Skeleton } from '@/components/ui';
 import { Input } from '@/components/ui/input';
+import { SortableHeader } from '@/components/sortable-header';
 
 interface UserRow {
   id: string;
@@ -59,42 +60,6 @@ function statusLabel(status: string): string {
 /** Columns the API can order by. Role is absent - see toggleSort. */
 type SortField = 'name' | 'email' | 'department' | 'status';
 
-function SortableHeader({
-  label,
-  field,
-  sort,
-  order,
-  onSort,
-}: {
-  label: string;
-  field: SortField;
-  sort: SortField | null;
-  order: 'asc' | 'desc';
-  onSort: (f: SortField) => void;
-}) {
-  const active = sort === field;
-  return (
-    <th scope="col" className="px-4 py-2.5 font-medium" aria-sort={active ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        className="inline-flex items-center gap-1 hover:text-[var(--color-brand)]"
-      >
-        {label}
-        {active ? (
-          order === 'asc' ? (
-            <ArrowUp aria-hidden="true" className="size-3.5" />
-          ) : (
-            <ArrowDown aria-hidden="true" className="size-3.5" />
-          )
-        ) : (
-          <ArrowUpDown aria-hidden="true" className="size-3.5 opacity-40" />
-        )}
-        <span className="sr-only">{active ? `, sorted ${order === 'asc' ? 'ascending' : 'descending'}` : ', click to sort'}</span>
-      </button>
-    </th>
-  );
-}
 
 function roleLabel(key: string): string {
   return key

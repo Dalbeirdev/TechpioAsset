@@ -33,9 +33,19 @@ import { useToast } from '@/providers/toast-provider';
 import { useConfirm } from '@/providers/confirm-provider';
 import { Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
+import { SortableHeader } from '@/components/sortable-header';
 
 // Statuses that destroy or retire an asset — a bulk change to one asks first.
 const DESTRUCTIVE_STATUSES = new Set(['RETIRED', 'DISPOSED', 'DONATED', 'LOST', 'STOLEN']);
+
+/** Columns the asset list can be ordered by, as the API names them. */
+type AssetSortField =
+  | 'name'
+  | 'category'
+  | 'status'
+  | 'condition'
+  | 'assignedUser'
+  | 'purchaseCost';
 
 interface AssetRow {
   id: string;
@@ -94,6 +104,12 @@ function AssetsTable() {
   // warranty tile counts every asset type, so letting the laptop default apply
   // on top would show a subset of the number that was clicked.
   const [typeChosen, setTypeChosen] = useState(Boolean(params.get('warrantyWithinDays')));
+  /**
+   * Columns the API can order by, named as the API names them so a heading
+   * cannot ask for a sort the server will quietly ignore.
+   */
+  const [sort, setSort] = useState<AssetSortField | null>(null);
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>('');
@@ -123,9 +139,25 @@ function AssetsTable() {
     return p;
   };
 
+  // Click a heading to sort by it, click again to reverse - and go back to the
+  // first page, because page 4 of the old order is meaningless in the new one.
+  const toggleSort = (field: AssetSortField) => {
+    if (sort === field) {
+      setOrder(order === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSort(field);
+      setOrder('asc');
+    }
+    setPage(1);
+  };
+
   const query = filterParams();
   query.set('page', String(page));
   query.set('pageSize', '25');
+  if (sort) {
+    query.set('sort', sort);
+    query.set('order', order);
+  }
 
   // Types come from the company's own catalogue rather than the domain list, so
   // the dropdown offers what this company actually has.
@@ -148,7 +180,7 @@ function AssetsTable() {
   }, [categories, typeChosen]);
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['assets', q, status, lifecycle, availability, ownership, type, page],
+    queryKey: ['assets', q, status, lifecycle, availability, ownership, type, page, sort, order],
     queryFn: () => apiFetchPage<AssetRow>(`/assets?${query.toString()}`),
     // Hold the first fetch until the default type is settled, so the table does
     // not show the whole fleet for a moment and then replace it. If the
@@ -464,25 +496,22 @@ function AssetsTable() {
                       />
                     </th>
                   ) : null}
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Asset
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Category
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Condition
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Assigned to
-                  </th>
+                  <SortableHeader label="Asset" field="name" sort={sort} order={order} onSort={toggleSort} />
+                  <SortableHeader label="Category" field="category" sort={sort} order={order} onSort={toggleSort} />
+                  <SortableHeader label="Status" field="status" sort={sort} order={order} onSort={toggleSort} />
+                  <SortableHeader label="Condition" field="condition" sort={sort} order={order} onSort={toggleSort} />
+                  <SortableHeader label="Assigned to" field="assignedUser" sort={sort} order={order} onSort={toggleSort} />
+                  {/* Only offered to those who can read the figures. Ordering by
+                      a hidden column would still reveal which kit is dearest. */}
                   {showCost ? (
-                    <th scope="col" className="px-4 py-2.5 text-right font-medium">
-                      Cost
-                    </th>
+                    <SortableHeader
+                      label="Cost"
+                      field="purchaseCost"
+                      sort={sort}
+                      order={order}
+                      onSort={toggleSort}
+                      align="right"
+                    />
                   ) : null}
                 </tr>
               </thead>
