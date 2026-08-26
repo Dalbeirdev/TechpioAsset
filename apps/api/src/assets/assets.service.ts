@@ -38,7 +38,46 @@ import { RoutingAiProvider } from '../providers/ai/routing-ai.provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WebhooksService } from '../integrations/webhooks.service.js';
 
-const SORTABLE = ['createdAt', 'name', 'assetTag', 'status', 'purchaseDate'] as const;
+const SORTABLE = ['createdAt', 'name', 'assetTag', 'status', 'purchaseDate', 'condition'] as const;
+
+/**
+ * Ordering for the asset list (v2.27).
+ *
+ * Every column the table shows is sortable, which means three of them cannot go
+ * through the flat buildOrderBy: category and the holder live on relations, and
+ * cost is not everyone's to see.
+ *
+ * Cost is the one worth being careful about. Sorting by a column you are not
+ * allowed to read still tells you the answer - order the list by cost and the
+ * most expensive kit is at the top whether or not the figures are printed. So a
+ * caller without cost visibility does not get that ordering; the request falls
+ * back to the default rather than being refused, because the sort came from a
+ * heading they should never have been offered.
+ */
+function assetOrderBy(
+  sort: string | undefined,
+  order: 'asc' | 'desc',
+  showCost: boolean,
+): Prisma.AssetOrderByWithRelationInput | Prisma.AssetOrderByWithRelationInput[] {
+  if (sort === 'category') return { category: { name: order } };
+  // First name then last, matching how the column reads. Null placement is left
+  // to the database here: `nulls` is only accepted on this model's own scalars,
+  // not on a field reached through two relations, so unheld assets land where
+  // Postgres puts them - last ascending, first descending.
+  if (sort === 'assignedUser') {
+    return [
+      { assignedUser: { profile: { firstName: order } } },
+      { assignedUser: { profile: { lastName: order } } },
+    ];
+  }
+  if (sort === 'purchaseCost') {
+    // Nulls last, not merely default. Postgres sorts NULLs first on DESC, so
+    // "most expensive first" opened with every asset that has no cost recorded -
+    // the one ordering where the answer is least useful.
+    return showCost ? { purchaseCost: { sort: order, nulls: 'last' } } : { createdAt: 'desc' };
+  }
+  return buildOrderBy(sort, order, SORTABLE, 'createdAt');
+}
 
 /** Fields whose changes are worth an audit row. Excludes noise like updatedAt. */
 const AUDITED_FIELDS = [
@@ -220,7 +259,7 @@ export class AssetsService {
           where,
           skip,
           take,
-          orderBy: buildOrderBy(query.sort, query.order, SORTABLE, 'createdAt'),
+          orderBy: assetOrderBy(query.sort, query.order, canSeeCost(actor)),
           select: this.selection(actor),
         }),
     });
