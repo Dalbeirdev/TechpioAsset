@@ -20,6 +20,35 @@ import type { ReportColumn, ReportRow, ReportTable } from './report-format.js';
 const EXPORT_BATCH = 5_000;
 
 /**
+ * Which of a person's items is "their machine" (v2.28).
+ *
+ * Lower sorts first. Anything unlisted - and anything with no Type recorded -
+ * ranks last, so a monitor never displaces a laptop and an untyped asset never
+ * displaces a typed one. Matched on the Type name because that is what the
+ * subcategory holds; the comparison is lowercased and substring-based so
+ * "Monitor / Screen" and "Monitor" both land in the same place.
+ */
+const DEVICE_ORDER = ['laptop', 'desktop', 'workstation', 'server', 'tablet', 'mobile', 'phone'];
+
+function deviceRank(typeName: string | null | undefined): number {
+  if (!typeName) return DEVICE_ORDER.length;
+  const name = typeName.toLowerCase();
+  const found = DEVICE_ORDER.findIndex((key) => name.includes(key));
+  return found === -1 ? DEVICE_ORDER.length : found;
+}
+
+/** A spec value for a cell: blank when absent, never "undefined" or "null". */
+function specText(value: unknown, suffix = ''): string {
+  if (value === null || value === undefined || value === '') return '';
+  return `${String(value)}${suffix}`;
+}
+
+/** yyyy-mm-dd, which sorts correctly as text in any spreadsheet. */
+function isoDate(value: Date | null | undefined): string {
+  return value ? value.toISOString().slice(0, 10) : '';
+}
+
+/**
  * v2.10 S5 — a report defined once.
  *
  * `page(skip, take)` returns already-mapped rows, so the buffered path (JSON)
@@ -110,15 +139,30 @@ export class ReportsService {
       };
       return {
         title: 'Asset inventory',
+        // v2.28 - widened from seven columns to the full record. The old sheet
+        // named an asset but not what it was, so "Dell" and "Monitor" (both
+        // real names here) told a reader nothing, and a serial number - the one
+        // field an audit turns on - was absent entirely.
         columns: [
           { key: 'assetTag', label: 'Asset tag' },
           { key: 'name', label: 'Name' },
           { key: 'category', label: 'Category' },
+          { key: 'type', label: 'Type' },
+          { key: 'brand', label: 'Brand' },
+          { key: 'model', label: 'Model' },
+          { key: 'serialNumber', label: 'Serial number' },
+          { key: 'ram', label: 'RAM' },
+          { key: 'storage', label: 'Storage' },
+          { key: 'os', label: 'Operating system' },
           { key: 'status', label: 'Status' },
           { key: 'condition', label: 'Condition' },
-          { key: 'office', label: 'Office' },
+          { key: 'office', label: 'Location' },
+          { key: 'department', label: 'Department' },
           { key: 'assignee', label: 'Assigned to' },
-          ...(showCost ? [{ key: 'cost', label: 'Purchase cost', numeric: true }] : []),
+          { key: 'assignedOn', label: 'Assigned on' },
+          { key: 'purchaseDate', label: 'Purchased on' },
+          { key: 'warrantyTill', label: 'Warranty till' },
+          ...(showCost ? [{ key: 'cost', label: 'Purchase cost', numeric: true, decimals: 2 }] : []),
         ],
         page: async (skip, take) => {
           const assets = await this.prisma.client.asset.findMany({
@@ -132,26 +176,62 @@ export class ReportsService {
               status: true,
               condition: true,
               serialNumber: true,
+              brand: true,
+              model: true,
+              specs: true,
+              assignmentDate: true,
+              purchaseDate: true,
+              warrantyEndDate: true,
               purchaseCost: showCost,
               currency: showCost,
               category: { select: { name: true } },
+              subcategory: { select: { name: true } },
+              department: { select: { name: true } },
               office: { select: { name: true } },
-              assignedUser: { select: { email: true } },
+              assignedUser: {
+                select: { email: true, profile: { select: { firstName: true, lastName: true } } },
+              },
             },
           });
-          return assets.map((a) => ({
-            assetTag: a.assetTag,
-            name: a.name,
-            category: a.category?.name ?? '',
-            status: a.status,
-            condition: a.condition,
-            office: a.office?.name ?? '',
-            assignee: a.assignedUser?.email ?? '',
-            // null (not 0) so an unpriced asset reads as "not recorded", never "free".
-            ...(showCost ? { cost: a.purchaseCost ? Number(a.purchaseCost) : null } : {}),
-          }));
+
+          const fallbackOffice = await this.defaultLocation(actor);
+
+          return assets.map((a) => {
+            const specs = (a.specs ?? {}) as Record<string, unknown>;
+            const holder = a.assignedUser?.profile;
+            return {
+              assetTag: a.assetTag,
+              name: a.name,
+              category: a.category?.name ?? '',
+              type: a.subcategory?.name ?? '',
+              brand: a.brand ?? '',
+              model: a.model ?? '',
+              serialNumber: a.serialNumber ?? '',
+              ram: specText(specs.ramGb, ' GB'),
+              storage: specText(specs.storage),
+              os: specText(specs.os),
+              status: a.status,
+              condition: a.condition,
+              office: a.office?.name ?? fallbackOffice?.name ?? '',
+              department: a.department?.name ?? '',
+              // The person's name, with the address after it. A column of bare
+              // addresses is unreadable to anyone outside IT.
+              assignee: holder
+                ? `${holder.firstName} ${holder.lastName}`.trim()
+                : (a.assignedUser?.email ?? ''),
+              assignedOn: isoDate(a.assignmentDate),
+              purchaseDate: isoDate(a.purchaseDate),
+              warrantyTill: isoDate(a.warrantyEndDate),
+              // null (not 0) so an unpriced asset reads as "not recorded", never "free".
+              ...(showCost ? { cost: a.purchaseCost ? Number(a.purchaseCost) : null } : {}),
+            };
+          });
         },
       };
+    }
+
+    if (type === 'EMPLOYEE_ASSETS') {
+      return this.employeeAssetsSpec(actor, filters);
     }
 
     if (type === 'DEPRECIATION') {
@@ -161,9 +241,9 @@ export class ReportsService {
           { key: 'assetTag', label: 'Asset tag' },
           { key: 'name', label: 'Name' },
           { key: 'method', label: 'Method' },
-          { key: 'cost', label: 'Purchase cost', numeric: true },
-          { key: 'depreciation', label: 'Accumulated', numeric: true },
-          { key: 'current', label: 'Current value', numeric: true },
+          { key: 'cost', label: 'Purchase cost', numeric: true, decimals: 2 },
+          { key: 'depreciation', label: 'Accumulated', numeric: true, decimals: 2 },
+          { key: 'current', label: 'Current value', numeric: true, decimals: 2 },
         ],
         page: async (skip, take) => {
           const now = new Date();
@@ -244,7 +324,7 @@ export class ReportsService {
       columns: [
         { key: 'name', label },
         { key: 'count', label: 'Assets', numeric: true },
-        { key: 'total', label: 'Total spend', numeric: true },
+        { key: 'total', label: 'Total spend', numeric: true, decimals: 2 },
       ],
       rows: [...totals.entries()]
         .sort((a, b) => b[1].total.comparedTo(a[1].total))
@@ -254,6 +334,257 @@ export class ReportsService {
           total: Number(entry.total.toFixed(2)),
         })),
     };
+  }
+
+  /**
+   * One row per person, everything they hold on that row (v2.28).
+   *
+   * The shape of the row is: who they are, the machine they work on in full
+   * detail, and every other item they hold folded into a single cell. That
+   * mirrors how a handover is actually checked - you look up a person, not an
+   * asset tag - and it is why the extras are consolidated rather than given
+   * rows of their own. Someone holding a laptop, two monitors, a headset and a
+   * mouse was five rows that had to be recognised as one person; now they are
+   * one row that reads at a glance.
+   *
+   * The main device is chosen by Type, not by guessing at the name. That is
+   * only sound because Type is populated - 155 of 158 assets carry one, and
+   * "Dell" and "Laptop Harpal-Acer" are both real names in the data, so a
+   * keyword heuristic over names would have been wrong in both directions.
+   * An asset whose Type is missing simply never outranks one that has it.
+   */
+  private employeeAssetsSpec(
+    actor: AuthUser,
+    filters: { officeId?: string; departmentId?: string },
+  ): StreamSpec {
+    return {
+      title: 'Employee assets',
+      columns: [
+        { key: 'employee', label: 'Employee' },
+        { key: 'employeeNumber', label: 'Emp #' },
+        { key: 'email', label: 'Email' },
+        { key: 'jobTitle', label: 'Job title' },
+        { key: 'department', label: 'Department' },
+        { key: 'location', label: 'Location' },
+        { key: 'deviceType', label: 'Device type' },
+        { key: 'device', label: 'Device' },
+        { key: 'assetTag', label: 'Asset tag' },
+        { key: 'brand', label: 'Brand' },
+        { key: 'model', label: 'Model' },
+        { key: 'serialNumber', label: 'Serial number' },
+        { key: 'ram', label: 'RAM' },
+        { key: 'storage', label: 'Storage' },
+        { key: 'os', label: 'Operating system' },
+        { key: 'condition', label: 'Condition' },
+        { key: 'assignedOn', label: 'Assigned on' },
+        { key: 'warrantyTill', label: 'Warranty till' },
+        { key: 'handedOverBy', label: 'Handed over by' },
+        { key: 'otherCount', label: 'Other items', numeric: true },
+        { key: 'otherItems', label: 'Other items held' },
+      ],
+      page: async (skip, take) => {
+        const holders = await this.prisma.client.user.findMany({
+          where: {
+            ...tenantFilter(actor),
+            assignedAssets: {
+              some: {
+                deletedAt: null,
+                ...(filters.officeId ? { officeId: filters.officeId } : {}),
+                ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
+              },
+            },
+          },
+          // By surname within forename, with id last so a page boundary cannot
+          // drop or repeat somebody (see the note on tiebreakers above).
+          orderBy: [
+            { profile: { firstName: 'asc' } },
+            { profile: { lastName: 'asc' } },
+            { id: 'asc' },
+          ],
+          skip,
+          take,
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: {
+                firstName: true,
+                lastName: true,
+                employeeNumber: true,
+                jobTitle: true,
+                department: { select: { name: true } },
+                office: { select: { name: true } },
+              },
+            },
+            assignedAssets: {
+              where: { deletedAt: null },
+              select: {
+                assetTag: true,
+                name: true,
+                brand: true,
+                model: true,
+                serialNumber: true,
+                specs: true,
+                condition: true,
+                assignmentDate: true,
+                warrantyEndDate: true,
+                subcategory: { select: { name: true } },
+                office: { select: { name: true } },
+                assignments: {
+                  where: { returnedAt: null },
+                  orderBy: { assignedAt: 'desc' },
+                  take: 1,
+                  select: {
+                    assignedBy: { select: { profile: { select: { firstName: true, lastName: true } } } },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        // Both resolved once per page, not once per row.
+        const [fallbackOffice, fallbackHandover] = await Promise.all([
+          this.defaultLocation(actor),
+          this.defaultHandoverName(actor),
+        ]);
+
+        return holders.map((holder) => {
+          const held = [...holder.assignedAssets].sort(
+            (a, b) => deviceRank(a.subcategory?.name) - deviceRank(b.subcategory?.name),
+          );
+          const [main, ...others] = held;
+          const specs = (main?.specs ?? {}) as Record<string, unknown>;
+          const grantedBy = main?.assignments[0]?.assignedBy?.profile;
+
+          return {
+            employee: `${holder.profile?.firstName ?? ''} ${holder.profile?.lastName ?? ''}`.trim(),
+            employeeNumber: holder.profile?.employeeNumber ?? '',
+            email: holder.email,
+            jobTitle: holder.profile?.jobTitle ?? '',
+            department: holder.profile?.department?.name ?? '',
+            // The person's own office, then the asset's, then the company
+            // default. A blank here reads as "we do not know where this
+            // equipment is", which for a single-site company is worse than
+            // untrue - it is alarming.
+            location:
+              holder.profile?.office?.name ?? main?.office?.name ?? fallbackOffice?.name ?? '',
+            deviceType: main?.subcategory?.name ?? '',
+            device: main?.name ?? '',
+            assetTag: main?.assetTag ?? '',
+            brand: main?.brand ?? '',
+            model: main?.model ?? '',
+            serialNumber: main?.serialNumber ?? '',
+            ram: specText(specs.ramGb, ' GB'),
+            storage: specText(specs.storage),
+            os: specText(specs.os),
+            condition: main?.condition ?? '',
+            assignedOn: isoDate(main?.assignmentDate),
+            warrantyTill: isoDate(main?.warrantyEndDate),
+            handedOverBy: grantedBy
+              ? `${grantedBy.firstName} ${grantedBy.lastName}`.trim()
+              : fallbackHandover,
+            otherCount: others.length,
+            // One item per line in a single cell - the whole point of the
+            // report. Tag first so it can be checked off against a shelf.
+            otherItems: others
+              .map((a) => `${a.assetTag}  ${a.name}${a.serialNumber ? `  (${a.serialNumber})` : ''}`)
+              .join('\n'),
+          };
+        });
+      },
+    };
+  }
+
+  /**
+   * The letterhead for a workbook export (v2.28).
+   *
+   * Who prepared it comes from the signed-in actor rather than the tenant
+   * owner: a circulated spreadsheet should say who produced it, and that is
+   * whoever pressed Download. (The *handover* fallback is the opposite case and
+   * deliberately does not work this way - see `defaultHandoverName`.)
+   *
+   * Filters are named, not shown as ids. A sheet headed "Office: Mohali" can be
+   * read on its own; one headed with a cuid cannot, and a filtered export that
+   * does not say it is filtered is how a partial list gets circulated as a
+   * complete one.
+   */
+  async workbookHeader(
+    actor: AuthUser,
+    filters: { officeId?: string; departmentId?: string },
+  ): Promise<{ companyName: string; preparedBy: string; preparedByPhone: string | null; filters: string[] }> {
+    const [company, office, department] = await Promise.all([
+      this.prisma.client.company.findUnique({
+        where: { id: actor.companyId },
+        select: { name: true },
+      }),
+      filters.officeId
+        ? this.prisma.client.office.findFirst({
+            where: { id: filters.officeId, ...tenantFilter(actor) },
+            select: { name: true },
+          })
+        : null,
+      filters.departmentId
+        ? this.prisma.client.department.findFirst({
+            where: { id: filters.departmentId, ...tenantFilter(actor) },
+            select: { name: true },
+          })
+        : null,
+    ]);
+
+    const named: string[] = [];
+    if (filters.officeId) named.push(`Office: ${office?.name ?? 'unknown'}`);
+    if (filters.departmentId) named.push(`Department: ${department?.name ?? 'unknown'}`);
+
+    const preparedBy =
+      [actor.firstName, actor.lastName].filter(Boolean).join(' ').trim() || actor.email;
+
+    return {
+      companyName: company?.name ?? '',
+      preparedBy,
+      preparedByPhone: actor.phone ?? null,
+      filters: named,
+    };
+  }
+
+  /**
+   * The company's default site, used when neither the person nor the asset
+   * names one.
+   *
+   * `isDefault` is set by a Super Admin rather than inferred, because "the
+   * office with the most assets" would silently move the default the first time
+   * a second site grew - and a location on a handover document is the sort of
+   * thing that has to be deliberate.
+   */
+  private async defaultLocation(actor: AuthUser): Promise<{ name: string } | null> {
+    const offices = await this.prisma.client.office.findMany({
+      where: { ...tenantFilter(actor), isDefault: true },
+      take: 1,
+      select: { name: true },
+    });
+    return offices[0] ?? null;
+  }
+
+  /**
+   * Who a handover is attributed to when the record does not name anybody.
+   *
+   * This is the company's Super Admin - the account that owns the tenant and
+   * under which the historic imports were run - and NOT the person running the
+   * report. Attributing a handover to whoever pressed Download would put a
+   * different name on the same equipment every time it was exported, which is
+   * worse than the blank it replaces.
+   *
+   * Earliest-created, so a company with two Super Admins still produces the
+   * same document twice running.
+   */
+  private async defaultHandoverName(actor: AuthUser): Promise<string> {
+    const owner = await this.prisma.client.user.findFirst({
+      where: { ...tenantFilter(actor), roles: { some: { role: { key: 'SUPER_ADMIN' } } } },
+      orderBy: { createdAt: 'asc' },
+      select: { profile: { select: { firstName: true, lastName: true } } },
+    });
+    const profile = owner?.profile;
+    return profile ? `${profile.firstName} ${profile.lastName}`.trim() : '';
   }
 
   private async warrantyExpiry(actor: AuthUser): Promise<ReportTable> {
@@ -308,8 +639,8 @@ export class ReportsService {
         { key: 'assetTag', label: 'Asset tag' },
         { key: 'title', label: 'Work' },
         { key: 'type', label: 'Type' },
-        { key: 'cost', label: 'Service cost', numeric: true },
-        { key: 'downtime', label: 'Downtime (h)', numeric: true },
+        { key: 'cost', label: 'Service cost', numeric: true, decimals: 2 },
+        { key: 'downtime', label: 'Downtime (h)', numeric: true, decimals: 2 },
         { key: 'completed', label: 'Completed' },
       ],
       rows: records.map((r) => ({
