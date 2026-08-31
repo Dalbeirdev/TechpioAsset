@@ -331,6 +331,18 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     // inventory:adjust is an SoD pair (write kit off, adjust the count, and
     // missing equipment disappears), and IT keeps inventory:adjust.
     P.ASSETS_DISPOSE,
+    // v2.30. Finance owns pricing, and the spreadsheet is how a batch of prices
+    // arrives. Without this the only account that could import costs was the
+    // Super Admin, because import and cost-visibility met in no other role -
+    // so the person responsible for the figures had to ask the tenant owner to
+    // upload them.
+    //
+    // It does widen what Finance can change: the importer writes names, types,
+    // condition, status and assignment, none of which Finance can edit one at a
+    // time (they hold no assets:update). Two mitigations already stand - a
+    // recorded price is write-once even here, and every price written is
+    // audited to its row - but the bulk write itself is real and deliberate.
+    P.ASSETS_IMPORT,
     P.FINANCE_BUDGETS_MANAGE,
     P.PROCUREMENT_PR_READ,
     P.PROCUREMENT_PR_APPROVE,

@@ -194,8 +194,7 @@ export default function ImportAssetsPage() {
                 {summary.pricesIgnored === 1 ? ' was' : ' were'} not saved.
               </span>{' '}
               Everything else imported normally. Recording asset prices is limited to Finance and
-              Super Admin, and of those only a Super Admin can upload a sheet — so ask a Super
-              Admin to run this import if the costs need to go in.
+              Super Admin — ask one of them to upload this sheet if the costs need to go in.
             </p>
           ) : null}
 
