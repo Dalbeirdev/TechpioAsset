@@ -79,6 +79,35 @@ export const SOD_CONFLICTS: readonly SodConflict[] = [
     reason:
       'Can change asset records and read the audit trail. Auditing is most trustworthy when done by someone who cannot alter what is audited.',
   },
+  /**
+   * v2.30 - bulk import is a second route to altering asset records, and the
+   * catalogue did not know about it.
+   *
+   * A spreadsheet upload writes names, types, condition, status, assignment and
+   * price across the estate at once. That is materially `assets:update` applied
+   * to many rows, but it is a different permission, so the two pairs below had
+   * to be stated separately: a SodConflict names exactly two permissions and
+   * cannot express "either of these, with that".
+   *
+   * The gap was not hypothetical. Finance holds audit:read and assets:dispose
+   * and NO assets:update, so it tripped neither existing rule while being able
+   * to write assets off and read the trail - and once given assets:import it
+   * could rewrite the records too.
+   */
+  {
+    id: 'import-and-audit',
+    a: P.ASSETS_IMPORT,
+    b: P.AUDIT_READ,
+    reason:
+      'Can rewrite asset records in bulk from a spreadsheet and read the audit trail. Auditing is most trustworthy when done by someone who cannot alter what is audited.',
+  },
+  {
+    id: 'import-and-dispose',
+    a: P.ASSETS_IMPORT,
+    b: P.ASSETS_DISPOSE,
+    reason:
+      'Can write assets off and rewrite asset records in bulk, which together can make disposed equipment look accounted for.',
+  },
   {
     id: 'manage-roles-and-approve',
     a: P.ROLES_MANAGE,
