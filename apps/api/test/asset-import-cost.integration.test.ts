@@ -1,8 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
-import type { AuthUser } from '@techpioasset/contracts';
 import ExcelJS from 'exceljs';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
-import { AssetImportService } from '../src/assets/asset-import.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
@@ -17,9 +15,11 @@ import { api, auth, createTestApp, loginAll, type AccountKey, type Session } fro
  *   1. only a cost-visible role may set a price at all;
  *   2. a price already recorded is write-once, correctable only by a Super Admin.
  *
- * IT Admin is the interesting actor throughout: they hold assets:import and
- * deliberately do NOT hold assets:cost:read, which is exactly the combination
- * that would have let a spreadsheet price the estate.
+ * Two actors carry most of the weight. IT Admin holds assets:import and
+ * deliberately NOT assets:cost:read - the combination that would otherwise let
+ * a spreadsheet price the estate. Finance holds both (v2.30) but cannot correct
+ * a recorded price, which makes them the caller the write-once rule is really
+ * for: they are the role most likely to re-upload a sheet after fixing a figure.
  */
 
 let app: INestApplication;
@@ -85,18 +85,16 @@ function unique(tag: string): string {
 
 describe('cost on the asset import', () => {
   /**
-   * Worth stating outright, because it surprised us: of the four roles in play,
-   * only SUPER_ADMIN holds BOTH assets:import and assets:cost:read.
+   * Who can do what, as of v2.30:
    *
-   *   SUPER_ADMIN   import yes   cost yes
-   *   IT_ADMIN      import yes   cost no
-   *   FINANCE       import no    cost yes
-   *   OFFICE_ADMIN  import no    cost no
+   *   SUPER_ADMIN   import yes   cost yes    sets prices, and may correct one
+   *   FINANCE       import yes   cost yes    sets prices, cannot correct one
+   *   IT_ADMIN      import yes   cost no     imports; prices are dropped
+   *   OFFICE_ADMIN  import no    cost no     no upload at all
    *
-   * So today a Super Admin is the only person who can import prices at all.
-   * That is a policy consequence rather than a defect, and it is asserted here
-   * so that granting Finance the import right later is a deliberate change with
-   * a failing test to prompt it, not something that drifts in unnoticed.
+   * Finance gained the import right deliberately: they own pricing, and before
+   * it the only account that could import costs was the Super Admin, because
+   * import and cost-visibility met in no other role.
    */
   it('records a price when the importer may both import and price', async () => {
     const serial = unique('OK');
@@ -107,10 +105,18 @@ describe('cost on the asset import', () => {
     expect(await costOf(serial)).toBe('68000');
   });
 
-  it('refuses the upload entirely to a cost role that cannot import', async () => {
-    // Finance may price an asset but holds no assets:import, so they never
-    // reach the cost logic at all - the endpoint turns them away first.
-    const res = await upload('finance', unique('FIN'), '68000');
+  it('lets Finance import prices, which is the point of giving them the right', async () => {
+    const serial = unique('FIN');
+    const res = await upload('finance', serial, '68000');
+
+    expect(res.status).toBeLessThan(300);
+    expect(res.body.data.pricesSet).toBe(1);
+    expect(await costOf(serial)).toBe('68000');
+  });
+
+  it('still refuses the upload to a role holding no import right', async () => {
+    // Office Admin holds neither, and remains turned away at the endpoint.
+    const res = await upload('officeAdmin', unique('OFF'), '68000');
     expect(res.status).toBe(403);
   });
 
@@ -130,31 +136,25 @@ describe('cost on the asset import', () => {
   });
 
   /**
-   * The write-once rule, exercised at the service rather than the endpoint.
+   * The write-once rule, now reachable through the endpoint.
    *
-   * It cannot be reached through the API today: the only importer who can price
-   * is a Super Admin, and a Super Admin is precisely who IS allowed to correct.
-   * The branch is still the one that matters the moment Finance is given the
-   * import right - which is a live possibility - so it is tested with an actor
-   * built to that shape instead of being left unproven until then.
+   * Until Finance held the import right this branch could not be exercised over
+   * HTTP at all - the only importer who could price was a Super Admin, and a
+   * Super Admin is precisely who IS allowed to correct. Giving Finance import
+   * is what makes "a pricer who may not correct" a real caller, and it is the
+   * case that matters: Finance is the role most likely to re-upload a sheet
+   * after fixing a figure in it.
    */
-  it('will not let a re-upload overwrite a price, for a pricer who is not a Super Admin', async () => {
+  it('will not let Finance overwrite a price already recorded', async () => {
     const serial = unique('LOCK');
-    await upload('superAdmin', serial, '68000');
+    await upload('finance', serial, '68000');
     expect(await costOf(serial)).toBe('68000');
 
-    const importer = app.get(AssetImportService);
-    const pricerNotAdmin: AuthUser = {
-      ...s.superAdmin.user,
-      permissions: s.superAdmin.user.permissions.filter((p) => p !== 'permissions:manage'),
-    };
-
-    const summary = await importer.importRows(pricerNotAdmin, [
-      { 'Asset Id': serial, 'Asset Name': 'Imported laptop', 'Purchase Cost': '99999' },
-    ]);
-
-    expect(summary.pricesLocked).toBe(1);
-    expect(summary.pricesSet).toBe(0);
+    const second = await upload('finance', serial, '99999');
+    expect(second.status).toBeLessThan(300);
+    expect(second.body.data.pricesLocked).toBe(1);
+    expect(second.body.data.pricesSet).toBe(0);
+    // The correction did not take. Prices are entered once.
     expect(await costOf(serial)).toBe('68000');
   });
 
