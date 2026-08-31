@@ -10,15 +10,12 @@ import { AuditService } from '../audit/audit.service.js';
 import { ReportsService } from './reports.service.js';
 import {
   toCsv,
-  toSpreadsheetMl,
   csvHeaderLine,
   csvRowLine,
-  spreadsheetPrologue,
-  spreadsheetRow,
-  spreadsheetEpilogue,
   REPORT_CONTENT_TYPE,
   REPORT_EXTENSION,
 } from './report-format.js';
+import { buildWorkbook } from './report-workbook.js';
 
 /** Rows fetched, written and released per iteration. */
 const EXPORT_PAGE = 5_000;
@@ -78,6 +75,59 @@ export class ReportsController {
 
     const filename = `${query.type.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.${REPORT_EXTENSION[query.format]}`;
 
+    // v2.28 — XLSX is a branded workbook and therefore buffered.
+    //
+    // ExcelJS's streaming writer has no `worksheet.addImage` at all, so a logo
+    // and a streamed workbook cannot coexist. Rather than lose either, the two
+    // formats took different jobs: XLSX is a presentation document for people,
+    // capped at MAX_WORKBOOK_ROWS; CSV stays the unbounded bulk format and is
+    // still streamed a page at a time below. The cap is what keeps the old
+    // 98.6 MB export incident from returning through this door.
+    if (query.format === 'XLSX') {
+      const table = await this.reports.build(actor, query.type, filters);
+      const header = await this.reports.workbookHeader(actor, filters);
+
+      let file: Buffer;
+      try {
+        file = await buildWorkbook(
+          { ...header, reportTitle: table.title, generatedAt: new Date() },
+          table.columns,
+          table.rows,
+        );
+      } catch (error) {
+        // Over the cap. A 400 naming CSV is more use than a generic failure,
+        // and far more use than an out-of-memory ten seconds later.
+        res.status(400);
+        return {
+          code: 'VALIDATION_FAILED',
+          title: error instanceof Error ? error.message : 'This report is too large for Excel',
+        };
+      }
+
+      await this.audit.record({
+        companyId: actor.companyId,
+        actorId: actor.id,
+        action: AuditAction.REPORT_EXPORTED,
+        entityType: 'Report',
+        entityId: query.type,
+        newValues: {
+          format: query.format,
+          rows: table.rows.length,
+          delivery: 'DOWNLOAD',
+          filters: { officeId: query.officeId ?? null, departmentId: query.departmentId ?? null },
+        },
+      });
+
+      res.set({
+        'Content-Type': REPORT_CONTENT_TYPE.XLSX,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(file.length),
+        'Cache-Control': 'private, no-store',
+      });
+      res.end(file);
+      return undefined;
+    }
+
     // v2.10 S5 — the row-per-record reports are written a page at a time.
     //
     // Buffering a 100,000-row export held four copies of every row at once:
@@ -91,8 +141,9 @@ export class ReportsController {
         'Cache-Control': 'private, no-store',
       });
 
-      const csv = query.format === 'CSV';
-      await write(res, csv ? csvHeaderLine(spec.columns) : spreadsheetPrologue(spec.title, spec.columns));
+      // CSV only: XLSX returned above. The format branch that used to live here
+      // is gone rather than left unreachable.
+      await write(res, csvHeaderLine(spec.columns));
 
       let rows = 0;
       for (let skip = 0; ; skip += EXPORT_PAGE) {
@@ -100,14 +151,10 @@ export class ReportsController {
         // One write per page, not per row. 100,000 individual writes queue in
         // Node's internal buffer far faster than a socket drains them, which is
         // how the first version of this used MORE memory than buffering did.
-        const chunk = csv
-          ? page.map((row) => `\r\n${csvRowLine(spec.columns, row)}`).join('')
-          : page.map((row) => spreadsheetRow(spec.columns, row)).join('');
-        await write(res, chunk);
+        await write(res, page.map((row) => `\r\n${csvRowLine(spec.columns, row)}`).join(''));
         rows += page.length;
         if (page.length < EXPORT_PAGE) break;
       }
-      if (!csv) await write(res, spreadsheetEpilogue());
 
       // Audited AFTER the rows are written, with the count that actually left.
       // Recording an intended row count before streaming would log an export
@@ -132,7 +179,7 @@ export class ReportsController {
     // The aggregate reports return one row per vendor or category; buffering a
     // dozen rows needs no machinery.
     const table = await this.reports.build(actor, query.type, filters);
-    const body = query.format === 'CSV' ? toCsv(table) : toSpreadsheetMl(table);
+    const body = toCsv(table);
 
     // v2.7 R2 (AUD-009): data leaving the system is an auditable event. Who
     // took what, in which shape, when - financial reports especially.

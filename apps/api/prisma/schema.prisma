@@ -868,6 +868,11 @@ model Office {
   country      String?
   timezone     String?
   isActive     Boolean @default(true)
+  /// v2.28. The site a record falls back to when it names none of its own -
+  /// used on handover paperwork, where a blank location reads as "we do not
+  /// know where this equipment is". Set by a Super Admin, never inferred.
+  /// At most one per company; enforced by a partial unique index.
+  isDefault    Boolean @default(false)
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

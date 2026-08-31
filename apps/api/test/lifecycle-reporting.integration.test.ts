@@ -146,13 +146,70 @@ describe('reports (spec section 18)', () => {
     expect(response.text.split('\r\n')[0]).toContain('Asset tag');
   });
 
-  it('streams an Excel download', async () => {
+  it('sends a real .xlsx workbook', async () => {
     const response = await api(app)
       .get('/api/v1/reports?type=DEPRECIATION&format=XLSX')
+      .set(auth(s.finance))
+      .buffer()
+      .parse((res, cb) => {
+        // Supertest would otherwise decode the binary body as text and corrupt
+        // it before the assertion below could look at it.
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+
+    expect(response.status).toBe(200);
+    // v2.28: was SpreadsheetML served as ms-excel, which Excel warned about on
+    // every open and which cannot carry the letterhead logo.
+    expect(response.headers['content-type']).toContain('spreadsheetml.sheet');
+    expect(response.headers['content-disposition']).toContain('.xlsx');
+    // An .xlsx is a zip; "PK" is its first two bytes. Checking the magic proves
+    // a real workbook was sent, where checking the header only proves we
+    // labelled one.
+    expect((response.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+  });
+
+  /**
+   * v2.28 - the report exists because five rows for one person is not an answer
+   * to "what is Deepak holding". These assert the property that makes it
+   * different from the inventory sheet, not a fixed row count.
+   */
+  it('gives each holder exactly one row', async () => {
+    const response = await api(app)
+      .get('/api/v1/reports?type=EMPLOYEE_ASSETS')
       .set(auth(s.finance));
     expect(response.status).toBe(200);
-    expect(response.headers['content-type']).toContain('ms-excel');
-    expect(response.text).toContain('mso-application');
+
+    const rows = response.body.data.rows as { employee: string }[];
+    expect(rows.length).toBeGreaterThan(0);
+    const names = rows.map((r) => r.employee);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('folds a holder\'s extra items into their row rather than adding rows', async () => {
+    const response = await api(app)
+      .get('/api/v1/reports?type=EMPLOYEE_ASSETS')
+      .set(auth(s.finance));
+
+    const rows = response.body.data.rows as { otherCount: number; otherItems: string }[];
+    for (const row of rows) {
+      // The count and the listing are two renderings of one fact; if they can
+      // disagree, one of them is lying on a handover document.
+      const listed = row.otherItems ? row.otherItems.split('\n').length : 0;
+      expect(listed).toBe(row.otherCount);
+    }
+  });
+
+  it('names a location for every holder, falling back to the default office', async () => {
+    const response = await api(app)
+      .get('/api/v1/reports?type=EMPLOYEE_ASSETS')
+      .set(auth(s.finance));
+
+    const rows = response.body.data.rows as { location: string }[];
+    // A blank location on handover paperwork reads as "we have lost track of
+    // this equipment", which is why the company default exists at all.
+    expect(rows.every((r) => r.location !== '')).toBe(true);
   });
 
   it('produces a depreciation report with current values', async () => {

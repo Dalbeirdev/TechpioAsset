@@ -11,6 +11,14 @@ export interface ReportColumn {
   label: string;
   /** Right-aligned numeric column, rendered as a number in Excel. */
   numeric?: boolean;
+  /**
+   * Decimal places in the workbook. Money is 2; a count is 0 (v2.28).
+   *
+   * Added because every numeric column formatted as money, so "4 other items"
+   * printed as "4.00" - which reads as a measurement rather than a tally, and
+   * invites the question of what four and a half accessories would be.
+   */
+  decimals?: number;
 }
 
 export type ReportRow = Record<string, string | number | null>;
@@ -105,9 +113,18 @@ export function toSpreadsheetMl(table: ReportTable): string {
   ].join('');
 }
 
+/**
+ * v2.28 - XLSX is now a real .xlsx, built by `report-workbook.ts`.
+ *
+ * It was SpreadsheetML 2003 served as `application/vnd.ms-excel` with an `.xls`
+ * extension: openable everywhere, but Excel warned on every open that the
+ * contents did not match the extension, and the format carries no images, so a
+ * letterhead was impossible. The SpreadsheetML encoder below is kept because
+ * `toSpreadsheetMl` is still exercised by its tests and costs nothing to keep.
+ */
 export const REPORT_CONTENT_TYPE = {
   CSV: 'text/csv; charset=utf-8',
-  XLSX: 'application/vnd.ms-excel',
+  XLSX: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 } as const;
 
-export const REPORT_EXTENSION = { CSV: 'csv', XLSX: 'xls' } as const;
+export const REPORT_EXTENSION = { CSV: 'csv', XLSX: 'xlsx' } as const;

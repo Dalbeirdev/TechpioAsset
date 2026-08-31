@@ -4,6 +4,16 @@ import { z } from 'zod';
 
 export const REPORT_TYPES = [
   'ASSET_INVENTORY',
+  /**
+   * One row per person, every item they hold on that row (v2.28).
+   *
+   * The inventory report answers "what do we own"; this answers "what is
+   * Deepak holding", which is the question asked at an audit, an exit
+   * interview and a handover. Getting it out of the inventory sheet meant
+   * sorting by holder and reading eight consecutive rows as one - so the
+   * consolidation now happens in the report rather than in the reader's head.
+   */
+  'EMPLOYEE_ASSETS',
   'SPENDING_BY_VENDOR',
   'SPENDING_BY_CATEGORY',
   'SPENDING_BY_DEPARTMENT',

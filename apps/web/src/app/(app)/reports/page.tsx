@@ -17,6 +17,7 @@ interface ReportTable {
 
 const REPORTS = [
   { type: 'ASSET_INVENTORY', label: 'Asset inventory', financial: false },
+  { type: 'EMPLOYEE_ASSETS', label: 'Employee assets', financial: false },
   { type: 'WARRANTY_EXPIRY', label: 'Warranty expiry', financial: false },
   { type: 'SPENDING_BY_VENDOR', label: 'Spending by vendor', financial: true },
   { type: 'SPENDING_BY_CATEGORY', label: 'Spending by category', financial: true },
