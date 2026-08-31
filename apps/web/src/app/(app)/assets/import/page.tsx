@@ -15,6 +15,9 @@ interface ImportSummary {
   assetsUpdated: number;
   assigned: number;
   skipped: number;
+  pricesSet: number;
+  pricesIgnored: number;
+  pricesLocked: number;
   errors: { row: number; message: string }[];
 }
 
@@ -29,6 +32,10 @@ const EXPECTED_COLUMNS = [
   'Asset Status',
   'Assigned To Employee Number',
   'Employee Name, if Assigned',
+  // v2.29. Optional, and only saved for a role permitted to price assets;
+  // Currency defaults to the company's base currency when the column is absent.
+  'Purchase Cost',
+  'Currency',
 ];
 
 export default function ImportAssetsPage() {
@@ -166,7 +173,41 @@ export default function ImportAssetsPage() {
               <dt className="text-xs text-[var(--color-content-subtle)]">Skipped</dt>
               <dd className="font-semibold tabular-nums">{summary.skipped}</dd>
             </div>
+            {summary.pricesSet > 0 ? (
+              <div>
+                <dt className="text-xs text-[var(--color-content-subtle)]">Prices recorded</dt>
+                <dd className="font-semibold tabular-nums">{summary.pricesSet}</dd>
+              </div>
+            ) : null}
           </dl>
+
+          {/*
+            A price that did not land is stated outright rather than left to be
+            noticed as a missing number later. Ignored and locked are different
+            problems with different fixes, so they are never merged into one
+            "some prices were not saved".
+          */}
+          {summary.pricesIgnored > 0 ? (
+            <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-sm">
+              <span className="font-semibold">
+                {summary.pricesIgnored} price{summary.pricesIgnored === 1 ? '' : 's'} in the sheet
+                {summary.pricesIgnored === 1 ? ' was' : ' were'} not saved.
+              </span>{' '}
+              Everything else imported normally. Recording asset prices is limited to Finance and
+              Super Admin, and of those only a Super Admin can upload a sheet — so ask a Super
+              Admin to run this import if the costs need to go in.
+            </p>
+          ) : null}
+
+          {summary.pricesLocked > 0 ? (
+            <p className="mt-2 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-sm">
+              <span className="font-semibold">
+                {summary.pricesLocked} asset{summary.pricesLocked === 1 ? '' : 's'} already had a
+                price, which was left unchanged.
+              </span>{' '}
+              Prices are entered once. Ask a Super Admin if a correction is needed.
+            </p>
+          ) : null}
 
           {summary.errors.length > 0 ? (
             <div className="mt-4">
