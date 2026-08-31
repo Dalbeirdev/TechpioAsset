@@ -3,9 +3,11 @@ import { Prisma, AssetStatus, AssetCondition, TrackingType, AuditAction } from '
 import type { AuthUser } from '@techpioasset/contracts';
 import ExcelJS from 'exceljs';
 import { ulid } from 'ulid';
+import { PERMISSIONS } from '@techpioasset/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AppError } from '../common/errors/app-error.js';
+import { canSeeCost } from '../common/scope.js';
 
 /**
  * Bulk asset import from a spreadsheet ("Upload Excel sheet").
@@ -30,6 +32,22 @@ export interface ImportSummary {
   assetsUpdated: number;
   assigned: number;
   skipped: number;
+
+  /**
+   * v2.29 - what happened to the cost column, reported separately so a price
+   * that did not land is never silent.
+   *
+   * `pricesIgnored` is the important one: an importer who cannot price assets
+   * still gets a working import, and is told plainly that the money was left
+   * out rather than being refused the upload or - far worse - allowed to set
+   * prices they are not permitted to set.
+   */
+  pricesSet: number;
+  /** Present in the sheet but dropped: the importer may not price assets. */
+  pricesIgnored: number;
+  /** Already recorded and left alone; prices are write-once. */
+  pricesLocked: number;
+
   errors: { row: number; message: string }[];
 }
 
@@ -152,6 +170,53 @@ export class AssetImportService {
     return null;
   }
 
+  /**
+   * A price from a spreadsheet cell (v2.29).
+   *
+   * Exported for its own tests, because the failure mode here is silent and
+   * expensive: a cell that parses to the wrong NUMBER is worse than one that
+   * fails to parse, and both look identical in an import summary.
+   *
+   * Handles what people actually type in a cost column - a currency symbol, a
+   * thousands separator, whitespace, and Indian lakh grouping (1,20,000), which
+   * plain `Number()` reads as NaN. Returns null for anything it cannot read
+   * with confidence rather than a guess.
+   *
+   * A zero is deliberately rejected: an asset does not cost nothing, and a
+   * literal 0 in a cost column is nearly always an empty row, a formula that
+   * produced no value, or a placeholder. Recording it as a real price would
+   * make a genuine gap look like a settled fact.
+   */
+  parseMoney(value: string | Date | number | null): Prisma.Decimal | null {
+    if (value === null || value === undefined || value instanceof Date) return null;
+
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value > 0 ? new Prisma.Decimal(value.toFixed(2)) : null;
+    }
+
+    // Strip currency symbols, letters (INR/Rs/USD) and separators, keeping only
+    // the number itself. Commas go wherever they sit, so both 120,000 and the
+    // lakh grouping 1,20,000 reduce to the same digits.
+    const cleaned = value
+      .replace(/[₹$£€]/g, '')
+      // The trailing dot is part of the pattern: "Rs." is how this is usually
+      // written locally, and stripping only the letters left ".68000", which
+      // then failed to parse at all.
+      .replace(/\b(inr|rs|usd|eur|gbp)\b\.?/gi, '')
+      .replace(/[,\s]/g, '')
+      .trim();
+
+    if (!cleaned || !/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
+
+    const parsed = Number(cleaned);
+    // Negative is refused rather than made positive: a minus sign in a cost
+    // column means the sheet is not what we think it is, and quietly correcting
+    // it would hide that.
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+    return new Prisma.Decimal(parsed.toFixed(2));
+  }
+
   private toDate(value: string | Date | null): Date | null {
     if (!value) return null;
     if (value instanceof Date) return value;
@@ -169,8 +234,26 @@ export class AssetImportService {
       assetsUpdated: 0,
       assigned: 0,
       skipped: 0,
+      pricesSet: 0,
+      pricesIgnored: 0,
+      pricesLocked: 0,
       errors: [],
     };
+
+    // v2.29 - the same two rules the Assets service enforces, applied here so a
+    // spreadsheet cannot route around them:
+    //   * only a cost-visible role may set a price at all;
+    //   * a price already recorded is write-once, correctable only by a Super
+    //     Admin. Without this, re-uploading a corrected sheet - which the
+    //     importer explicitly supports, since it updates in place - would
+    //     silently rewrite prices that the UI refuses to let anyone change.
+    const mayPrice = canSeeCost(actor);
+    const mayCorrectPrice = actor.permissions.includes(PERMISSIONS.PERMISSIONS_MANAGE);
+    const company = await this.prisma.client.company.findUnique({
+      where: { id: companyId },
+      select: { baseCurrency: true },
+    });
+    const baseCurrency = company?.baseCurrency ?? null;
 
     const employeeRole = await this.prisma.client.role.findFirst({
       where: { companyId, key: 'EMPLOYEE' },
@@ -290,6 +373,13 @@ export class AssetImportService {
         const condition = CONDITION[conditionRaw] ?? AssetCondition.GOOD;
         let status = STATUS[statusRaw] ?? AssetStatus.AVAILABLE;
 
+        // v2.29. Read for everyone so the sheet can be reported on honestly,
+        // applied only where permitted - see the decision below.
+        const costCell = this.cell(row, 'Purchase Cost', 'Cost', 'Price', 'Amount');
+        const cost = this.parseMoney(costCell);
+        const currency =
+          (this.cell(row, 'Currency') as string | null)?.toUpperCase().slice(0, 3) || baseCurrency;
+
         const purchaseDate = this.toDate(this.cell(row, 'Purchased On', 'Purchase Date'));
         const warrantyEndDate = this.toDate(
           this.cell(row, 'Warranty expires on', 'Warranty End Date', 'Warranty Expiry'),
@@ -313,9 +403,28 @@ export class AssetImportService {
         const existingAsset = serialStr
           ? await this.prisma.client.asset.findFirst({
               where: { companyId, serialNumber: serialStr },
-              select: { id: true, assetTag: true },
+              select: { id: true, assetTag: true, purchaseCost: true },
             })
           : null;
+
+        /**
+         * Whether this row's price is actually written, and why not when it is
+         * not. Counted rather than thrown: one unpriceable row must not fail an
+         * import of two hundred good ones.
+         */
+        let priceToWrite: Prisma.Decimal | null = null;
+        if (cost !== null) {
+          const alreadyPriced =
+            existingAsset?.purchaseCost !== null && existingAsset?.purchaseCost !== undefined;
+          if (!mayPrice) {
+            summary.pricesIgnored += 1;
+          } else if (alreadyPriced && !mayCorrectPrice) {
+            summary.pricesLocked += 1;
+          } else {
+            priceToWrite = cost;
+            summary.pricesSet += 1;
+          }
+        }
 
         const data = {
           name: nameStr,
@@ -330,14 +439,23 @@ export class AssetImportService {
           assignedUserId,
           assignmentDate: assignedUserId ? (assignmentDate ?? new Date()) : null,
           updatedById: actor.id,
+          // Spread, not a plain field: writing `purchaseCost: null` when the
+          // sheet has no cost column would ERASE a price already recorded, and
+          // an import that quietly clears prices is the exact failure the
+          // write-once rule exists to prevent.
+          ...(priceToWrite !== null
+            ? { purchaseCost: priceToWrite, ...(currency ? { currency } : {}) }
+            : {}),
         };
 
+        let assetId: string;
         if (existingAsset) {
           await this.prisma.client.asset.update({ where: { id: existingAsset.id }, data });
           summary.assetsUpdated += 1;
+          assetId = existingAsset.id;
         } else {
           tagSeq += 1;
-          await this.prisma.client.asset.create({
+          const created = await this.prisma.client.asset.create({
             data: {
               ...data,
               companyId,
@@ -345,9 +463,28 @@ export class AssetImportService {
               qrToken: ulid(),
               createdById: actor.id,
             },
+            select: { id: true },
           });
           summary.assetsCreated += 1;
+          assetId = created.id;
         }
+
+        // One audit row per price, matching what `setPrice` writes when the
+        // same figure is typed in the UI. The bulk summary at the end records
+        // that an import happened; it cannot answer "where did this asset's
+        // price come from", which is the question asked of a money field.
+        if (priceToWrite !== null) {
+          await this.audit.record({
+            companyId,
+            actorId: actor.id,
+            action: AuditAction.ASSET_COST_CHANGED,
+            entityType: 'Asset',
+            entityId: assetId,
+            previousValues: { purchaseCost: String(existingAsset?.purchaseCost ?? '') },
+            newValues: { purchaseCost: priceToWrite.toString(), currency, source: 'import' },
+          });
+        }
+
         if (assignedUserId) summary.assigned += 1;
       } catch (err) {
         const message =
@@ -371,12 +508,16 @@ export class AssetImportService {
         assetsCreated: summary.assetsCreated,
         assetsUpdated: summary.assetsUpdated,
         employeesCreated: summary.employeesCreated,
+        pricesSet: summary.pricesSet,
+        pricesIgnored: summary.pricesIgnored,
+        pricesLocked: summary.pricesLocked,
       },
     });
 
     this.logger.log(
       `Import by ${actor.id}: +${summary.assetsCreated} assets, ~${summary.assetsUpdated}, ` +
-        `+${summary.employeesCreated} employees, ${summary.errors.length} errors`,
+        `+${summary.employeesCreated} employees, ${summary.errors.length} errors, ` +
+        `prices ${summary.pricesSet} set / ${summary.pricesIgnored} ignored / ${summary.pricesLocked} locked`,
     );
     return summary;
   }
