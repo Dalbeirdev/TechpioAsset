@@ -48,7 +48,16 @@ export function applyCors(app: INestApplication, config: AppConfig): void {
       'X-Client-Type',
       'X-Refresh-Token',
     ],
-    exposedHeaders: ['X-Request-Id', 'X-Correlation-Id', 'X-Refresh-Token'],
+    // Content-Disposition is exposed so a download can be saved under the name
+    // the server chose. Without it the browser cannot read the header at all
+    // cross-origin, and the client has to invent a filename - which is how a
+    // real .xlsx came to be saved as ".xls" and refused by Excel (v2.28).
+    exposedHeaders: [
+      'X-Request-Id',
+      'X-Correlation-Id',
+      'X-Refresh-Token',
+      'Content-Disposition',
+    ],
     maxAge: 600,
   });
 }

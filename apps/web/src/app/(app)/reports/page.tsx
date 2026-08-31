@@ -28,6 +28,13 @@ const REPORTS = [
 
 const PAGE_SIZE = 25;
 
+/** The filename from Content-Disposition, or null if the header is absent. */
+function filenameFrom(response: Response): string | null {
+  const header = response.headers.get('content-disposition');
+  const match = header ? /filename="?([^";]+)"?/i.exec(header) : null;
+  return match?.[1] ?? null;
+}
+
 export default function ReportsPage() {
   const { can } = useAuth();
   const [type, setType] = useState<(typeof REPORTS)[number]['type']>('ASSET_INVENTORY');
@@ -56,7 +63,11 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `${type.toLowerCase()}.${format === 'CSV' ? 'csv' : 'xls'}`;
+      // The name the server already chose, rather than one rebuilt here. When
+      // the workbook became a real .xlsx (v2.28) this line still said ".xls",
+      // so the bytes were correct and the file Excel refused to open - the two
+      // had drifted precisely because the extension was decided twice.
+      anchor.download = filenameFrom(response) ?? `${type.toLowerCase()}.${format.toLowerCase()}`;
       anchor.click();
       URL.revokeObjectURL(url);
     })();
