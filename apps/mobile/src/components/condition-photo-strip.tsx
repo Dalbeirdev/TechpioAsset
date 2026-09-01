@@ -1,0 +1,109 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Image, ScrollView, Text, View } from 'react-native';
+import { useSession } from '../providers/session';
+import { useTheme } from '../theme';
+import { Card, SectionTitle } from './ui';
+
+/**
+ * Condition photos for one asset, on a phone (v2.33).
+ *
+ * The web lays handover and return side by side in two columns. A phone has no
+ * room for that, so each custody event becomes a block: who held it and the
+ * condition at each end as a line of text, then the photos in a single
+ * horizontal strip that reads left to right in the order they were taken -
+ * handover first, return after.
+ *
+ * The labels do the work the columns did on the web. Without them a strip of
+ * photographs of the same laptop says nothing about which were taken when,
+ * which is the entire question.
+ */
+
+interface Photo {
+  id: string;
+  caption: string | null;
+  takenAt: string;
+  by: string | null;
+}
+
+interface CustodyGroup {
+  assignmentId: string;
+  holder: string | null;
+  assignedAt: string;
+  conditionOut: string;
+  returnedAt: string | null;
+  conditionIn: string | null;
+  open: boolean;
+  handover: Photo[];
+  returned: Photo[];
+}
+
+/** `refreshKey` changes to force a reload after the camera sheet saves one. */
+export function ConditionPhotoStrip({
+  assetId,
+  refreshKey = 0,
+}: {
+  assetId: string;
+  refreshKey?: number;
+}) {
+  const { api } = useSession();
+  const { c, spacing, radius } = useTheme();
+  const [groups, setGroups] = useState<CustodyGroup[] | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setGroups(await api.request<CustodyGroup[]>(`/assets/${assetId}/photos`));
+    } catch {
+      // A failed photo list must not blank the asset screen around it - the
+      // section simply stays empty.
+      setGroups([]);
+    }
+  }, [api, assetId]);
+
+  useEffect(() => {
+    void load();
+  }, [load, refreshKey]);
+
+  const withPhotos = (groups ?? []).filter((g) => g.handover.length + g.returned.length > 0);
+  if (withPhotos.length === 0) return null;
+
+  const thumb = (photo: Photo, label: string) => (
+    <View key={photo.id} style={{ marginRight: spacing.md }}>
+      <Image
+        source={api.imageSource(`/assets/${assetId}/photos/${photo.id}`)}
+        style={{ width: 96, height: 96, borderRadius: radius.md, backgroundColor: c.border }}
+        resizeMode="cover"
+        accessibilityLabel={photo.caption ?? `${label} photo`}
+      />
+      <Text style={{ color: c.muted, fontSize: 11, marginTop: 4 }}>{label}</Text>
+      {photo.by ? (
+        <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>
+          {photo.by}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  return (
+    <>
+      <SectionTitle>Condition photos</SectionTitle>
+      {withPhotos.map((g) => (
+        <Card key={g.assignmentId} style={{ marginBottom: spacing.md }}>
+          <Text style={{ color: c.text, fontSize: 14, fontWeight: '700' }}>
+            {g.holder ?? 'Unknown holder'}
+          </Text>
+          <Text style={{ color: c.muted, fontSize: 12, marginTop: 2, marginBottom: spacing.md }}>
+            {new Date(g.assignedAt).toLocaleDateString()}
+            {g.returnedAt ? ` → ${new Date(g.returnedAt).toLocaleDateString()}` : ' → still out'}
+            {'  ·  '}
+            {g.conditionOut}
+            {g.conditionIn ? ` → ${g.conditionIn}` : ''}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {g.handover.map((p) => thumb(p, 'Handover'))}
+            {g.returned.map((p) => thumb(p, 'Return'))}
+          </ScrollView>
+        </Card>
+      ))}
+    </>
+  );
+}
