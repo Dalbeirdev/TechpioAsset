@@ -54,6 +54,24 @@ export class ApiClient {
   }
 
   /**
+   * A source for React Native's <Image> that carries the bearer token (v2.33).
+   *
+   * Condition photos sit behind the same auth as everything else, so a bare uri
+   * renders a broken image. RN's Image takes headers directly, which is the one
+   * place mobile has it easier than the web - there the bytes have to be
+   * fetched and turned into an object URL.
+   *
+   * The token is read at call time rather than captured, so a source built
+   * before a refresh still carries the current one.
+   */
+  imageSource(path: string): { uri: string; headers: Record<string, string> } {
+    return {
+      uri: `${this.base}${path}`,
+      headers: this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {},
+    };
+  }
+
+  /**
    * Refreshes the session using the stored refresh token, de-duplicating
    * concurrent attempts so a screen firing several requests at once does not
    * present the rotated token more than once (which the server would treat as

@@ -13,6 +13,8 @@ import { PERMISSIONS } from '@techpioasset/domain';
 import { assetPills } from '../../src/asset-pills';
 import { useSession } from '../../src/providers/session';
 import { HandoverSheet, type HandoverMode } from '../../src/components/handover-sheet';
+import { ConditionPhotoSheet, type PhotoStage } from '../../src/components/condition-photo-sheet';
+import { ConditionPhotoStrip } from '../../src/components/condition-photo-strip';
 import { useTheme } from '../../src/theme';
 import { Button, Card, IconBadge, Screen, SectionTitle, StatusPill } from '../../src/components/ui';
 
@@ -81,6 +83,16 @@ export default function AssetDetailScreen() {
   const mayAssign = can(PERMISSIONS.ASSETS_ASSIGN);
   const mayReturn = can(PERMISSIONS.ASSETS_RETURN);
   const [handover, setHandover] = useState<HandoverMode | null>(null);
+  /**
+   * Set the moment a handover or return completes, which opens the camera.
+   *
+   * This is the reason to do this on a phone at all: the equipment is on the
+   * desk, in front of both people, right now. Asking someone to photograph it
+   * later means photographing it from memory, or not at all.
+   */
+  const [photoStage, setPhotoStage] = useState<PhotoStage | null>(null);
+  /** Bumped after a photo is saved, so the strip below reloads. */
+  const [photoVersion, setPhotoVersion] = useState(0);
 
   async function confirmReceipt() {
     if (!openAssignment) return;
@@ -231,11 +243,30 @@ export default function AssetDetailScreen() {
             assetName={asset.name}
             holderName={holderName}
             onClose={() => setHandover(null)}
-            onDone={load}
+            onDone={() => {
+              void load();
+              // Reassign closes one custody event and opens another; the photo
+              // that matters at that moment is the new holder's handover.
+              setPhotoStage(handover === 'return' ? 'RETURN' : 'HANDOVER');
+            }}
+          />
+
+          <ConditionPhotoSheet
+            visible={photoStage !== null}
+            assetId={asset.id}
+            assetName={asset.name}
+            stage={photoStage ?? 'HANDOVER'}
+            onClose={() => setPhotoStage(null)}
+            onUploaded={() => {
+              void load();
+              setPhotoVersion((n) => n + 1);
+            }}
           />
         </>
       ) : (
         <>
+          <ConditionPhotoStrip assetId={asset.id} refreshKey={photoVersion} />
+
           <SectionTitle>Timeline</SectionTitle>
           {historyEvents.length === 0 ? (
             <Card>
