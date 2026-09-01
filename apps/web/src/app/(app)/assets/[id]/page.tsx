@@ -31,6 +31,7 @@ import { StatusBadge } from '@/components/status-badge';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { CustodyPanel } from '@/components/assets/custody-panel';
 import { EquipmentKit } from '@/components/assets/equipment-kit';
+import { ConditionPhotos } from '@/components/assets/condition-photos';
 import { DisposalPanel, type DisposalDto } from '@/components/assets/disposal-panel';
 import { TransferPanel, type OpenTransferDto } from '@/components/assets/transfer-panel';
 import {
@@ -456,6 +457,11 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
           holderId={data.assignedUser?.id ?? null}
         />
       ) : null}
+
+      {/* v2.32 - condition evidence, before and after. Shown whether or not the
+          asset is currently out: the comparison that matters most is usually a
+          past handover, after the person has already given the kit back. */}
+      {tab === 'overview' ? <ConditionPhotos assetId={id} holderName={holderName} /> : null}
 
       {/* v2.21 - what else this person was given. Only shown when the asset has
           a holder: with nobody holding it there is no kit to speak of. */}

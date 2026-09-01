@@ -1,0 +1,367 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Camera, ImageOff, Trash2 } from 'lucide-react';
+import { apiFetch, API_BASE, getAccessToken } from '@/lib/api-client';
+import { useAuth } from '@/providers/auth-provider';
+import { PERMISSIONS } from '@techpioasset/domain';
+import { Button, Card, EmptyState, Skeleton } from '@/components/ui';
+
+/**
+ * Condition photos, before and after (v2.32).
+ *
+ * Laid out as one row per custody event with handover on the left and return on
+ * the right, because the only question anyone brings to this screen is whether
+ * something arrived back in the state it went out in. A single gallery sorted by
+ * date holds the same pictures and answers nothing: you cannot tell which visit
+ * a photo belongs to, and by the time it matters the person who took it has
+ * forgotten.
+ *
+ * The words recorded at each end sit in the same row as the pictures. "GOOD ->
+ * FAIR" with two photographs beside it is the whole case, readable at a glance.
+ */
+
+interface Photo {
+  id: string;
+  originalName: string;
+  caption: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  takenAt: string;
+  by: string | null;
+}
+
+interface CustodyGroup {
+  assignmentId: string;
+  holder: string | null;
+  assignedAt: string;
+  conditionOut: string;
+  returnedAt: string | null;
+  conditionIn: string | null;
+  open: boolean;
+  handover: Photo[];
+  returned: Photo[];
+}
+
+/**
+ * An <img> for a photo behind the API's auth.
+ *
+ * A bare src cannot carry the Authorization header, so the bytes are fetched
+ * and handed to the tag as an object URL - and revoked on unmount, or a page
+ * showing a year of handovers leaks every image it has ever rendered.
+ */
+function AuthedImage({ assetId, photo }: { assetId: string; photo: Photo }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const revoke = useRef<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/assets/${assetId}/photos/${photo.id}`, {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        const blob = await res.blob();
+        if (!alive) return;
+        const objectUrl = URL.createObjectURL(blob);
+        revoke.current = objectUrl;
+        setUrl(objectUrl);
+      } catch {
+        if (alive) setFailed(true);
+      }
+    })();
+    return () => {
+      alive = false;
+      if (revoke.current) URL.revokeObjectURL(revoke.current);
+    };
+  }, [assetId, photo.id]);
+
+  if (failed) {
+    return (
+      <div className="grid size-24 place-items-center rounded-[var(--radius-control)] border border-[var(--color-border)] text-[var(--color-content-subtle)]">
+        <ImageOff aria-hidden="true" className="size-5" />
+      </div>
+    );
+  }
+
+  if (!url) return <Skeleton className="size-24 rounded-[var(--radius-control)]" />;
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="block">
+      {/* eslint-disable-next-line @next/next/no-img-element --
+          next/image cannot serve these. The source is an in-memory blob: URL
+          created from an authenticated fetch, and the optimizer would have to
+          re-request the file server-side with no user token, for a private
+          photograph that must not be cached anywhere shared. */}
+      <img
+        src={url}
+        // The caption is the useful description; the filename ("IMG_4821.HEIC")
+        // tells a screen-reader user nothing about the condition it shows.
+        alt={photo.caption ?? `Condition photo taken ${new Date(photo.takenAt).toLocaleString()}`}
+        className="size-24 rounded-[var(--radius-control)] border border-[var(--color-border)] object-cover transition-opacity hover:opacity-90"
+      />
+    </a>
+  );
+}
+
+function PhotoColumn({
+  title,
+  photos,
+  assetId,
+  canRemove,
+  onRemove,
+  removingId,
+}: {
+  title: string;
+  photos: Photo[];
+  assetId: string;
+  canRemove: boolean;
+  onRemove: (id: string) => void;
+  removingId: string | null;
+}) {
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs font-medium text-[var(--color-content-muted)]">{title}</p>
+      {photos.length === 0 ? (
+        <p className="text-xs text-[var(--color-content-subtle)]">No photos</p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {photos.map((p) => (
+            <li key={p.id} className="grid gap-1">
+              <AuthedImage assetId={assetId} photo={p} />
+              <p className="max-w-24 truncate text-[0.7rem] text-[var(--color-content-subtle)]">
+                {p.caption ?? new Date(p.takenAt).toLocaleDateString()}
+              </p>
+              {p.by ? (
+                <p className="max-w-24 truncate text-[0.7rem] text-[var(--color-content-subtle)]">
+                  {p.by}
+                </p>
+              ) : null}
+              {canRemove ? (
+                <button
+                  type="button"
+                  onClick={() => onRemove(p.id)}
+                  disabled={removingId === p.id}
+                  className="inline-flex items-center gap-1 text-[0.7rem] text-[var(--tone-danger-fg)] hover:underline disabled:opacity-50"
+                >
+                  <Trash2 aria-hidden="true" className="size-3" />
+                  Remove
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function ConditionPhotos({
+  assetId,
+  holderName,
+}: {
+  assetId: string;
+  /** Who currently holds it, if anyone. Only used to explain an empty state. */
+  holderName?: string | null;
+}) {
+  const { can } = useAuth();
+  const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [stage, setStage] = useState<'HANDOVER' | 'RETURN'>('HANDOVER');
+  const [error, setError] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  // Either custody right is enough - the person issuing kit and the person
+  // taking it back are often not the same person.
+  const canCapture = can(PERMISSIONS.ASSETS_ASSIGN) || can(PERMISSIONS.ASSETS_RETURN);
+
+  const { data, isPending, isError } = useQuery<CustodyGroup[]>({
+    queryKey: ['asset-photos', assetId],
+    queryFn: () => apiFetch(`/assets/${assetId}/photos`),
+  });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['asset-photos', assetId] });
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const body = new FormData();
+      body.append('file', file);
+      body.append('stage', stage);
+      const res = await fetch(`${API_BASE}/assets/${assetId}/photos`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+        body,
+      });
+      if (!res.ok) {
+        const problem = await res.json().catch(() => null);
+        throw new Error(problem?.detail ?? problem?.title ?? 'Could not upload that photo');
+      }
+    },
+    onSuccess: () => {
+      setError(null);
+      void refresh();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (photoId: string) => {
+      setRemovingId(photoId);
+      const res = await fetch(`${API_BASE}/assets/${assetId}/photos/${photoId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+      });
+      if (!res.ok) {
+        const problem = await res.json().catch(() => null);
+        throw new Error(problem?.detail ?? problem?.title ?? 'Could not remove that photo');
+      }
+    },
+    onSuccess: () => {
+      setError(null);
+      void refresh();
+    },
+    onError: (e: Error) => setError(e.message),
+    onSettled: () => setRemovingId(null),
+  });
+
+  const groups = data ?? [];
+  const current = groups[0];
+  // The stage that makes sense right now: an asset out with someone is being
+  // photographed on the way out; one that has just come back, on the way in.
+  useEffect(() => {
+    if (current) setStage(current.open ? 'HANDOVER' : 'RETURN');
+  }, [current?.assignmentId, current?.open]);
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">Condition photos</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-content-muted)]">
+            What it looked like going out, and coming back.
+          </p>
+        </div>
+
+        {canCapture && current ? (
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              // capture="environment" opens the rear camera straight away on a
+              // phone, which is where these photos are actually taken.
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              capture="environment"
+              multiple
+              className="sr-only"
+              onChange={(e) => {
+                const files = [...(e.target.files ?? [])];
+                e.target.value = '';
+                for (const file of files) upload.mutate(file);
+              }}
+            />
+            <Button
+              variant="secondary"
+              onClick={() => fileRef.current?.click()}
+              loading={upload.isPending}
+            >
+              <Camera aria-hidden="true" className="size-4" />
+              {current.open ? 'Add handover photo' : 'Add return photo'}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      {error ? (
+        <p className="mt-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-3 py-2 text-sm">
+          {error}
+        </p>
+      ) : null}
+
+      {isPending ? (
+        <div className="mt-4 grid gap-2">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      ) : isError ? (
+        <p className="mt-4 text-sm text-[var(--color-content-muted)]">
+          Could not load the condition photos.
+        </p>
+      ) : groups.length === 0 ? (
+        <div className="mt-4">
+          {/*
+            Two different empty states, because they need different actions and
+            saying the wrong one is worse than saying nothing. An asset can show
+            a holder while having no handover record at all - that is how the
+            August import left them, and telling someone to "assign it first"
+            when the screen above says it is already with Narvada is the kind of
+            message that makes people stop trusting the page.
+          */}
+          <EmptyState
+            title={holderName ? 'No handover record to attach photos to' : 'No custody history yet'}
+            description={
+              holderName
+                ? `This asset is recorded as being with ${holderName}, but it was never handed over through the system — imported records carry no handover. Use "Hand over" above to create one, and the photos will attach to it.`
+                : 'Photos are filed against a handover or a return, so there is nothing to attach them to until this asset is given to someone.'
+            }
+          />
+        </div>
+      ) : (
+        <ul className="mt-4 grid gap-4">
+          {groups.map((g) => (
+            <li
+              key={g.assignmentId}
+              className="rounded-[var(--radius-control)] border border-[var(--color-border)] p-4"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-medium">{g.holder ?? 'Unknown holder'}</p>
+                <p className="text-xs text-[var(--color-content-subtle)]">
+                  {new Date(g.assignedAt).toLocaleDateString()}
+                  {g.returnedAt ? ` → ${new Date(g.returnedAt).toLocaleDateString()}` : ' → still out'}
+                </p>
+              </div>
+
+              {/* The recorded condition, in the same line of sight as the
+                  pictures of it. */}
+              <p className="mt-1 text-xs text-[var(--color-content-muted)]">
+                Condition out: <span className="font-medium">{g.conditionOut}</span>
+                {g.conditionIn ? (
+                  <>
+                    {' · '}back: <span className="font-medium">{g.conditionIn}</span>
+                  </>
+                ) : null}
+              </p>
+
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <PhotoColumn
+                  title="At handover"
+                  photos={g.handover}
+                  assetId={assetId}
+                  // Only while the handover is open: once a return has closed
+                  // it, these are the "before" half of a comparison and the
+                  // server refuses to delete them anyway.
+                  canRemove={canCapture && g.open}
+                  onRemove={(id) => remove.mutate(id)}
+                  removingId={removingId}
+                />
+                <PhotoColumn
+                  title="On return"
+                  photos={g.returned}
+                  assetId={assetId}
+                  canRemove={false}
+                  onRemove={() => {}}
+                  removingId={removingId}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}

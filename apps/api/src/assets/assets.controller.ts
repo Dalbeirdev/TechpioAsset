@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   MaxFileSizeValidator,
   Param,
   ParseFilePipe,
@@ -10,12 +11,13 @@ import {
   Post,
   Query,
   Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { toCsv } from '../common/csv.js';
 import {
   assetListQuerySchema,
@@ -48,8 +50,9 @@ import {
 import { PERMISSIONS, type AssetStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { AppError } from '../common/errors/app-error.js';
+import { AssetPhotosService, PHOTO_WRITE_PERMISSIONS } from './asset-photos.service.js';
 import { assertSpreadsheet } from '../providers/storage/file-validation.js';
-import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
+import { CurrentUser, RequireAnyPermission, RequirePermissions } from '../auth/decorators.js';
 import { AssetsService } from './assets.service.js';
 import { AssetImportService } from './asset-import.service.js';
 import { LenovoWarrantyService } from './lenovo-warranty.service.js';
@@ -57,11 +60,19 @@ import { AssetHealthService } from '../asset-health/asset-health.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuditAction } from '@prisma/client';
 
+/**
+ * A phone photograph, not a scan. 15 MB covers a modern handset's full-quality
+ * output with room to spare, and the service re-checks against the tenant's
+ * own MAX_UPLOAD_MB, so a deployment that wants less gets less.
+ */
+const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+
 @ApiTags('Assets')
 @Controller('assets')
 export class AssetsController {
   constructor(
     private readonly assets: AssetsService,
+    private readonly photos: AssetPhotosService,
     private readonly imports: AssetImportService,
     private readonly health: AssetHealthService,
     private readonly audit: AuditService,
@@ -375,6 +386,92 @@ export class AssetsController {
     @Body(zodBody(returnAssetSchema)) body: ReturnAssetInput,
   ) {
     return this.assets.return(actor, id, body);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Condition photos (v2.32) — evidence at handover and at return.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  @Post(':id/photos')
+  // Either custody right is enough: the person handing kit out and the person
+  // taking it back are often different people, and each needs to photograph
+  // their own end of it.
+  @RequireAnyPermission(...PHOTO_WRITE_PERMISSIONS)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PHOTO_BYTES } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Photograph an asset at handover or at return',
+    description:
+      'stage=HANDOVER files the photo against the open assignment; stage=RETURN against the ' +
+      'return that closed one. The custody event is resolved on the server, never sent by the client.',
+  })
+  addPhoto(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: MAX_PHOTO_BYTES })],
+        fileIsRequired: true,
+      }),
+    )
+    file: Express.Multer.File,
+    @Body('stage') stage?: string,
+    @Body('caption') caption?: string,
+  ) {
+    if (!file?.buffer) throw new AppError('FILE_REJECTED', 'No photo was received');
+    if (stage !== 'HANDOVER' && stage !== 'RETURN') {
+      throw new AppError('VALIDATION_FAILED', 'stage must be HANDOVER or RETURN');
+    }
+    return this.photos.add(
+      actor,
+      id,
+      stage,
+      { buffer: file.buffer, originalname: file.originalname, mimetype: file.mimetype },
+      caption,
+    );
+  }
+
+  @Get(':id/photos')
+  @RequirePermissions(PERMISSIONS.ASSETS_READ)
+  @ApiOperation({ summary: "An asset's condition photos, grouped by custody event" })
+  listPhotos(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.photos.list(actor, id);
+  }
+
+  @Get(':id/photos/:photoId')
+  @RequirePermissions(PERMISSIONS.ASSETS_READ)
+  @ApiOperation({ summary: 'Fetch one condition photo' })
+  async readPhoto(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Param('photoId') photoId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const photo = await this.photos.read(actor, id, photoId);
+    res.set({
+      'Content-Type': photo.mimeType,
+      'Content-Disposition': `inline; filename="${encodeURIComponent(photo.originalName)}"`,
+      // Evidence about a named person's equipment: never a shared cache.
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(photo.data);
+  }
+
+  @Delete(':id/photos/:photoId')
+  @HttpCode(200)
+  @RequireAnyPermission(...PHOTO_WRITE_PERMISSIONS)
+  @ApiOperation({
+    summary: 'Remove a condition photo',
+    description:
+      'Only while its handover is still open. Once a return has closed it the photo is the ' +
+      '"before" side of a comparison and is kept.',
+  })
+  removePhoto(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Param('photoId') photoId: string,
+  ) {
+    return this.photos.remove(actor, id, photoId);
   }
 
   @Post('assignments/:assignmentId/acknowledge')
