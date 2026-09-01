@@ -53,7 +53,11 @@ export function MarketingFooter() {
       </div>
 
       <div className="border-t border-[var(--color-border)]">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-5 py-5 text-xs text-[var(--color-content-subtle)] sm:flex-row sm:items-center sm:justify-between">
+        {/* pr keeps the right-hand line out from under the support chat bubble,
+            which sits in the bottom-right corner. Zero when the widget is not
+            loaded. Sideways rather than downwards, matching the login footer -
+            see the note there for why height does not work. */}
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-5 py-5 pr-[calc(1.25rem+var(--support-chat-inset))] text-xs text-[var(--color-content-subtle)] sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} TechPIO Services LLP. All rights reserved.</p>
           <p>Built for IT and operations teams.</p>
         </div>

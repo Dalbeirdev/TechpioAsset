@@ -67,6 +67,24 @@
   --color-tint-teal-fg: #0e857a;
   --color-tint-rose: #ffe9ec;
   --color-tint-rose-fg: #d43a3f;
+
+  /* Space to keep clear of the support chat bubble. Zero by default, so a page
+     without the widget - which is every signed-in page, and every public one
+     while its host is unreachable - keeps its normal spacing. */
+  --support-chat-inset: 0px;
+}
+
+/* Set by SupportChat once the widget has actually loaded.
+   The bubble is a 60px circle inset 20px from the bottom-right corner, so it
+   reaches 80px in from the viewport edge. A footer already carries ~20-32px of
+   its own side padding, which leaves about 48px of real intrusion; 3.5rem
+   clears that with room to spare. Sized deliberately rather than generously -
+   at 5.5rem the login footer lost enough width to wrap "© TechPIO Services
+   LLP" onto a second line, and at 3.5rem the marketing footer (which carries
+   less side padding of its own) went back under the bubble by 4px. Measured
+   against both. */
+:root[data-support-chat='on'] {
+  --support-chat-inset: 4.5rem;
 }
 
 /* Surface tokens for the dark scheme. Tone tokens (status badge colours) are

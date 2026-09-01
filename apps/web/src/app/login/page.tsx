@@ -283,7 +283,12 @@ export default function LoginPage() {
           </div>
         </main>
 
-        <footer className="flex flex-col items-center justify-between gap-2 border-t border-[var(--color-border)] pt-5 text-xs text-[var(--color-content-subtle)] sm:flex-row">
+        {/* The inset is applied sideways, not downwards. This column is already
+            as tall as the viewport, so bottom padding only turned it into a
+            scroller and left the links exactly where the bubble was covering
+            them; shifting them left of the bubble's 80px corner works whatever
+            the height. Collapses to zero when the widget is not on the page. */}
+        <footer className="flex flex-col items-center justify-between gap-2 border-t border-[var(--color-border)] pt-5 pr-[var(--support-chat-inset)] text-xs text-[var(--color-content-subtle)] sm:flex-row">
           <p>© {new Date().getFullYear()} TechPIO Services LLP</p>
           <nav aria-label="Support" className="flex items-center gap-4">
             <Link href="/guides" className="hover:text-[var(--color-content)]">
