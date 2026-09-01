@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Image, ScrollView, Text, View } from 'react-native';
+import { Image, Platform, ScrollView, Text, View } from 'react-native';
 import { useSession } from '../providers/session';
 import { useTheme } from '../theme';
 import { Card, SectionTitle } from './ui';
@@ -37,6 +37,65 @@ interface CustodyGroup {
   returned: Photo[];
 }
 
+/**
+ * One thumbnail, fetched with the session's bearer token.
+ *
+ * Native <Image> honours `source.headers`; react-native-web ignores them and
+ * silently renders nothing at all - no element, not even a failed request - so
+ * on the browser build the strip appeared as labels with no pictures. The
+ * browser build is how this app gets reviewed on a laptop, so it fetches the
+ * bytes and hands over an object URL there instead, exactly as the web app
+ * does. Native keeps the cheaper path.
+ */
+function Thumb({
+  uri,
+  headers,
+  label,
+  caption,
+}: {
+  uri: string;
+  headers: Record<string, string>;
+  label: string;
+  caption: string | null;
+}) {
+  const { c, radius } = useTheme();
+  const [webUri, setWebUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let alive = true;
+    let objectUrl: string | null = null;
+    void (async () => {
+      try {
+        const res = await fetch(uri, { headers });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (!alive) return;
+        objectUrl = URL.createObjectURL(blob);
+        setWebUri(objectUrl);
+      } catch {
+        // A thumbnail that will not load is left blank; the label still says
+        // which end of the handover it belonged to.
+      }
+    })();
+    return () => {
+      alive = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [uri, headers]);
+
+  const source = Platform.OS === 'web' ? (webUri ? { uri: webUri } : null) : { uri, headers };
+
+  return (
+    <Image
+      source={source ?? undefined}
+      style={{ width: 96, height: 96, borderRadius: radius.md, backgroundColor: c.border }}
+      resizeMode="cover"
+      accessibilityLabel={caption ?? `${label} photo`}
+    />
+  );
+}
+
 /** `refreshKey` changes to force a reload after the camera sheet saves one. */
 export function ConditionPhotoStrip({
   assetId,
@@ -46,7 +105,7 @@ export function ConditionPhotoStrip({
   refreshKey?: number;
 }) {
   const { api } = useSession();
-  const { c, spacing, radius } = useTheme();
+  const { c, spacing } = useTheme();
   const [groups, setGroups] = useState<CustodyGroup[] | null>(null);
 
   const load = useCallback(async () => {
@@ -66,14 +125,11 @@ export function ConditionPhotoStrip({
   const withPhotos = (groups ?? []).filter((g) => g.handover.length + g.returned.length > 0);
   if (withPhotos.length === 0) return null;
 
-  const thumb = (photo: Photo, label: string) => (
+  const thumb = (photo: Photo, label: string) => {
+    const src = api.imageSource(`/assets/${assetId}/photos/${photo.id}`);
+    return (
     <View key={photo.id} style={{ marginRight: spacing.md }}>
-      <Image
-        source={api.imageSource(`/assets/${assetId}/photos/${photo.id}`)}
-        style={{ width: 96, height: 96, borderRadius: radius.md, backgroundColor: c.border }}
-        resizeMode="cover"
-        accessibilityLabel={photo.caption ?? `${label} photo`}
-      />
+      <Thumb uri={src.uri} headers={src.headers} label={label} caption={photo.caption} />
       <Text style={{ color: c.muted, fontSize: 11, marginTop: 4 }}>{label}</Text>
       {photo.by ? (
         <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>
@@ -81,7 +137,8 @@ export function ConditionPhotoStrip({
         </Text>
       ) : null}
     </View>
-  );
+    );
+  };
 
   return (
     <>

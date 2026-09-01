@@ -1,7 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useSession } from '../providers/session';
 import { useTheme } from '../theme';
 import { Button } from './ui';
@@ -141,7 +150,28 @@ export function ConditionPhotoSheet({
               </Text>
             ) : null}
 
-            {!permission?.granted ? (
+            {/*
+              The app also runs in a browser via react-native-web for review on
+              a laptop, and there is no phone camera there. Say so plainly and
+              point at the web app, which accepts the same photos as an upload -
+              rather than rendering a viewfinder that can never take a picture.
+            */}
+            {Platform.OS === 'web' ? (
+              <View style={{ alignItems: 'center', paddingVertical: spacing.xl }}>
+                <Ionicons name="phone-portrait-outline" size={34} color={c.muted} />
+                <Text
+                  style={{
+                    color: c.muted,
+                    fontSize: 13,
+                    textAlign: 'center',
+                    marginTop: spacing.md,
+                  }}
+                >
+                  Taking a condition photo uses the phone camera, which a browser build does not
+                  have. Use the app on a device, or add photos from the asset page in the web app.
+                </Text>
+              </View>
+            ) : !permission?.granted ? (
               <View style={{ alignItems: 'center', paddingVertical: spacing.xl }}>
                 <Ionicons name="camera-outline" size={34} color={c.muted} />
                 <Text
