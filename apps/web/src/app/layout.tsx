@@ -4,6 +4,7 @@ import { AuthProvider } from '@/providers/auth-provider';
 import { QueryProvider } from '@/providers/query-provider';
 import { ToastProvider } from '@/providers/toast-provider';
 import { ConfirmProvider } from '@/providers/confirm-provider';
+import { SupportChat } from '@/components/support-chat';
 import { buildToneCss } from '@/lib/tone-css';
 import './globals.css';
 
@@ -49,6 +50,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <ToastProvider>
                 <ConfirmProvider>
                   <div id="main">{children}</div>
+                  {/* Public pages only; it decides for itself. See support-chat.tsx
+                      for why the rule is an allowlist rather than an exclusion. */}
+                  <SupportChat />
                 </ConfirmProvider>
               </ToastProvider>
             </AuthProvider>

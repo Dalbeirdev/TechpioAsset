@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,6 +23,7 @@ import {
 import { ThemeToggle } from '@/components/theme-toggle';
 import { BrandLockup } from '@/components/brand';
 import { LoginShowcase } from '@/components/marketing/login-showcase';
+import { leaveForApp } from '@/components/support-chat';
 
 /**
  * Sign in (v2.24 redesign).
@@ -42,7 +42,6 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
   const { login, status } = useAuth();
   const [needsMfa, setNeedsMfa] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -54,8 +53,8 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
-    if (status === 'authenticated') router.replace('/dashboard');
-  }, [status, router]);
+    if (status === 'authenticated') leaveForApp();
+  }, [status]);
 
   // Only show the SSO button when the server reports Entra ID is configured.
   useEffect(() => {
@@ -85,7 +84,7 @@ export default function LoginPage() {
         setNeedsMfa(true);
         return;
       }
-      router.replace('/dashboard');
+      leaveForApp();
     } catch (caught) {
       setFormError(
         caught instanceof ApiError

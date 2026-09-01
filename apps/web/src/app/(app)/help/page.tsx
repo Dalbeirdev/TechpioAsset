@@ -170,9 +170,13 @@ export default function HelpPage() {
 
       <Card className="p-5">
         <h2 className="mb-3 text-sm font-semibold">Guides and apps</h2>
+        {/* Plain anchors, not <Link>: the guides are public pages carrying the
+            support chat widget, and a client-side hop would load that
+            third-party script into the signed-in document, where it would then
+            survive the hop back. See components/support-chat.tsx. */}
         <ul className="grid gap-1">
           <li>
-            <Link
+            <a
               href="/guides/raising-a-request"
               className="flex items-start gap-3 rounded-[var(--radius-control)] p-3 transition-colors hover:bg-[var(--color-surface-sunken)]"
             >
@@ -185,10 +189,10 @@ export default function HelpPage() {
                   What each type means, who approves it, and what every status is telling you.
                 </span>
               </span>
-            </Link>
+            </a>
           </li>
           <li>
-            <Link
+            <a
               href="/guides"
               className="flex items-start gap-3 rounded-[var(--radius-control)] p-3 transition-colors hover:bg-[var(--color-surface-sunken)]"
             >
@@ -201,7 +205,7 @@ export default function HelpPage() {
                   Inviting people, what each role can do, and how assets are added.
                 </span>
               </span>
-            </Link>
+            </a>
           </li>
           <li>
             {/* Served by nginx on the VPS, not from public/ - so this 404s on a
