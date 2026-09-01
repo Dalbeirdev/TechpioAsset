@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Script from 'next/script';
 import { usePathname } from 'next/navigation';
 
@@ -73,7 +74,30 @@ export function isPublicRoute(pathname: string): boolean {
 
 export function SupportChat() {
   const pathname = usePathname();
-  if (!isPublicRoute(pathname ?? '')) return null;
+  const [loaded, setLoaded] = useState(false);
+  const active = isPublicRoute(pathname ?? '');
+
+  /**
+   * Reserve the corner the bubble sits in, but only once it is really there.
+   *
+   * The widget is a 60px circle inset 20px from the bottom-right, so it covers
+   * an 80px corner of the viewport - which was landing on the "Support" link in
+   * the login footer and on the last line of the marketing one. The space is
+   * reserved through a CSS variable rather than hard-coded padding because the
+   * widget is served from a host that may not answer (see the note in the PR):
+   * keyed on `onLoad`, a dead host leaves the layout exactly as it was instead
+   * of an unexplained gap at the bottom of every public page.
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (active && loaded) root.dataset.supportChat = 'on';
+    else delete root.dataset.supportChat;
+    return () => {
+      delete root.dataset.supportChat;
+    };
+  }, [active, loaded]);
+
+  if (!active) return null;
 
   return (
     <Script
@@ -83,6 +107,7 @@ export function SupportChat() {
       // rendered by Next, and a support widget must never compete with the
       // login form for the main thread.
       strategy="afterInteractive"
+      onLoad={() => setLoaded(true)}
     />
   );
 }
