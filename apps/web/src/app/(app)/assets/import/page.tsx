@@ -18,6 +18,7 @@ interface ImportSummary {
   pricesSet: number;
   pricesIgnored: number;
   pricesLocked: number;
+  specsSet: number;
   errors: { row: number; message: string }[];
 }
 
@@ -36,6 +37,16 @@ const EXPECTED_COLUMNS = [
   // Currency defaults to the company's base currency when the column is absent.
   'Purchase Cost',
   'Currency',
+  // v2.37. Specification columns are matched per row against the fields the
+  // asset's own Type declares, so one sheet can carry all of them: a DPI column
+  // is simply ignored on a laptop row. These are the common ones; the full set
+  // per type is on the asset's edit form.
+  'Processor',
+  'RAM',
+  'Storage',
+  'Operating system',
+  'Screen size',
+  'Resolution',
 ];
 
 export default function ImportAssetsPage() {
@@ -177,6 +188,12 @@ export default function ImportAssetsPage() {
               <div>
                 <dt className="text-xs text-[var(--color-content-subtle)]">Prices recorded</dt>
                 <dd className="font-semibold tabular-nums">{summary.pricesSet}</dd>
+              </div>
+            ) : null}
+            {summary.specsSet > 0 ? (
+              <div>
+                <dt className="text-xs text-[var(--color-content-subtle)]">Specs recorded</dt>
+                <dd className="font-semibold tabular-nums">{summary.specsSet}</dd>
               </div>
             ) : null}
           </dl>
