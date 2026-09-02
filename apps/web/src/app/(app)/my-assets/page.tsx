@@ -191,15 +191,16 @@ function MyAssetsList() {
                   }}
                 >
                   <p className="text-xs font-medium">Please confirm you received this.</p>
-                  {/* The photo and the confirmation are one action, so they sit
-                      together. On a separate screen the photo half would simply
-                      not happen. */}
-                  <HolderPhotoUpload assetId={asset.id} />
                   <div className="mt-2">
                     <AcknowledgeButton assignmentId={asset.assignments[0].id} />
                   </div>
                 </div>
               ) : null}
+
+              {/* On every asset, not just one awaiting confirmation: a mouse
+                  or a monitor gets damaged long after it was issued, and the
+                  person holding it is the only one looking at it. */}
+              <HolderPhotoUpload assetId={asset.id} />
 
               {/* Self-service intents, pre-filled with this device so nobody
                   types an asset tag by hand. */}

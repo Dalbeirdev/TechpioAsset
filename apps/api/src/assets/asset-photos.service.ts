@@ -120,12 +120,17 @@ export class AssetPhotosService {
    *   the rules in `remove`.
    *
    * HOLDER - the person the asset is currently out with, with no permission at
-   *   all. They get ONE window, which they close themselves: from receiving the
-   *   asset until they confirm receipt. This is the point of the feature - the
-   *   employee records what they were actually handed, and their own
-   *   confirmation is what locks it. After that only a custody role can change
-   *   it, so the record cannot be quietly revised months later by the person it
-   *   would exonerate.
+   *   all. They may ADD a photo of anything they hold at any time: a mouse or a
+   *   monitor gets damaged months after it was issued, and the person holding
+   *   it is the only one looking at it.
+   *
+   *   What their confirmation of receipt locks is REMOVAL, not addition. Photos
+   *   taken before they confirmed are their account of what they were handed,
+   *   and once they have said "I received this" that account stops being theirs
+   *   to withdraw - otherwise the record could be quietly revised later by the
+   *   person it would exonerate. Adding to the record is harmless; every photo
+   *   carries the moment it was taken, so a picture added a year later cannot
+   *   pass as evidence of the handover.
    *
    * A holder may only add HANDOVER photos. A return is a custody act performed
    *   by whoever receives the equipment back, and letting the departing holder
@@ -135,6 +140,7 @@ export class AssetPhotosService {
     actor: AuthUser,
     assetId: string,
     stage: PhotoStage,
+    intent: 'add' | 'remove',
   ): Promise<'custody' | 'holder'> {
     if (this.hasCustodyRight(actor)) return 'custody';
 
@@ -145,15 +151,15 @@ export class AssetPhotosService {
     });
 
     if (!open || open.userId !== actor.id) {
-      throw AppError.forbidden('You may not add photos to this asset');
+      throw AppError.forbidden('You may only add photos to equipment issued to you');
     }
     if (stage !== 'HANDOVER') {
       throw AppError.forbidden('Only the person receiving equipment back can photograph a return');
     }
-    if (open.acknowledgedAt) {
+    if (intent === 'remove' && open.acknowledgedAt) {
       throw new AppError('FORBIDDEN', 'You have already confirmed receipt of this asset', {
         detail:
-          'Photos were locked when you confirmed. Ask IT if something needs adding or correcting.',
+          'Photos can no longer be removed once you have confirmed. You can still add more; ask IT if something needs taking down.',
       });
     }
     return 'holder';
@@ -167,7 +173,7 @@ export class AssetPhotosService {
     caption?: string,
   ) {
     const asset = await this.assetOr404(actor, assetId);
-    await this.authorizeWrite(actor, assetId, stage);
+    await this.authorizeWrite(actor, assetId, stage, 'add');
     const event = await this.resolveEvent(assetId, stage);
 
     // Intersected with the tenant's configured allow-list, so a deployment that
@@ -373,7 +379,7 @@ export class AssetPhotosService {
      * the photo IT recorded at handover is not theirs to delete.
      */
     if (!this.hasCustodyRight(actor)) {
-      await this.authorizeWrite(actor, assetId, 'HANDOVER');
+      await this.authorizeWrite(actor, assetId, 'HANDOVER', 'remove');
       if (photo.uploadedById !== actor.id) {
         throw AppError.forbidden('You may only remove a photo you took yourself');
       }

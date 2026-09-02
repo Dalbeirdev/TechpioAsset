@@ -20,6 +20,7 @@ import { useFocusTrap } from '@/lib/use-focus-trap';
 import { downloadCsv } from '@/lib/download-csv';
 import { fetchColleagues, colleagueName } from '@/lib/colleagues';
 import { Button, Card, EmptyState, ErrorState, Field, NativeSelect, Skeleton } from '@/components/ui';
+import { PersonAvatar } from '@/components/person-avatar';
 import { Input } from '@/components/ui/input';
 import { SortableHeader } from '@/components/sortable-header';
 
@@ -1232,7 +1233,20 @@ function PeopleTable() {
                 {data.data.map((person) => (
                   <tr key={person.id} className="hover:bg-[var(--color-surface-sunken)]">
                     <td className="px-4 py-2.5 font-medium">
-                      <Link href={`/people/${person.id}`} className="hover:underline">
+                      <Link
+                        href={`/people/${person.id}`}
+                        className="inline-flex items-center gap-2.5 hover:underline"
+                      >
+                        {/* Initials, not a stock face - see person-avatar.tsx. */}
+                        <PersonAvatar
+                          name={
+                            person.profile
+                              ? `${person.profile.firstName} ${person.profile.lastName}`
+                              : null
+                          }
+                          email={person.email}
+                          size={28}
+                        />
                         {person.profile
                           ? `${person.profile.firstName} ${person.profile.lastName}`
                           : person.email}
