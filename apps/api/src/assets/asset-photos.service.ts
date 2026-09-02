@@ -106,6 +106,59 @@ export class AssetPhotosService {
     return { id: latest.id, at: latest.returnedAt };
   }
 
+  /** True when the actor holds a custody right, which is the general licence. */
+  private hasCustodyRight(actor: AuthUser): boolean {
+    return PHOTO_WRITE_PERMISSIONS.some((p) => actor.permissions.includes(p));
+  }
+
+  /**
+   * Who may add or remove a photo, and until when (v2.35).
+   *
+   * Two quite different licences:
+   *
+   * CUSTODY - assets:assign / assets:return. The general one. Bounded only by
+   *   the rules in `remove`.
+   *
+   * HOLDER - the person the asset is currently out with, with no permission at
+   *   all. They get ONE window, which they close themselves: from receiving the
+   *   asset until they confirm receipt. This is the point of the feature - the
+   *   employee records what they were actually handed, and their own
+   *   confirmation is what locks it. After that only a custody role can change
+   *   it, so the record cannot be quietly revised months later by the person it
+   *   would exonerate.
+   *
+   * A holder may only add HANDOVER photos. A return is a custody act performed
+   *   by whoever receives the equipment back, and letting the departing holder
+   *   file the "what came back" evidence would defeat the comparison entirely.
+   */
+  private async authorizeWrite(
+    actor: AuthUser,
+    assetId: string,
+    stage: PhotoStage,
+  ): Promise<'custody' | 'holder'> {
+    if (this.hasCustodyRight(actor)) return 'custody';
+
+    const open = await this.prisma.client.assetAssignment.findFirst({
+      where: { assetId, returnedAt: null },
+      orderBy: { assignedAt: 'desc' },
+      select: { userId: true, acknowledgedAt: true },
+    });
+
+    if (!open || open.userId !== actor.id) {
+      throw AppError.forbidden('You may not add photos to this asset');
+    }
+    if (stage !== 'HANDOVER') {
+      throw AppError.forbidden('Only the person receiving equipment back can photograph a return');
+    }
+    if (open.acknowledgedAt) {
+      throw new AppError('FORBIDDEN', 'You have already confirmed receipt of this asset', {
+        detail:
+          'Photos were locked when you confirmed. Ask IT if something needs adding or correcting.',
+      });
+    }
+    return 'holder';
+  }
+
   async add(
     actor: AuthUser,
     assetId: string,
@@ -114,6 +167,7 @@ export class AssetPhotosService {
     caption?: string,
   ) {
     const asset = await this.assetOr404(actor, assetId);
+    await this.authorizeWrite(actor, assetId, stage);
     const event = await this.resolveEvent(assetId, stage);
 
     // Intersected with the tenant's configured allow-list, so a deployment that
@@ -213,6 +267,8 @@ export class AssetPhotosService {
           assignedAt: true,
           returnedAt: true,
           conditionOut: true,
+          acknowledgedAt: true,
+          userId: true,
           user: { select: { profile: { select: { firstName: true, lastName: true } } } },
           assetReturn: { select: { id: true, returnedAt: true, conditionIn: true } },
         },
@@ -233,7 +289,13 @@ export class AssetPhotosService {
       uploaders.map((u) => [u.userId, `${u.firstName} ${u.lastName}`.trim()]),
     );
 
-    const shape = (a: (typeof photos)[number]) => ({
+    /**
+     * `byHolder` is what makes a holder's photo worth more than an anonymous
+     * one: it says the person who received the equipment took this, not the
+     * team that issued it. Both sides of a dispute are then visible in one
+     * list, attributed.
+     */
+    const shape = (holderUserId: string | null) => (a: (typeof photos)[number]) => ({
       id: a.id,
       originalName: a.originalName,
       caption: a.caption,
@@ -241,6 +303,7 @@ export class AssetPhotosService {
       sizeBytes: a.sizeBytes,
       takenAt: a.createdAt,
       by: a.uploadedById ? (nameOf.get(a.uploadedById) ?? null) : null,
+      byHolder: Boolean(a.uploadedById && holderUserId && a.uploadedById === holderUserId),
     });
 
     return assignments.map((assignment) => ({
@@ -253,16 +316,18 @@ export class AssetPhotosService {
       returnedAt: assignment.assetReturn?.returnedAt ?? null,
       conditionIn: assignment.assetReturn?.conditionIn ?? null,
       open: assignment.returnedAt === null,
+      /** Set once the holder confirms receipt, which closes their photo window. */
+      acknowledgedAt: assignment.acknowledgedAt,
       handover: photos
         .filter((p) => p.entityType === ENTITY_TYPE.HANDOVER && p.entityId === assignment.id)
-        .map(shape),
+        .map(shape(assignment.userId)),
       returned: assignment.assetReturn
         ? photos
             .filter(
               (p) =>
                 p.entityType === ENTITY_TYPE.RETURN && p.entityId === assignment.assetReturn?.id,
             )
-            .map(shape)
+            .map(shape(assignment.userId))
         : [],
     }));
   }
@@ -298,9 +363,21 @@ export class AssetPhotosService {
 
     const photo = await this.prisma.client.attachment.findFirst({
       where: { id: photoId, assetId, deletedAt: null, ...tenantFilter(actor) },
-      select: { id: true, entityType: true, entityId: true },
+      select: { id: true, entityType: true, entityId: true, uploadedById: true },
     });
     if (!photo) throw AppError.notFound('Photo not found');
+
+    /**
+     * A holder may take a photo back only while their own window is open, and
+     * only one they took themselves - a blurred shot is worth retaking, but
+     * the photo IT recorded at handover is not theirs to delete.
+     */
+    if (!this.hasCustodyRight(actor)) {
+      await this.authorizeWrite(actor, assetId, 'HANDOVER');
+      if (photo.uploadedById !== actor.id) {
+        throw AppError.forbidden('You may only remove a photo you took yourself');
+      }
+    }
 
     if (photo.entityType === ENTITY_TYPE.RETURN) {
       throw new AppError('FORBIDDEN', 'A return photo cannot be removed', {

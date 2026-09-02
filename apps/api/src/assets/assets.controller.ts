@@ -50,9 +50,9 @@ import {
 import { PERMISSIONS, type AssetStatus } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { AppError } from '../common/errors/app-error.js';
-import { AssetPhotosService, PHOTO_WRITE_PERMISSIONS } from './asset-photos.service.js';
+import { AssetPhotosService } from './asset-photos.service.js';
 import { assertSpreadsheet } from '../providers/storage/file-validation.js';
-import { CurrentUser, RequireAnyPermission, RequirePermissions } from '../auth/decorators.js';
+import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
 import { AssetsService } from './assets.service.js';
 import { AssetImportService } from './asset-import.service.js';
 import { LenovoWarrantyService } from './lenovo-warranty.service.js';
@@ -393,17 +393,19 @@ export class AssetsController {
   // ───────────────────────────────────────────────────────────────────────────
 
   @Post(':id/photos')
-  // Either custody right is enough: the person handing kit out and the person
-  // taking it back are often different people, and each needs to photograph
-  // their own end of it.
-  @RequireAnyPermission(...PHOTO_WRITE_PERMISSIONS)
+  // No permission decorator on purpose - authorisation is in the service,
+  // because it is not a pure role question. Either custody right is enough (the
+  // person handing kit out and the person taking it back are often different
+  // people), and so is simply BEING the current holder, until you confirm
+  // receipt. A guard here could only express the first half.
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PHOTO_BYTES } }))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Photograph an asset at handover or at return',
     description:
       'stage=HANDOVER files the photo against the open assignment; stage=RETURN against the ' +
-      'return that closed one. The custody event is resolved on the server, never sent by the client.',
+      'return that closed one. The custody event is resolved on the server, never sent by the client. ' +
+      'Open to assets:assign / assets:return, and to the current holder until they confirm receipt.',
   })
   addPhoto(
     @CurrentUser() actor: AuthUser,
@@ -459,7 +461,8 @@ export class AssetsController {
 
   @Delete(':id/photos/:photoId')
   @HttpCode(200)
-  @RequireAnyPermission(...PHOTO_WRITE_PERMISSIONS)
+  // Same as the upload: the service decides, since a holder may take back their
+  // own photo before confirming receipt.
   @ApiOperation({
     summary: 'Remove a condition photo',
     description:

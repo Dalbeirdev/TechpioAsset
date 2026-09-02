@@ -25,6 +25,8 @@ const PNG = Buffer.from(
 
 let assetId: string;
 let holderId: string;
+/** Assets created by nested suites, cleaned up with the main one. */
+const extraAssets: string[] = [];
 
 beforeAll(async () => {
   app = await createTestApp();
@@ -51,6 +53,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  for (const extra of extraAssets) {
+    await prisma.client.$executeRawUnsafe('DELETE FROM attachments WHERE "assetId" = $1', extra);
+    await prisma.client.$executeRawUnsafe(
+      'DELETE FROM asset_returns WHERE "assignmentId" IN (SELECT id FROM asset_assignments WHERE "assetId" = $1)',
+      extra,
+    );
+    await prisma.client.$executeRawUnsafe('DELETE FROM asset_assignments WHERE "assetId" = $1', extra);
+    await prisma.client.$executeRawUnsafe('DELETE FROM assets WHERE id = $1', extra);
+  }
   await prisma.client.$executeRawUnsafe('DELETE FROM attachments WHERE "assetId" = $1', assetId);
   await prisma.client.$executeRawUnsafe(
     'DELETE FROM asset_returns WHERE "assignmentId" IN (SELECT id FROM asset_assignments WHERE "assetId" = $1)',
@@ -187,10 +198,10 @@ describe('condition photos', () => {
     expect(res.status).toBe(403);
   });
 
-  it('refuses a photo from someone with no custody rights', async () => {
-    // An employee can SEE the photos of their own kit, but recording what
-    // condition it was handed over in is not theirs to assert.
-    const res = await upload('employee', 'HANDOVER');
+  it('refuses a photo from an employee who does not hold the asset', async () => {
+    // employee2 is not the holder, so there is nothing here that is theirs to
+    // record. Custody rights are the only other way in.
+    const res = await upload('employee2', 'HANDOVER');
     expect(res.status).toBe(403);
   });
 
@@ -210,5 +221,118 @@ describe('condition photos', () => {
       .field('stage', 'WHENEVER')
       .attach('file', PNG, 'condition.png');
     expect(res.status).toBe(422);
+  });
+});
+
+/**
+ * The holder's own window (v2.35).
+ *
+ * The employee who receives equipment can photograph what they were actually
+ * handed, with no permission at all - and their own confirmation of receipt is
+ * what closes the window. That self-locking is the point: after it, only a
+ * custody role can change the record, so it cannot be quietly revised months
+ * later by the person it would exonerate.
+ */
+describe("the holder's own photo window", () => {
+  /** A second asset, assigned and left unacknowledged. */
+  let holderAssetId: string;
+
+  beforeAll(async () => {
+    const company = s.superAdmin.user.companyId;
+    const category = await prisma.client.category.findFirst({ where: { companyId: company } });
+    const created = await prisma.client.asset.create({
+      data: {
+        companyId: company,
+        assetTag: `HOLD-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+        name: 'Holder window laptop',
+        categoryId: category!.id,
+        qrToken: `qr-hold-${Math.random().toString(36).slice(2, 10)}`,
+        status: 'AVAILABLE',
+        condition: 'GOOD',
+      },
+      select: { id: true },
+    });
+    holderAssetId = created.id;
+    extraAssets.push(holderAssetId);
+
+    await api(app)
+      .post(`/api/v1/assets/${holderAssetId}/assign`)
+      .set(auth(s.itAdmin))
+      .send({ userId: s.employee.user.id, conditionOut: 'GOOD' });
+  });
+
+  const asHolder = (stage = 'HANDOVER') =>
+    api(app)
+      .post(`/api/v1/assets/${holderAssetId}/photos`)
+      .set(auth(s.employee))
+      .field('stage', stage)
+      .attach('file', PNG, 'mine.png');
+
+  it('lets the holder photograph it with no permission at all', async () => {
+    const res = await asHolder();
+    expect(res.status).toBeLessThan(300);
+  });
+
+  it("marks the photo as the holder's own, which is what makes it worth more", async () => {
+    const groups = (
+      await api(app).get(`/api/v1/assets/${holderAssetId}/photos`).set(auth(s.itAdmin))
+    ).body.data;
+    const mine = groups[0].handover.find((p: { byHolder: boolean }) => p.byHolder);
+    expect(mine).toBeTruthy();
+    expect(mine.by).toBeTruthy();
+  });
+
+  it('refuses to let the holder photograph a return', async () => {
+    // The departing holder filing the "what came back" evidence would defeat
+    // the comparison the whole feature exists for.
+    const res = await asHolder('RETURN');
+    expect(res.status).toBe(403);
+  });
+
+  it('lets the holder take back their own shot before confirming', async () => {
+    const added = await asHolder();
+    const res = await api(app)
+      .delete(`/api/v1/assets/${holderAssetId}/photos/${added.body.data.id}`)
+      .set(auth(s.employee));
+    expect(res.status).toBe(200);
+  });
+
+  it("will not let the holder remove somebody else's photo", async () => {
+    const itShot = await api(app)
+      .post(`/api/v1/assets/${holderAssetId}/photos`)
+      .set(auth(s.itAdmin))
+      .field('stage', 'HANDOVER')
+      .attach('file', PNG, 'theirs.png');
+
+    const res = await api(app)
+      .delete(`/api/v1/assets/${holderAssetId}/photos/${itShot.body.data.id}`)
+      .set(auth(s.employee));
+    expect(res.status).toBe(403);
+  });
+
+  it('locks the window when the holder confirms receipt', async () => {
+    const open = await prisma.client.assetAssignment.findFirst({
+      where: { assetId: holderAssetId, returnedAt: null },
+      select: { id: true },
+    });
+    const ack = await api(app)
+      .post(`/api/v1/assets/assignments/${open!.id}/acknowledge`)
+      .set(auth(s.employee));
+    expect(ack.status).toBeLessThan(300);
+
+    const after = await asHolder();
+    expect(after.status).toBe(403);
+    expect(after.body.detail).toMatch(/locked/i);
+  });
+
+  it('still lets a custody role add one after the holder has locked theirs', async () => {
+    // "Only an authorised role can change it" - the whole reason the lock is
+    // the holder's and not everyone's.
+    const res = await api(app)
+      .post(`/api/v1/assets/${holderAssetId}/photos`)
+      .set(auth(s.itAdmin))
+      .field('stage', 'HANDOVER')
+      .attach('file', PNG, 'later.png');
+    expect(res.status).toBeLessThan(300);
   });
 });

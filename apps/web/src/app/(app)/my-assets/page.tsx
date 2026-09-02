@@ -11,6 +11,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { StatusBadge } from '@/components/status-badge';
 import { AcknowledgeButton } from '@/components/assets/custody-panel';
+import { HolderPhotoUpload } from '@/components/assets/holder-photo-upload';
 
 interface AssetRow {
   id: string;
@@ -190,6 +191,10 @@ function MyAssetsList() {
                   }}
                 >
                   <p className="text-xs font-medium">Please confirm you received this.</p>
+                  {/* The photo and the confirmation are one action, so they sit
+                      together. On a separate screen the photo half would simply
+                      not happen. */}
+                  <HolderPhotoUpload assetId={asset.id} />
                   <div className="mt-2">
                     <AcknowledgeButton assignmentId={asset.assignments[0].id} />
                   </div>
