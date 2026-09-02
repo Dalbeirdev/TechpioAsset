@@ -20,6 +20,9 @@ interface ImportSummary {
   pricesLocked: number;
   specsSet: number;
   errors: { row: number; message: string }[];
+  /** Added client-side so the panel can say which file, and when. */
+  file?: string;
+  at?: string;
 }
 
 const EXPECTED_COLUMNS = [
@@ -73,8 +76,8 @@ export default function ImportAssetsPage() {
       if (!response.ok) throw new Error(json.detail ?? json.title ?? 'Import failed');
       return json.data as ImportSummary;
     },
-    onSuccess: (s) => {
-      setSummary(s);
+    onSuccess: (s, file) => {
+      setSummary({ ...s, file: file.name, at: new Date().toLocaleString() });
       setError(null);
     },
     onError: (e) => {
@@ -121,7 +124,16 @@ export default function ImportAssetsPage() {
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only"
-            onChange={(e) => onPick(e.target.files?.[0])}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              // Cleared so the SAME file can be chosen again. A file input
+              // fires no change event when the selection is unchanged, so
+              // re-picking the same spreadsheet did nothing at all - and
+              // because onPick is what clears the previous result, the last
+              // summary stayed on screen looking like a fresh success.
+              e.target.value = '';
+              onPick(file);
+            }}
           />
         </label>
 
@@ -158,7 +170,14 @@ export default function ImportAssetsPage() {
 
       {summary ? (
         <Card className="p-5">
-          <h2 className="text-[15px] font-semibold">Import complete</h2>
+          <h2 className="text-[15px] font-semibold">
+            Import complete{summary.file ? ` — ${summary.file}` : ''}
+          </h2>
+          <p className="mt-0.5 text-xs text-[var(--color-content-subtle)]">
+            {/* Stamped so a result can never be read as belonging to an upload
+                it did not come from. */}
+            {summary.at}
+          </p>
           <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-xs text-[var(--color-content-subtle)]">Rows read</dt>
