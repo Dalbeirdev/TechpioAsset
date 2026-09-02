@@ -9,15 +9,15 @@ import { Button } from '@/components/ui';
 /**
  * The holder's own photos, taken before they confirm receipt (v2.35).
  *
- * Deliberately sited beside the Confirm button rather than on the asset page,
- * because the two are one action: this is what I was given, and I am confirming
- * I received it. Split across two screens, the photo half simply would not
- * happen - nobody navigates somewhere else before pressing a button that is
- * already in front of them.
+ * Offered on every asset a person holds, not only the one awaiting
+ * confirmation. A mouse or a monitor gets damaged months after it was issued,
+ * and the holder is the only one looking at it - restricting photographs to the
+ * first day would have collected them for exactly the assets least likely to
+ * need them.
  *
- * It is a one-time window and the person closing it is the person it protects,
- * so the wording has to be plain about that. "Confirming locks these" is the
- * whole contract, and burying it would make the lock feel like a bug later.
+ * Confirming receipt still locks REMOVAL. Before it, the wording says so
+ * plainly, because that is the half of the contract someone can be surprised
+ * by later.
  */
 
 interface Photo {
@@ -67,9 +67,12 @@ export function HolderPhotoUpload({ assetId }: { assetId: string }) {
     onError: (e: Error) => setError(e.message),
   });
 
-  // Nothing to offer once the window has closed, or before there is a handover
-  // record to attach to.
-  if (!current || !current.open || current.acknowledgedAt) return null;
+  // Only needs a handover record to attach to. An imported asset with no
+  // assignment has nowhere to file a photo, and the asset page explains that
+  // rather than this button failing silently.
+  if (!current || !current.open) return null;
+
+  const locked = Boolean(current.acknowledgedAt);
 
   return (
     <div className="mt-2">
@@ -98,10 +101,14 @@ export function HolderPhotoUpload({ assetId }: { assetId: string }) {
         {mine > 0 ? 'Add another photo' : 'Add a photo of it'}
       </Button>
 
-      <p className="mt-1.5 text-xs">
-        {mine > 0
-          ? `${mine} photo${mine === 1 ? '' : 's'} added. Confirming below locks them — after that only IT can change them.`
-          : 'Optional. Photograph any marks or damage now; confirming below locks what you add.'}
+      <p className="mt-1.5 text-xs text-[var(--color-content-muted)]">
+        {locked
+          ? mine > 0
+            ? `${mine} of your photo${mine === 1 ? '' : 's'} on record. You can add more; removing them needs IT.`
+            : 'Photograph any marks or damage. Once added, removing it needs IT.'
+          : mine > 0
+            ? `${mine} photo${mine === 1 ? '' : 's'} added. Confirming receipt locks them — after that only IT can take them down.`
+            : 'Optional. Photograph any marks or damage now; confirming receipt locks what you add.'}
       </p>
 
       {error ? <p className="mt-1 text-xs font-medium">{error}</p> : null}

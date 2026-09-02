@@ -182,11 +182,12 @@ export default function AssetDetailScreen() {
             <DetailRow label="Condition" value={asset.condition} last />
           </Card>
 
-          {openAssignment && !openAssignment.acknowledgedAt ? (
+          {/* Offered for as long as the asset is out, not just before receipt
+              is confirmed: a mouse or a monitor gets damaged months later, and
+              the person holding it is the only one looking at it. Confirming
+              locks removal, not addition. */}
+          {openAssignment ? (
             <>
-              {/* The holder's own window, and it closes when they confirm - so
-                  the camera sits directly above the button that closes it.
-                  Anywhere else and the photo does not get taken. */}
               <Button
                 label="Add a photo of it"
                 icon="camera-outline"
@@ -194,20 +195,22 @@ export default function AssetDetailScreen() {
                 onPress={() => setPhotoStage('HANDOVER')}
                 style={{ marginBottom: spacing.sm }}
               />
-              <Text
-                style={{ color: c.muted, fontSize: 12, marginBottom: spacing.md }}
-              >
-                Optional. Photograph any marks now — confirming locks what you add, and only IT
-                can change it afterwards.
+              <Text style={{ color: c.muted, fontSize: 12, marginBottom: spacing.md }}>
+                {openAssignment.acknowledgedAt
+                  ? 'Photograph any marks or damage. Once added, removing it needs IT.'
+                  : 'Optional. Photograph any marks now — confirming receipt locks what you add.'}
               </Text>
-              <Button
-                label="Confirm receipt"
-                icon="checkmark-circle-outline"
-                onPress={confirmReceipt}
-                loading={busy}
-                style={{ marginBottom: spacing.md }}
-              />
             </>
+          ) : null}
+
+          {openAssignment && !openAssignment.acknowledgedAt ? (
+            <Button
+              label="Confirm receipt"
+              icon="checkmark-circle-outline"
+              onPress={confirmReceipt}
+              loading={busy}
+              style={{ marginBottom: spacing.md }}
+            />
           ) : null}
 
           {/* Handing kit over is the job you do standing next to it, so the

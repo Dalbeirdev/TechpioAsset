@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Image, Platform, ScrollView, Text, View } from 'react-native';
+import { Image, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSession } from '../providers/session';
 import { useTheme } from '../theme';
 import { Card, SectionTitle } from './ui';
+import { Ionicons } from '@expo/vector-icons';
 
 /**
  * Condition photos for one asset, on a phone (v2.33).
@@ -52,11 +53,13 @@ function Thumb({
   headers,
   label,
   caption,
+  onOpen,
 }: {
   uri: string;
   headers: Record<string, string>;
   label: string;
   caption: string | null;
+  onOpen: (source: { uri: string; headers?: Record<string, string> }) => void;
 }) {
   const { c, radius } = useTheme();
   const [webUri, setWebUri] = useState<string | null>(null);
@@ -87,12 +90,14 @@ function Thumb({
   const source = Platform.OS === 'web' ? (webUri ? { uri: webUri } : null) : { uri, headers };
 
   return (
+    <Pressable onPress={() => source && onOpen(source)} accessibilityRole="imagebutton">
     <Image
       source={source ?? undefined}
       style={{ width: 96, height: 96, borderRadius: radius.md, backgroundColor: c.border }}
       resizeMode="cover"
       accessibilityLabel={caption ?? `${label} photo`}
     />
+    </Pressable>
   );
 }
 
@@ -107,6 +112,18 @@ export function ConditionPhotoStrip({
   const { api } = useSession();
   const { c, spacing } = useTheme();
   const [groups, setGroups] = useState<CustodyGroup[] | null>(null);
+  /**
+   * The photo being viewed full-screen. A 96px thumbnail shows that a photo
+   * exists; it does not show the scratch the photo was taken for, which is the
+   * only reason anyone opens this section.
+   */
+  const [viewing, setViewing] = useState<{
+    source: { uri: string; headers?: Record<string, string> };
+    label: string;
+    caption: string | null;
+    by: string | null;
+    takenAt: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -129,7 +146,21 @@ export function ConditionPhotoStrip({
     const src = api.imageSource(`/assets/${assetId}/photos/${photo.id}`);
     return (
     <View key={photo.id} style={{ marginRight: spacing.md }}>
-      <Thumb uri={src.uri} headers={src.headers} label={label} caption={photo.caption} />
+      <Thumb
+        uri={src.uri}
+        headers={src.headers}
+        label={label}
+        caption={photo.caption}
+        onOpen={(source) =>
+          setViewing({
+            source,
+            label,
+            caption: photo.caption,
+            by: photo.by,
+            takenAt: photo.takenAt,
+          })
+        }
+      />
       <Text style={{ color: c.muted, fontSize: 11, marginTop: 4 }}>{label}</Text>
       {photo.by ? (
         <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>
@@ -161,6 +192,55 @@ export function ConditionPhotoStrip({
           </ScrollView>
         </Card>
       ))}
+
+      <Modal
+        visible={viewing !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setViewing(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)' }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              padding: spacing.lg,
+              gap: spacing.md,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                {viewing?.caption ?? viewing?.label}
+              </Text>
+              {/* A photograph proves nothing without when it was taken and by
+                  whom, so both travel with it into the full-size view. */}
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>
+                {viewing?.label}
+                {viewing ? ` · ${new Date(viewing.takenAt).toLocaleString()}` : ''}
+                {viewing?.by ? ` · ${viewing.by}` : ''}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setViewing(null)}
+              hitSlop={12}
+              accessibilityLabel="Close photo"
+            >
+              <Ionicons name="close" size={26} color="#fff" />
+            </Pressable>
+          </View>
+
+          <Pressable style={{ flex: 1 }} onPress={() => setViewing(null)}>
+            {viewing ? (
+              <Image
+                source={viewing.source}
+                style={{ flex: 1, width: '100%' }}
+                resizeMode="contain"
+                accessibilityLabel={viewing.caption ?? `${viewing.label} photo`}
+              />
+            ) : null}
+          </Pressable>
+        </View>
+      </Modal>
     </>
   );
 }

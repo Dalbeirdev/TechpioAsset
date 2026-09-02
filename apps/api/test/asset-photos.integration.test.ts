@@ -310,7 +310,10 @@ describe("the holder's own photo window", () => {
     expect(res.status).toBe(403);
   });
 
-  it('locks the window when the holder confirms receipt', async () => {
+  it('locks REMOVAL when the holder confirms, but still lets them add', async () => {
+    const before = await asHolder();
+    expect(before.status).toBeLessThan(300);
+
     const open = await prisma.client.assetAssignment.findFirst({
       where: { assetId: holderAssetId, returnedAt: null },
       select: { id: true },
@@ -320,9 +323,19 @@ describe("the holder's own photo window", () => {
       .set(auth(s.employee));
     expect(ack.status).toBeLessThan(300);
 
-    const after = await asHolder();
-    expect(after.status).toBe(403);
-    expect(after.body.detail).toMatch(/locked/i);
+    // Still allowed: a mouse gets damaged months after it was issued, and the
+    // holder is the only person looking at it. Every photo carries the moment
+    // it was taken, so a later one cannot pass as evidence of the handover.
+    const added = await asHolder();
+    expect(added.status).toBeLessThan(300);
+
+    // Not allowed: their account of what they received stops being theirs to
+    // withdraw the moment they said they received it.
+    const removed = await api(app)
+      .delete(`/api/v1/assets/${holderAssetId}/photos/${before.body.data.id}`)
+      .set(auth(s.employee));
+    expect(removed.status).toBe(403);
+    expect(removed.body.detail).toMatch(/no longer be removed|confirmed/i);
   });
 
   it('still lets a custody role add one after the holder has locked theirs', async () => {

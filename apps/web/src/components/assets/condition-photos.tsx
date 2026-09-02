@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, ImageOff, Trash2 } from 'lucide-react';
 import { apiFetch, API_BASE, getAccessToken } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { Button, Card, Skeleton } from '@/components/ui';
+import { PhotoLightbox, type LightboxPhoto } from './photo-lightbox';
 
 /**
  * Condition photos, before and after (v2.32).
@@ -51,7 +52,18 @@ interface CustodyGroup {
  * and handed to the tag as an object URL - and revoked on unmount, or a page
  * showing a year of handovers leaks every image it has ever rendered.
  */
-function AuthedImage({ assetId, photo }: { assetId: string; photo: Photo }) {
+function AuthedImage({
+  assetId,
+  photo,
+  onReady,
+  onOpen,
+}: {
+  assetId: string;
+  photo: Photo;
+  /** Hands the blob URL up so the full-size view reuses it instead of refetching. */
+  onReady: (photoId: string, url: string) => void;
+  onOpen: (photoId: string) => void;
+}) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const revoke = useRef<string | null>(null);
@@ -70,6 +82,7 @@ function AuthedImage({ assetId, photo }: { assetId: string; photo: Photo }) {
         const objectUrl = URL.createObjectURL(blob);
         revoke.current = objectUrl;
         setUrl(objectUrl);
+        onReady(photo.id, objectUrl);
       } catch {
         if (alive) setFailed(true);
       }
@@ -78,7 +91,8 @@ function AuthedImage({ assetId, photo }: { assetId: string; photo: Photo }) {
       alive = false;
       if (revoke.current) URL.revokeObjectURL(revoke.current);
     };
-  }, [assetId, photo.id]);
+    // onReady is a stable useCallback in the parent.
+  }, [assetId, photo.id, onReady]);
 
   if (failed) {
     return (
@@ -91,7 +105,12 @@ function AuthedImage({ assetId, photo }: { assetId: string; photo: Photo }) {
   if (!url) return <Skeleton className="size-24 rounded-[var(--radius-control)]" />;
 
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="block">
+    <button
+      type="button"
+      onClick={() => onOpen(photo.id)}
+      aria-label={`View ${photo.caption ?? 'condition photo'} at full size`}
+      className="block cursor-zoom-in"
+    >
       {/* eslint-disable-next-line @next/next/no-img-element --
           next/image cannot serve these. The source is an in-memory blob: URL
           created from an authenticated fetch, and the optimizer would have to
@@ -104,7 +123,7 @@ function AuthedImage({ assetId, photo }: { assetId: string; photo: Photo }) {
         alt={photo.caption ?? `Condition photo taken ${new Date(photo.takenAt).toLocaleString()}`}
         className="size-24 rounded-[var(--radius-control)] border border-[var(--color-border)] object-cover transition-opacity hover:opacity-90"
       />
-    </a>
+    </button>
   );
 }
 
@@ -115,6 +134,8 @@ function PhotoColumn({
   canRemove,
   onRemove,
   removingId,
+  onReady,
+  onOpen,
 }: {
   title: string;
   photos: Photo[];
@@ -122,6 +143,8 @@ function PhotoColumn({
   canRemove: boolean;
   onRemove: (id: string) => void;
   removingId: string | null;
+  onReady: (photoId: string, url: string) => void;
+  onOpen: (photoId: string) => void;
 }) {
   return (
     <div className="grid gap-2">
@@ -132,7 +155,7 @@ function PhotoColumn({
         <ul className="flex flex-wrap gap-2">
           {photos.map((p) => (
             <li key={p.id} className="grid gap-1">
-              <AuthedImage assetId={assetId} photo={p} />
+              <AuthedImage assetId={assetId} photo={p} onReady={onReady} onOpen={onOpen} />
               <p className="max-w-24 truncate text-[0.7rem] text-[var(--color-content-subtle)]">
                 {p.caption ?? new Date(p.takenAt).toLocaleDateString()}
               </p>
@@ -174,6 +197,16 @@ export function ConditionPhotos({
   const [stage, setStage] = useState<'HANDOVER' | 'RETURN'>('HANDOVER');
   const [error, setError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+
+  /**
+   * Blob URLs the thumbnails already fetched, so opening one at full size shows
+   * it instantly instead of downloading the same bytes a second time.
+   */
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [viewing, setViewing] = useState<string | null>(null);
+  const onReady = useCallback((photoId: string, url: string) => {
+    setUrls((prev) => (prev[photoId] === url ? prev : { ...prev, [photoId]: url }));
+  }, []);
 
   // Either custody right is enough - the person issuing kit and the person
   // taking it back are often not the same person.
@@ -263,6 +296,30 @@ export function ConditionPhotos({
    */
   if (isPending || isError) return null;
   if (!hasPhotos && !canCapture) return null;
+
+  /**
+   * Every photograph on the asset, in custody order, handover before return.
+   *
+   * Flattened across custody events on purpose: stepping with the arrow keys is
+   * how the comparison actually gets made, and a viewer that stopped at the
+   * edge of one handover would force a close-and-reopen at exactly the moment
+   * someone is going back and forth between before and after.
+   */
+  const viewable: LightboxPhoto[] = withPhotos.flatMap((g) => [
+    ...g.handover.map((p) => ({ ...p, stageLabel: `At handover · ${g.holder ?? 'unknown holder'}` })),
+    ...g.returned.map((p) => ({ ...p, stageLabel: `On return · ${g.holder ?? 'unknown holder'}` })),
+  ])
+    .filter((p) => urls[p.id])
+    .map((p) => ({
+      id: p.id,
+      url: urls[p.id]!,
+      caption: p.caption,
+      takenAt: p.takenAt,
+      by: p.by,
+      stageLabel: p.stageLabel,
+    }));
+
+  const viewingIndex = viewing ? viewable.findIndex((p) => p.id === viewing) : -1;
 
   return (
     <Card className="p-5">
@@ -354,6 +411,8 @@ export function ConditionPhotos({
 
               <div className="mt-3 grid gap-4 sm:grid-cols-2">
                 <PhotoColumn
+                  onReady={onReady}
+                  onOpen={setViewing}
                   title="At handover"
                   photos={g.handover}
                   assetId={assetId}
@@ -365,6 +424,8 @@ export function ConditionPhotos({
                   removingId={removingId}
                 />
                 <PhotoColumn
+                  onReady={onReady}
+                  onOpen={setViewing}
                   title="On return"
                   photos={g.returned}
                   assetId={assetId}
@@ -377,6 +438,14 @@ export function ConditionPhotos({
           ))}
         </ul>
       )}
+      {viewingIndex >= 0 ? (
+        <PhotoLightbox
+          photos={viewable}
+          index={viewingIndex}
+          onClose={() => setViewing(null)}
+          onIndexChange={(next) => setViewing(viewable[next]?.id ?? null)}
+        />
+      ) : null}
     </Card>
   );
 }

@@ -374,6 +374,11 @@ export function AcknowledgeButton({
     onSuccess: async () => {
       toast.success('Receipt confirmed — thank you');
       await qc.invalidateQueries({ queryKey: ['my-assets'] });
+      // Confirming is what locks the holder's photos, so the photo control has
+      // to be told. Without this it went on offering "confirming receipt locks
+      // what you add" to somebody who had just confirmed - advice that was
+      // already spent, and only corrected by a page refresh.
+      await qc.invalidateQueries({ queryKey: ['asset-photos'] });
       onDone?.();
     },
     onError: () => toast.error('Could not confirm receipt'),
