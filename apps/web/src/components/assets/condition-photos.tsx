@@ -6,7 +6,7 @@ import { Camera, ImageOff, Trash2 } from 'lucide-react';
 import { apiFetch, API_BASE, getAccessToken } from '@/lib/api-client';
 import { useAuth } from '@/providers/auth-provider';
 import { PERMISSIONS } from '@techpioasset/domain';
-import { Button, Card, EmptyState, Skeleton } from '@/components/ui';
+import { Button, Card, Skeleton } from '@/components/ui';
 
 /**
  * Condition photos, before and after (v2.32).
@@ -238,6 +238,32 @@ export function ConditionPhotos({
     if (current) setStage(current.open ? 'HANDOVER' : 'RETURN');
   }, [current?.assignmentId, current?.open]);
 
+  /**
+   * Only custody events that actually have photographs (v2.34).
+   *
+   * Every handover used to get a row whether or not anyone photographed it, so
+   * an asset with five past holders and no photos rendered five rows of
+   * "No photos / No photos". That is a card's worth of screen saying nothing,
+   * on the majority of assets - almost none have photos yet, and the ones taken
+   * from here on will only ever cover recent handovers. The mobile strip has
+   * always filtered this way; the web did not, and should have.
+   */
+  const withPhotos = groups.filter((g) => g.handover.length + g.returned.length > 0);
+  const hasPhotos = withPhotos.length > 0;
+
+  /**
+   * Nothing to show, and nothing this person could do about it - so show
+   * nothing at all. An employee looking at their own laptop has no business
+   * being told about handover records they cannot create.
+   *
+   * While the query is still running this also renders nothing rather than a
+   * skeleton: the common case is an asset with no photos, and flashing a
+   * placeholder that resolves to an absent card is worse than a card that
+   * simply appears when there is something in it.
+   */
+  if (isPending || isError) return null;
+  if (!hasPhotos && !canCapture) return null;
+
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -283,37 +309,26 @@ export function ConditionPhotos({
         </p>
       ) : null}
 
-      {isPending ? (
-        <div className="mt-4 grid gap-2">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-      ) : isError ? (
-        <p className="mt-4 text-sm text-[var(--color-content-muted)]">
-          Could not load the condition photos.
+      {!hasPhotos ? (
+        /*
+          Nothing photographed yet, but this person can change that - so one
+          quiet line, not a card's worth of empty state. Which line depends on
+          whether there is a custody event to attach to at all: an asset can
+          show a holder while having no handover record, which is how the
+          import left them, and telling someone to "assign it first" when the
+          panel above says it is already with somebody is how a page loses
+          people's trust.
+        */
+        <p className="mt-3 text-sm text-[var(--color-content-muted)]">
+          {current
+            ? 'No photos recorded yet.'
+            : holderName
+              ? `Recorded as being with ${holderName}, but never handed over through the system — imported records carry no handover. Use "Hand over" above, and photos will attach to it.`
+              : 'Photos attach to a handover or a return, so there is nothing to attach them to until this asset is given to someone.'}
         </p>
-      ) : groups.length === 0 ? (
-        <div className="mt-4">
-          {/*
-            Two different empty states, because they need different actions and
-            saying the wrong one is worse than saying nothing. An asset can show
-            a holder while having no handover record at all - that is how the
-            August import left them, and telling someone to "assign it first"
-            when the screen above says it is already with Narvada is the kind of
-            message that makes people stop trusting the page.
-          */}
-          <EmptyState
-            title={holderName ? 'No handover record to attach photos to' : 'No custody history yet'}
-            description={
-              holderName
-                ? `This asset is recorded as being with ${holderName}, but it was never handed over through the system — imported records carry no handover. Use "Hand over" above to create one, and the photos will attach to it.`
-                : 'Photos are filed against a handover or a return, so there is nothing to attach them to until this asset is given to someone.'
-            }
-          />
-        </div>
       ) : (
         <ul className="mt-4 grid gap-4">
-          {groups.map((g) => (
+          {withPhotos.map((g) => (
             <li
               key={g.assignmentId}
               className="rounded-[var(--radius-control)] border border-[var(--color-border)] p-4"
