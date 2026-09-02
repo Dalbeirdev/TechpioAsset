@@ -3,7 +3,12 @@ import { Prisma, AssetStatus, AssetCondition, TrackingType, AuditAction } from '
 import type { AuthUser } from '@techpioasset/contracts';
 import ExcelJS from 'exceljs';
 import { ulid } from 'ulid';
-import { PERMISSIONS } from '@techpioasset/domain';
+import {
+  ASSET_TYPES,
+  ASSET_TYPES_BY_KEY,
+  PERMISSIONS,
+  sanitizeAssetSpecs,
+} from '@techpioasset/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AppError } from '../common/errors/app-error.js';
@@ -47,6 +52,16 @@ export interface ImportSummary {
   pricesIgnored: number;
   /** Already recorded and left alone; prices are write-once. */
   pricesLocked: number;
+
+  /**
+   * v2.37 - rows that carried at least one usable specification.
+   *
+   * Reported so a spec column that matched nothing is visible. Types declare
+   * different fields, so a "DPI" column is legitimately ignored on every laptop
+   * row - and without a count, a sheet whose headers matched NOTHING would look
+   * exactly like a successful import.
+   */
+  specsSet: number;
 
   errors: { row: number; message: string }[];
 }
@@ -171,6 +186,52 @@ export class AssetImportService {
   }
 
   /**
+   * Specifications for one row, taken from whatever columns apply to its type
+   * (v2.37).
+   *
+   * Matched per row against the fields that THIS asset's type declares, not
+   * against a fixed column list. Types declare different things - a laptop has
+   * RAM and an operating system, a mouse has DPI, a monitor has a refresh rate -
+   * so one sheet can carry every spec column there is and each row picks up
+   * only what applies to it. A DPI column is simply ignored on a laptop row.
+   *
+   * Columns are found by the field's LABEL as well as its key, because the
+   * label is what a person types: "Operating system", not "os". Header matching
+   * is already case- and punctuation-insensitive (see `cell`).
+   *
+   * `sanitizeAssetSpecs` has the last word - it drops anything the type does not
+   * declare and caps length - so a malformed or hostile header cannot turn the
+   * specs column into a document store.
+   */
+  private specsFrom(row: ImportRow, typeKey: string): Record<string, string> | undefined {
+    const def = ASSET_TYPES_BY_KEY[typeKey];
+    if (!def) return undefined;
+
+    const raw: Record<string, string> = {};
+    for (const field of def.fields) {
+      const value = this.cell(row, field.label, field.key);
+      if (value === null || value instanceof Date) continue;
+
+      const text = String(value).trim();
+      if (!text) continue;
+
+      // A numeric field keeps the number and drops the unit. "16 GB" in the RAM
+      // column would otherwise be stored whole and rendered as "16 GB GB",
+      // because the unit is appended when it is displayed.
+      if (field.kind === 'number') {
+        const numeric = /^\s*(-?\d+(?:\.\d+)?)/.exec(text.replace(/,/g, ''));
+        if (!numeric) continue;
+        raw[field.key] = numeric[1]!;
+        continue;
+      }
+
+      raw[field.key] = text;
+    }
+
+    return sanitizeAssetSpecs(typeKey, raw);
+  }
+
+  /**
    * A price from a spreadsheet cell (v2.29).
    *
    * Exported for its own tests, because the failure mode here is silent and
@@ -237,6 +298,7 @@ export class AssetImportService {
       pricesSet: 0,
       pricesIgnored: 0,
       pricesLocked: 0,
+      specsSet: 0,
       errors: [],
     };
 
@@ -264,7 +326,7 @@ export class AssetImportService {
 
     // Caches so repeated categories/subcategories/employees hit the DB once.
     const categoryCache = new Map<string, string>();
-    const subcategoryCache = new Map<string, string>();
+    const subcategoryCache = new Map<string, { id: string; key: string }>();
     const employeeCache = new Map<string, string>();
 
     const ensureCategory = async (name: string): Promise<string> => {
@@ -281,19 +343,44 @@ export class AssetImportService {
       return cat.id;
     };
 
-    const ensureSubcategory = async (categoryId: string, name: string): Promise<string> => {
-      const key = slug(name) || 'general';
+    /**
+     * v2.37 - returns the KEY as well as the id, because specifications are
+     * declared per type key and the importer previously had no way to know it.
+     *
+     * The key comes from the declared type catalogue whenever the sheet names
+     * one, and only falls back to slugging. "Monitor / Screen" slugs to
+     * `monitor-screen`, while the declared - and seeded - type is `monitor`; so
+     * without this an import would quietly create a second monitor type, file
+     * the assets under it, and drop every specification, because nothing
+     * declares fields for `monitor-screen`.
+     *
+     * Matched on the catalogue rather than on existing rows because the two can
+     * sit under different categories: the seed files monitors under Hardware,
+     * while a sheet saying "IT Assets" resolves elsewhere, and a lookup scoped
+     * to the category would miss.
+     */
+    const ensureSubcategory = async (
+      categoryId: string,
+      name: string,
+    ): Promise<{ id: string; key: string }> => {
+      const slugged = slug(name) || 'general';
+      const declared = ASSET_TYPES.find(
+        (t) => t.key === slugged || slug(t.name) === slugged || slug(t.key) === slugged,
+      );
+      const key = declared?.key ?? slugged;
+
       const cacheKey = `${categoryId}:${key}`;
       const cached = subcategoryCache.get(cacheKey);
       if (cached) return cached;
+
       const sub = await this.prisma.client.subcategory.upsert({
         where: { categoryId_key: { categoryId, key } },
         create: { categoryId, key, name },
         update: {},
-        select: { id: true },
+        select: { id: true, key: true },
       });
-      subcategoryCache.set(cacheKey, sub.id);
-      return sub.id;
+      subcategoryCache.set(cacheKey, sub);
+      return sub;
     };
 
     const ensureEmployee = async (
@@ -364,7 +451,7 @@ export class AssetImportService {
         const categoryName = (this.cell(row, 'Asset Category', 'Category') as string) || 'Hardware';
         const typeName = (this.cell(row, 'Asset Type', 'Type') as string) || 'General';
         const categoryId = await ensureCategory(categoryName);
-        const subcategoryId = await ensureSubcategory(categoryId, typeName);
+        const subcategory = await ensureSubcategory(categoryId, typeName);
 
         const conditionRaw = String(
           this.cell(row, 'Asset Condition', 'Condition') ?? '',
@@ -379,6 +466,10 @@ export class AssetImportService {
         const cost = this.parseMoney(costCell);
         const currency =
           (this.cell(row, 'Currency') as string | null)?.toUpperCase().slice(0, 3) || baseCurrency;
+
+        // v2.37 - read against this row's own type; see `specsFrom`.
+        const specs = this.specsFrom(row, subcategory.key);
+        if (specs) summary.specsSet += 1;
 
         const purchaseDate = this.toDate(this.cell(row, 'Purchased On', 'Purchase Date'));
         const warrantyEndDate = this.toDate(
@@ -429,7 +520,7 @@ export class AssetImportService {
         const data = {
           name: nameStr,
           categoryId,
-          subcategoryId,
+          subcategoryId: subcategory.id,
           trackingType: TrackingType.INDIVIDUAL,
           serialNumber: serialStr,
           purchaseDate,
@@ -439,6 +530,9 @@ export class AssetImportService {
           assignedUserId,
           assignmentDate: assignedUserId ? (assignmentDate ?? new Date()) : null,
           updatedById: actor.id,
+          // Spread like the price: a sheet without spec columns must not wipe
+          // specifications that are already recorded.
+          ...(specs ? { specs } : {}),
           // Spread, not a plain field: writing `purchaseCost: null` when the
           // sheet has no cost column would ERASE a price already recorded, and
           // an import that quietly clears prices is the exact failure the
@@ -511,13 +605,15 @@ export class AssetImportService {
         pricesSet: summary.pricesSet,
         pricesIgnored: summary.pricesIgnored,
         pricesLocked: summary.pricesLocked,
+        specsSet: summary.specsSet,
       },
     });
 
     this.logger.log(
       `Import by ${actor.id}: +${summary.assetsCreated} assets, ~${summary.assetsUpdated}, ` +
         `+${summary.employeesCreated} employees, ${summary.errors.length} errors, ` +
-        `prices ${summary.pricesSet} set / ${summary.pricesIgnored} ignored / ${summary.pricesLocked} locked`,
+        `prices ${summary.pricesSet} set / ${summary.pricesIgnored} ignored / ${summary.pricesLocked} locked, ` +
+        `specs on ${summary.specsSet} rows`,
     );
     return summary;
   }

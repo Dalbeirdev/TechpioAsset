@@ -47,14 +47,23 @@ afterAll(async () => {
 });
 
 /** A one-row workbook, in the shape the importer reads. */
-async function sheet(serial: string, cost?: string): Promise<Buffer> {
+async function sheet(
+  serial: string,
+  cost?: string,
+  extra?: Record<string, string>,
+  type = 'Laptop',
+): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Assets');
   const headers = ['Asset Id', 'Asset Name', 'Asset Category', 'Asset Type'];
-  const values: (string | undefined)[] = [serial, 'Imported laptop', 'IT Assets', 'Laptop'];
+  const values: (string | undefined)[] = [serial, 'Imported laptop', 'IT Assets', type];
   if (cost !== undefined) {
     headers.push('Purchase Cost');
     values.push(cost);
+  }
+  for (const [header, value] of Object.entries(extra ?? {})) {
+    headers.push(header);
+    values.push(value);
   }
   ws.addRow(headers);
   ws.addRow(values);
@@ -193,5 +202,114 @@ describe('cost on the asset import', () => {
     // field, and the bulk import summary cannot answer it.
     expect(entries.length).toBe(1);
     expect(JSON.stringify(entries[0]?.newValues)).toContain('import');
+  });
+});
+
+
+/**
+ * Specifications on the import (v2.37).
+ *
+ * Columns are matched per row against the fields THIS asset's type declares, so
+ * the failures worth guarding are the quiet ones: a spec landing on a type that
+ * does not declare it, a unit being stored as part of a number, and a sheet
+ * whose headers matched nothing looking exactly like a success.
+ */
+describe('specifications on the asset import', () => {
+  const specSerial = () => unique('SPEC');
+
+  const uploadWith = async (serial: string, extra: Record<string, string>, type = 'Laptop') => {
+    const file = await sheet(serial, undefined, extra, type);
+    return api(app)
+      .post('/api/v1/assets/import')
+      .set(auth(s.superAdmin))
+      .attach('file', file, 'assets.xlsx');
+  };
+
+  const specsOf = async (serial: string) => {
+    const asset = await prisma.client.asset.findFirst({
+      where: { serialNumber: serial },
+      select: { specs: true },
+    });
+    return (asset?.specs ?? null) as Record<string, string> | null;
+  };
+
+  it('records the fields a laptop declares, matched by their labels', async () => {
+    const serial = specSerial();
+    const res = await uploadWith(serial, {
+      Processor: 'Intel Core i7-1265U',
+      RAM: '16',
+      Storage: '512 GB SSD',
+      'Operating system': 'Windows 11 Pro',
+    });
+
+    expect(res.status).toBeLessThan(300);
+    expect(res.body.data.specsSet).toBe(1);
+    expect(await specsOf(serial)).toMatchObject({
+      cpu: 'Intel Core i7-1265U',
+      ramGb: '16',
+      storage: '512 GB SSD',
+      os: 'Windows 11 Pro',
+    });
+  });
+
+  it('keeps the number and drops the unit somebody typed with it', async () => {
+    // "16 GB" stored whole renders as "16 GB GB", because the unit is appended
+    // when it is displayed.
+    const serial = specSerial();
+    await uploadWith(serial, { RAM: '16 GB', 'Screen size': '14 in' });
+    expect(await specsOf(serial)).toMatchObject({ ramGb: '16', screenSize: '14' });
+  });
+
+  it("ignores a column the row's own type does not declare", async () => {
+    // DPI is a mouse field. On a laptop it is not a missing value, it is not a
+    // field at all - and silently storing it would let the specs column become
+    // whatever a spreadsheet happened to contain.
+    const serial = specSerial();
+    await uploadWith(serial, { DPI: '1600', RAM: '8' });
+    const specs = await specsOf(serial);
+    expect(specs).toMatchObject({ ramGb: '8' });
+    expect(specs).not.toHaveProperty('dpi');
+  });
+
+  it("reads a different type's own fields from the same sheet shape", async () => {
+    const serial = specSerial();
+    await uploadWith(serial, { DPI: '1600', Connection: 'Bluetooth' }, 'Mouse');
+    expect(await specsOf(serial)).toMatchObject({ dpi: '1600', connection: 'Bluetooth' });
+  });
+
+  it('reports zero when no header matched, rather than looking like a success', async () => {
+    const serial = specSerial();
+    const res = await uploadWith(serial, { 'Colour of the box': 'brown' });
+    expect(res.body.data.specsSet).toBe(0);
+    expect(await specsOf(serial)).toBeNull();
+  });
+
+  it('does not wipe recorded specs when a later sheet omits the columns', async () => {
+    const serial = specSerial();
+    await uploadWith(serial, { RAM: '32' });
+    expect(await specsOf(serial)).toMatchObject({ ramGb: '32' });
+
+    const again = await sheet(serial);
+    const res = await api(app)
+      .post('/api/v1/assets/import')
+      .set(auth(s.superAdmin))
+      .attach('file', again, 'assets.xlsx');
+    expect(res.status).toBeLessThan(300);
+    // An ordinary re-import must not clear what is already known.
+    expect(await specsOf(serial)).toMatchObject({ ramGb: '32' });
+  });
+
+  it('files "Monitor / Screen" under the seeded monitor type, not a new one', async () => {
+    // slug("Monitor / Screen") is "monitor-screen", which declares no fields at
+    // all - so without matching the existing type by name every monitor spec
+    // would vanish while the import reported success.
+    const serial = specSerial();
+    await uploadWith(serial, { Resolution: '2560x1440' }, 'Monitor / Screen');
+    const asset = await prisma.client.asset.findFirst({
+      where: { serialNumber: serial },
+      select: { subcategory: { select: { key: true } } },
+    });
+    expect(asset?.subcategory?.key).toBe('monitor');
+    expect(await specsOf(serial)).toMatchObject({ resolution: '2560x1440' });
   });
 });
