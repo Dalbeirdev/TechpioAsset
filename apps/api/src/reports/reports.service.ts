@@ -43,6 +43,46 @@ function specText(value: unknown, suffix = ''): string {
   return `${String(value)}${suffix}`;
 }
 
+/**
+ * A specification for a report, preferring what the machine reported (v2.39).
+ *
+ * Two sources exist for RAM, storage and OS: what somebody typed into the
+ * asset, and what the agent read off the machine. The agent wins where it has
+ * an answer, because it measured the thing rather than remembering it - a
+ * hand-typed figure is right on the day it is entered and silently wrong after
+ * the first upgrade.
+ *
+ * The typed value is the fallback, which is what carries the Macs (the agent is
+ * Windows-only, so they will never report) and anything the agent has not
+ * reached yet.
+ */
+function preferReported(reported: string | null, typed: string): string {
+  return reported ?? (typed || '');
+}
+
+/**
+ * Measured RAM, as measured.
+ *
+ * Windows reports what is addressable, so a 16 GB machine reads 15.4 - the rest
+ * is reserved by hardware. Deliberately NOT rounded up to the number on the
+ * box: that figure was never measured, and inventing it here would put a value
+ * in an asset register that nothing in the system can support.
+ */
+function reportedGb(value: Prisma.Decimal | null | undefined, dp = 1): string | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `${Number(n.toFixed(dp))} GB`;
+}
+
+/** "Microsoft Windows 11 Pro 10.0.26200" from the two fields that hold it. */
+function reportedOs(
+  os: { osName: string | null; osVersion: string | null } | null | undefined,
+): string | null {
+  if (!os?.osName) return null;
+  return [os.osName, os.osVersion].filter(Boolean).join(' ');
+}
+
 /** yyyy-mm-dd, which sorts correctly as text in any spreadsheet. */
 function isoDate(value: Date | null | undefined): string {
   return value ? value.toISOString().slice(0, 10) : '';
@@ -187,6 +227,10 @@ export class ReportsService {
               category: { select: { name: true } },
               subcategory: { select: { name: true } },
               department: { select: { name: true } },
+              // v2.39 - what the machine itself reported, preferred over the
+              // typed specs below.
+              hardwareProfile: { select: { ramGb: true, storageTotalGb: true } },
+              osInfo: { select: { osName: true, osVersion: true } },
               office: { select: { name: true } },
               assignedUser: {
                 select: { email: true, profile: { select: { firstName: true, lastName: true } } },
@@ -207,9 +251,12 @@ export class ReportsService {
               brand: a.brand ?? '',
               model: a.model ?? '',
               serialNumber: a.serialNumber ?? '',
-              ram: specText(specs.ramGb, ' GB'),
-              storage: specText(specs.storage),
-              os: specText(specs.os),
+              ram: preferReported(reportedGb(a.hardwareProfile?.ramGb), specText(specs.ramGb, ' GB')),
+              storage: preferReported(
+                reportedGb(a.hardwareProfile?.storageTotalGb, 0),
+                specText(specs.storage),
+              ),
+              os: preferReported(reportedOs(a.osInfo), specText(specs.os)),
               status: a.status,
               condition: a.condition,
               office: a.office?.name ?? fallbackOffice?.name ?? '',
@@ -430,6 +477,9 @@ export class ReportsService {
                 warrantyEndDate: true,
                 subcategory: { select: { name: true } },
                 office: { select: { name: true } },
+                // v2.39 - as on the inventory report: measured beats typed.
+                hardwareProfile: { select: { ramGb: true, storageTotalGb: true } },
+                osInfo: { select: { osName: true, osVersion: true } },
                 assignments: {
                   where: { returnedAt: null },
                   orderBy: { assignedAt: 'desc' },
@@ -475,9 +525,12 @@ export class ReportsService {
             brand: main?.brand ?? '',
             model: main?.model ?? '',
             serialNumber: main?.serialNumber ?? '',
-            ram: specText(specs.ramGb, ' GB'),
-            storage: specText(specs.storage),
-            os: specText(specs.os),
+            ram: preferReported(reportedGb(main?.hardwareProfile?.ramGb), specText(specs.ramGb, ' GB')),
+            storage: preferReported(
+              reportedGb(main?.hardwareProfile?.storageTotalGb, 0),
+              specText(specs.storage),
+            ),
+            os: preferReported(reportedOs(main?.osInfo), specText(specs.os)),
             condition: main?.condition ?? '',
             assignedOn: isoDate(main?.assignmentDate),
             warrantyTill: isoDate(main?.warrantyEndDate),

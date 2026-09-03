@@ -1,5 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
 
 /**
@@ -283,5 +285,107 @@ describe('scheduled reports (spec section 18)', () => {
         recipients: ['employee@techpioasset.dev'],
       });
     expect(response.status).toBe(403);
+  });
+});
+
+/**
+ * Where a specification comes from (v2.39).
+ *
+ * RAM, storage and OS have two possible sources: what somebody typed, and what
+ * the agent read off the machine. Which one wins is the decision worth pinning,
+ * because getting it backwards is invisible - both produce a plausible-looking
+ * report, and only one of them stays true after a memory upgrade.
+ */
+describe('specifications in reports prefer what the machine reported', () => {
+  let assetId: string;
+
+  beforeAll(async () => {
+    const prisma = app.get(PrismaService);
+    const asset = await prisma.client.asset.findFirst({
+      where: { deletedAt: null, hardwareProfile: { is: null } },
+      select: { id: true, companyId: true },
+    });
+    assetId = asset!.id;
+
+    // Typed specs say one thing...
+    await prisma.client.asset.update({
+      where: { id: assetId },
+      data: { specs: { ramGb: '8', storage: '256 GB SSD', os: 'Windows 10 Pro' } },
+    });
+    // ...and the machine reports another.
+    await prisma.client.hardwareProfile.create({
+      data: {
+        companyId: asset!.companyId,
+        assetId,
+        ramGb: 15.4,
+        storageTotalGb: 476.9,
+        source: 'AGENT',
+      },
+    });
+    await prisma.client.operatingSystemInfo.create({
+      data: {
+        companyId: asset!.companyId,
+        assetId,
+        osName: 'Microsoft Windows 11 Pro',
+        osVersion: '10.0.26200',
+        source: 'AGENT',
+      },
+    });
+  });
+
+  afterAll(async () => {
+    const prisma = app.get(PrismaService);
+    await prisma.client.operatingSystemInfo.deleteMany({ where: { assetId } });
+    await prisma.client.hardwareProfile.deleteMany({ where: { assetId } });
+    await prisma.client.asset.update({ where: { id: assetId }, data: { specs: Prisma.DbNull } });
+  });
+
+  it('reports what the agent measured, not what was typed', async () => {
+    const response = await api(app)
+      .get('/api/v1/reports?type=ASSET_INVENTORY')
+      .set(auth(s.finance));
+    const row = (response.body.data.rows as Record<string, string>[]).find(
+      (r) => r.ram === '15.4 GB',
+    );
+
+    expect(row, 'the agent-reported row should be present').toBeTruthy();
+    // The typed values were 8 GB / 256 GB SSD / Windows 10 - all superseded.
+    expect(row!.ram).toBe('15.4 GB');
+    expect(row!.storage).toBe('477 GB');
+    expect(row!.os).toBe('Microsoft Windows 11 Pro 10.0.26200');
+  });
+
+  it('does not round measured RAM up to the number on the box', async () => {
+    // Windows reports what is addressable; 15.4 is a 16 GB machine minus what
+    // the hardware reserves. Printing "16 GB" would be a figure nothing
+    // measured, in a register people audit against.
+    const response = await api(app)
+      .get('/api/v1/reports?type=ASSET_INVENTORY')
+      .set(auth(s.finance));
+    const rams = (response.body.data.rows as Record<string, string>[]).map((r) => r.ram);
+    expect(rams).toContain('15.4 GB');
+    expect(rams).not.toContain('16 GB');
+  });
+
+  it('still uses the typed value where no agent has reported', async () => {
+    // The Macs will never report - the agent is Windows-only - so the typed
+    // specs have to keep working, or this change would blank them.
+    const prisma = app.get(PrismaService);
+    const other = await prisma.client.asset.findFirst({
+      where: { deletedAt: null, hardwareProfile: { is: null }, id: { not: assetId } },
+      select: { id: true },
+    });
+    await prisma.client.asset.update({
+      where: { id: other!.id },
+      data: { specs: { ramGb: '64', os: 'macOS Sonoma' } },
+    });
+
+    const response = await api(app)
+      .get('/api/v1/reports?type=ASSET_INVENTORY')
+      .set(auth(s.finance));
+    const rows = response.body.data.rows as Record<string, string>[];
+    expect(rows.some((r) => r.ram === '64 GB' && r.os === 'macOS Sonoma')).toBe(true);
+
+    await prisma.client.asset.update({ where: { id: other!.id }, data: { specs: Prisma.DbNull } });
   });
 });
