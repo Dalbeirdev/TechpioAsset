@@ -5,10 +5,55 @@ import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { latestBackup, targetFromEnv } from '../backup/backup-storage.js';
 import { RoutingMailProvider } from '../providers/mail/routing-mail.provider.js';
+import { StorageProvider } from '../providers/storage/storage.provider.js';
 
 const startedAt = Date.now();
 /** A readiness probe runs every few seconds; object storage does not need that. */
 const OFFSITE_CACHE_MS = 10 * 60 * 1000;
+
+/**
+ * How the local storage provider is reported.
+ *
+ * It was described as `mocked` - "Results are simulated, not real" - which is
+ * simply untrue: the local provider writes real files under real ULID keys and
+ * issues real HMAC-signed expiring URLs, and since v2.33 those files are in the
+ * nightly backup. Calling that simulated teaches an operator to discount the
+ * word `mocked`, which is the one word on this endpoint that has to keep its
+ * meaning, because `ai` and `push` really are simulated.
+ *
+ * What is true is that local disk is not durable object storage, and the
+ * provider already says so itself. So the status is taken from the provider's
+ * own `durable` flag rather than from a string comparison on an env var, and
+ * `degraded` carries the real limitation: the files exist, on one box.
+ */
+export function describeStorage(name: string, durable: boolean): DependencyHealth {
+  return durable
+    ? { name: 'storage', status: 'up', detail: `Provider: ${name}`, critical: false }
+    : {
+        name: 'storage',
+        status: 'degraded',
+        detail:
+          `Provider: ${name}. Files are real and included in the nightly backup, ` +
+          `but they are on this host rather than durable object storage.`,
+        critical: false,
+      };
+}
+
+/**
+ * The overall verdict.
+ *
+ * `degraded` dependencies were not counted here, so any dependency reporting it
+ * left the service looking `ok`. Nothing reported `degraded` before, which is
+ * why it never showed - but storage does now, and so does mail when its
+ * settings cannot be read, and a limitation nobody is told about is the same as
+ * no limitation at all.
+ */
+export function rollUp(dependencies: DependencyHealth[]): HealthResponse['status'] {
+  if (dependencies.some((d) => d.critical && d.status === 'down')) return 'error';
+  return dependencies.some((d) => d.status === 'down' || d.status === 'mocked' || d.status === 'degraded')
+    ? 'degraded'
+    : 'ok';
+}
 
 @Injectable()
 export class HealthService {
@@ -21,8 +66,10 @@ export class HealthService {
   constructor(
     private readonly config: AppConfig,
     private readonly prisma: PrismaService,
-    // MailModule is @Global, so this needs no wiring in HealthModule.
+    // MailModule and StorageModule are both @Global, so these need no wiring
+    // in HealthModule.
     private readonly mail: RoutingMailProvider,
+    private readonly storage: StorageProvider,
   ) {}
 
   /** Liveness: the process is up. Deliberately checks nothing external. */
@@ -42,19 +89,13 @@ export class HealthService {
 
     dependencies.push(await this.checkPostgres());
     dependencies.push(await this.checkRedis());
-    dependencies.push(
-      this.describeProvider('storage', this.config.get('STORAGE_PROVIDER'), 'local'),
-    );
+    dependencies.push(describeStorage(this.storage.name, this.storage.durable));
     dependencies.push(this.describeProvider('ai', this.config.get('AI_PROVIDER'), 'mock'));
     dependencies.push(await this.checkMail());
     dependencies.push(this.describeProvider('push', this.config.get('PUSH_PROVIDER'), 'mock'));
 
-    const criticalDown = dependencies.some((d) => d.critical && d.status === 'down');
-    const anyDown = dependencies.some((d) => d.status === 'down');
-    const anyMocked = dependencies.some((d) => d.status === 'mocked');
-
     return {
-      status: criticalDown ? 'error' : anyDown || anyMocked ? 'degraded' : 'ok',
+      status: rollUp(dependencies),
       service: 'techpioasset-api',
       version: process.env.npm_package_version ?? '0.1.0',
       environment: this.config.get('NODE_ENV'),
