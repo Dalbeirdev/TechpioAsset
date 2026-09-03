@@ -176,13 +176,22 @@ export default function PurchaseRequestPage() {
 
       {/* Actions by state and role */}
       <Card className="flex flex-wrap items-center gap-3 p-4">
+        {/* A draft and a rejected request offer the same action - the requester
+            sends it (again) - but they are not the same situation, so they do
+            not get the same words. A rejected request has already been seen and
+            turned down; telling a reader it is "waiting to be submitted" reads
+            as though nothing has happened yet. */}
         {pr.status === 'DRAFT' || pr.status === 'REJECTED' ? (
           isRequester ? (
             <Button loading={submit.isPending} onClick={() => submit.mutate()}>
-              Submit for approval
+              {pr.status === 'REJECTED' ? 'Revise and send again' : 'Submit for approval'}
             </Button>
           ) : (
-            <p className="text-sm text-[var(--color-content-subtle)]">Waiting for the requester to submit.</p>
+            <p className="text-sm text-[var(--color-content-subtle)]">
+              {pr.status === 'REJECTED'
+                ? 'Rejected. The requester can revise it and send it again.'
+                : 'Waiting for the requester to submit.'}
+            </p>
           )
         ) : null}
 
