@@ -10,7 +10,9 @@ import { ExpoPushProvider } from './expo-push.provider.js';
     {
       provide: PushProvider,
       useFactory: (config: AppConfig): PushProvider =>
-        config.get('PUSH_PROVIDER') === 'expo' ? new ExpoPushProvider() : new MockPushProvider(),
+        config.get('PUSH_PROVIDER') === 'expo'
+          ? new ExpoPushProvider(config)
+          : new MockPushProvider(),
       inject: [AppConfig],
     },
   ],
