@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { AuthUser } from '@techpioasset/contracts';
 import { PERMISSIONS } from '@techpioasset/domain';
 import { AuditAction } from '@prisma/client';
@@ -51,8 +51,28 @@ const ENTITY_TYPE: Record<PhotoStage, string> = {
  */
 const PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
+/**
+ * Ceilings for the photo list (v2.39).
+ *
+ * Both reads here were unbounded, which the repo's own bounded-reads guard
+ * flags: an asset's custody history and its photos both grow with use, and
+ * neither has any cap on the write side - nothing stops fifty photos being
+ * attached to one handover.
+ *
+ * These are set far beyond any real asset's life rather than tuned tight,
+ * because the payload is evidence: an asset that hit the ceiling would be one
+ * whose oldest handover quietly stopped being visible, and that is the one
+ * moment somebody is arguing about. Reaching either is logged rather than
+ * passed over in silence, so if it ever happens we find out from a log line
+ * instead of from a dispute.
+ */
+const MAX_CUSTODY_EVENTS = 200;
+const MAX_PHOTOS = 1000;
+
 @Injectable()
 export class AssetPhotosService {
+  private readonly logger = new Logger(AssetPhotosService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -244,42 +264,64 @@ export class AssetPhotosService {
   async list(actor: AuthUser, assetId: string) {
     await this.assetOr404(actor, assetId);
 
-    const [photos, assignments] = await Promise.all([
-      this.prisma.client.attachment.findMany({
-        where: {
-          assetId,
-          deletedAt: null,
-          entityType: { in: [ENTITY_TYPE.HANDOVER, ENTITY_TYPE.RETURN] },
-          ...tenantFilter(actor),
-        },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          entityType: true,
-          entityId: true,
-          originalName: true,
-          caption: true,
-          mimeType: true,
-          sizeBytes: true,
-          createdAt: true,
-          uploadedById: true,
-        },
-      }),
-      this.prisma.client.assetAssignment.findMany({
-        where: { assetId },
-        orderBy: { assignedAt: 'desc' },
-        select: {
-          id: true,
-          assignedAt: true,
-          returnedAt: true,
-          conditionOut: true,
-          acknowledgedAt: true,
-          userId: true,
-          user: { select: { profile: { select: { firstName: true, lastName: true } } } },
-          assetReturn: { select: { id: true, returnedAt: true, conditionIn: true } },
-        },
-      }),
-    ]);
+    // The custody events come first, and the photo read is then scoped to the
+    // events being returned. That is what makes the second query bounded by
+    // construction rather than by a number picked to look safe: a photo that
+    // belongs to no listed event was never going to be displayed anyway.
+    const assignments = await this.prisma.client.assetAssignment.findMany({
+      where: { assetId },
+      orderBy: { assignedAt: 'desc' },
+      take: MAX_CUSTODY_EVENTS,
+      select: {
+        id: true,
+        assignedAt: true,
+        returnedAt: true,
+        conditionOut: true,
+        acknowledgedAt: true,
+        userId: true,
+        user: { select: { profile: { select: { firstName: true, lastName: true } } } },
+        assetReturn: { select: { id: true, returnedAt: true, conditionIn: true } },
+      },
+    });
+    if (assignments.length === MAX_CUSTODY_EVENTS) {
+      this.logger.warn(
+        `Asset ${assetId} has at least ${MAX_CUSTODY_EVENTS} custody events; ` +
+          'older ones are not being shown with their photos',
+      );
+    }
+
+    const eventIds = [
+      ...assignments.map((a) => a.id),
+      ...assignments.map((a) => a.assetReturn?.id).filter(Boolean),
+    ] as string[];
+
+    const photos = eventIds.length
+      ? await this.prisma.client.attachment.findMany({
+          where: {
+            assetId,
+            deletedAt: null,
+            entityType: { in: [ENTITY_TYPE.HANDOVER, ENTITY_TYPE.RETURN] },
+            entityId: { in: eventIds },
+            ...tenantFilter(actor),
+          },
+          orderBy: { createdAt: 'asc' },
+          take: MAX_PHOTOS,
+          select: {
+            id: true,
+            entityType: true,
+            entityId: true,
+            originalName: true,
+            caption: true,
+            mimeType: true,
+            sizeBytes: true,
+            createdAt: true,
+            uploadedById: true,
+          },
+        })
+      : [];
+    if (photos.length === MAX_PHOTOS) {
+      this.logger.warn(`Asset ${assetId} returned the ${MAX_PHOTOS}-photo ceiling; some are hidden`);
+    }
 
     // Attachment carries only the uploader's id, so the names are resolved in
     // one extra query rather than N joins - a photo list is small, and the
