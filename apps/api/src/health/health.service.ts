@@ -5,6 +5,7 @@ import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { latestBackup, targetFromEnv } from '../backup/backup-storage.js';
 import { RoutingMailProvider } from '../providers/mail/routing-mail.provider.js';
+import { RoutingAiProvider } from '../providers/ai/routing-ai.provider.js';
 import { StorageProvider } from '../providers/storage/storage.provider.js';
 
 const startedAt = Date.now();
@@ -40,6 +41,55 @@ export function describeStorage(name: string, durable: boolean): DependencyHealt
 }
 
 /**
+ * How a provider that can be configured from the operator console is described.
+ *
+ * Mail and AI both route the same way - database settings first, environment
+ * second, simulation last - so both are described the same way, and neither is
+ * described by reading its env var. Production had `AI_PROVIDER=mock` and an
+ * Anthropic key saved in the console on 13 August, one day after the SMTP
+ * settings, so this endpoint called document extraction simulated for three
+ * weeks on a deployment configured to use Claude.
+ *
+ * `where` names which of the two sources won, because "it is live" and "it is
+ * live because of a setting you cannot see from the shell" are different
+ * answers to an operator holding a terminal.
+ */
+export function describeRouted(
+  name: string,
+  provider: string,
+  where: 'operator' | 'environment',
+  consolePath: string,
+): DependencyHealth {
+  if (provider === 'mock' || provider === 'simulated') {
+    return {
+      name,
+      status: 'mocked',
+      detail: 'Using the mock provider. Results are simulated, not real.',
+      critical: false,
+    };
+  }
+  return {
+    name,
+    status: 'up',
+    detail:
+      where === 'operator'
+        ? `Provider: ${provider}, configured in ${consolePath}`
+        : `Provider: ${provider}, from the environment`,
+    critical: false,
+  };
+}
+
+/** A router we could not question tells us nothing, and guessing is the bug. */
+export function undeterminedRoute(name: string, error: unknown): DependencyHealth {
+  return {
+    name,
+    status: 'degraded',
+    detail: `Could not determine the ${name} provider: ${(error as Error).message}`,
+    critical: false,
+  };
+}
+
+/**
  * The overall verdict.
  *
  * `degraded` dependencies were not counted here, so any dependency reporting it
@@ -69,6 +119,7 @@ export class HealthService {
     // MailModule and StorageModule are both @Global, so these need no wiring
     // in HealthModule.
     private readonly mail: RoutingMailProvider,
+    private readonly ai: RoutingAiProvider,
     private readonly storage: StorageProvider,
   ) {}
 
@@ -90,7 +141,7 @@ export class HealthService {
     dependencies.push(await this.checkPostgres());
     dependencies.push(await this.checkRedis());
     dependencies.push(describeStorage(this.storage.name, this.storage.durable));
-    dependencies.push(this.describeProvider('ai', this.config.get('AI_PROVIDER'), 'mock'));
+    dependencies.push(await this.checkAi());
     dependencies.push(await this.checkMail());
     dependencies.push(this.describeProvider('push', this.config.get('PUSH_PROVIDER'), 'mock'));
 
@@ -230,48 +281,34 @@ export class HealthService {
   }
 
   /**
-   * Mail is the one provider whose configuration does not live in the
-   * environment. Since v2.12 the router prefers SMTP settings held in the
-   * database, so MAIL_PROVIDER is routinely dead config - and reading it here
-   * told production it was simulating mail on a day it sent 352 real messages,
-   * while marking the whole service `degraded`. A probe that cries wolf gets
-   * ignored, which costs more than having no probe.
-   *
-   * So ask the router where a send would actually go, rather than asking the
-   * environment what it would have decided.
+   * Mail and AI are routed providers: their real configuration lives in the
+   * database, not the environment, so both are asked rather than inferred.
+   * Reading MAIL_PROVIDER told production it was simulating mail on a day it
+   * sent 352 real messages; reading AI_PROVIDER said the same about document
+   * extraction. A probe that cries wolf gets ignored, which costs more than
+   * having no probe.
    */
   private async checkMail(): Promise<DependencyHealth> {
-    let route: Awaited<ReturnType<RoutingMailProvider['route']>>;
     try {
-      route = await this.mail.route();
+      const route = await this.mail.route();
+      return describeRouted(
+        'mail',
+        route === 'simulated' ? 'mock' : 'SMTP',
+        route === 'database' ? 'operator' : 'environment',
+        'Platform → Mail',
+      );
     } catch (error) {
-      // Settings we cannot read prove nothing either way, and claiming a state
-      // we could not establish is the failure this whole change is about.
-      return {
-        name: 'mail',
-        status: 'degraded',
-        detail: `Could not determine the mail route: ${(error as Error).message}`,
-        critical: false,
-      };
+      return undeterminedRoute('mail', error);
     }
+  }
 
-    if (route === 'simulated') {
-      return {
-        name: 'mail',
-        status: 'mocked',
-        detail: 'Using the mock provider. Results are simulated, not real.',
-        critical: false,
-      };
+  private async checkAi(): Promise<DependencyHealth> {
+    try {
+      const { provider, source } = await this.ai.effective();
+      return describeRouted('ai', provider, source, 'Platform → AI');
+    } catch (error) {
+      return undeterminedRoute('ai', error);
     }
-    return {
-      name: 'mail',
-      status: 'up',
-      detail:
-        route === 'database'
-          ? 'Provider: SMTP, configured in Platform → Mail'
-          : 'Provider: SMTP, from the environment',
-      critical: false,
-    };
   }
 
   private describeProvider(name: string, configured: string, mockValue: string): DependencyHealth {
