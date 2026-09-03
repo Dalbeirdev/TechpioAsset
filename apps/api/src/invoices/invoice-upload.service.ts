@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { AuditAction, Prisma } from '@prisma/client';
 import { ulid } from 'ulid';
 import type { AuthUser } from '@techpioasset/contracts';
@@ -10,7 +10,30 @@ import { AiConfigService } from '../ai-config/ai-config.service.js';
 import { AiDocumentProvider } from '../providers/ai/ai-document.provider.js';
 import { StorageProvider } from '../providers/storage/storage.provider.js';
 import { validateUpload } from '../providers/storage/file-validation.js';
+import { QueueProvider } from '../providers/queue/queue.provider.js';
 import { InvoicesService } from './invoices.service.js';
+
+export const EXTRACT_INVOICE_JOB = 'invoice.extract';
+
+/**
+ * What the extraction job needs to do its work.
+ *
+ * The document bytes are deliberately NOT in here. They are already in object
+ * storage by the time this is queued, and production runs BullMQ on Redis, so
+ * carrying a 30 MB scan through the payload would put a base64 copy of every
+ * uploaded bill into Redis. The job re-reads it by key instead.
+ *
+ * The actor is carried as the few fields the work actually needs - usage
+ * records and verification are attributed to the person who uploaded, and a job
+ * that outlives the request cannot go back and ask.
+ */
+interface ExtractJobPayload {
+  invoiceId: string;
+  storageKey: string;
+  contentType: string;
+  fileName: string;
+  actor: { id: string; companyId: string; officeId: string | null; roles: string[] };
+}
 
 /**
  * Handles a document upload and, if AI is enabled for this company, extraction.
@@ -21,7 +44,7 @@ import { InvoicesService } from './invoices.service.js';
  * external call" true by construction rather than by discipline.
  */
 @Injectable()
-export class InvoiceUploadService {
+export class InvoiceUploadService implements OnModuleInit {
   private readonly logger = new Logger(InvoiceUploadService.name);
 
   constructor(
@@ -32,7 +55,23 @@ export class InvoiceUploadService {
     private readonly invoices: InvoicesService,
     private readonly audit: AuditService,
     private readonly config: AppConfig,
+    private readonly queue: QueueProvider,
   ) {}
+
+  onModuleInit(): void {
+    this.queue.register<ExtractJobPayload>(EXTRACT_INVOICE_JOB, async (payload) => {
+      const actor = payload.actor as unknown as AuthUser;
+      const data = await this.storage.get(payload.storageKey);
+      await this.runExtraction(actor, payload.invoiceId, {
+        buffer: data,
+        originalname: payload.fileName,
+      }, payload.contentType);
+
+      // Deterministic verification runs against the fields extraction just
+      // populated, so on this path it belongs after the job, not at upload.
+      await this.invoices.runVerification(actor, payload.invoiceId);
+    });
+  }
 
   async upload(
     actor: AuthUser,
@@ -101,7 +140,12 @@ export class InvoiceUploadService {
       roleKeys: actor.roles,
     });
 
-    let extractionSummary: { ran: boolean; simulated: boolean; reason?: string };
+    let extractionSummary: {
+      ran: boolean;
+      queued: boolean;
+      simulated: boolean;
+      reason?: string;
+    };
 
     if (!gate.enabled) {
       // No provider is contacted. The invoice waits for manual entry/review.
@@ -110,19 +154,38 @@ export class InvoiceUploadService {
         where: { id: invoice.id },
         data: { verificationStatus: 'PENDING_REVIEW' },
       });
-      extractionSummary = { ran: false, simulated: false, reason: gate.reason };
-    } else {
-      extractionSummary = await this.runExtraction(
-        actor,
-        invoice.id,
-        file,
-        contentType,
-        gate.confidenceThreshold,
-      );
-    }
+      extractionSummary = { ran: false, queued: false, simulated: false, reason: gate.reason };
 
-    // 5. Deterministic verification always runs (section 10).
-    await this.invoices.runVerification(actor, invoice.id);
+      // 5a. Nothing will populate fields later, so verify now.
+      await this.invoices.runVerification(actor, invoice.id);
+    } else {
+      // 4a. Extraction is queued rather than awaited. A one-page bill measured
+      // 14.5s against Claude and a multi-page scan takes longer, which held the
+      // uploader's request open past any sensible proxy timeout - and a timeout
+      // there was worse than a slow answer, because the API carried on, saved
+      // the extraction and charged for it while the uploader saw an error and
+      // retried into a second charge.
+      await this.prisma.client.invoice.update({
+        where: { id: invoice.id },
+        data: { verificationStatus: 'PENDING_AI_PROCESSING' },
+      });
+      await this.queue.enqueue<ExtractJobPayload>(EXTRACT_INVOICE_JOB, {
+        invoiceId: invoice.id,
+        storageKey: stored.key,
+        contentType,
+        fileName: file.originalname,
+        actor: {
+          id: actor.id,
+          companyId: actor.companyId,
+          officeId: actor.officeId ?? null,
+          roles: actor.roles,
+        },
+      });
+      extractionSummary = { ran: false, queued: true, simulated: false };
+
+      // 5b. Verification runs inside the job, once there are extracted fields
+      // to check. Running it here would grade an empty invoice.
+    }
 
     const result = await this.invoices.findOne(actor, invoice.id);
     return { invoice: result, extraction: extractionSummary };
@@ -133,7 +196,6 @@ export class InvoiceUploadService {
     invoiceId: string,
     file: { buffer: Buffer; originalname: string },
     contentType: string,
-    _confidenceThreshold: number,
   ): Promise<{ ran: boolean; simulated: boolean }> {
     await this.prisma.client.invoice.update({
       where: { id: invoiceId },

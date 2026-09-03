@@ -127,7 +127,35 @@ describe('upload with AI DISABLED (spec section 10)', () => {
 });
 
 describe('upload with AI ENABLED', () => {
-  it('calls the provider and marks the result simulated', async () => {
+  /**
+   * Polls until the queued job has produced what the caller is asserting on.
+   *
+   * The condition is the caller's, not a fixed "has an extraction": the job
+   * writes the extraction record and only then runs verification, so waiting on
+   * the extraction and asserting on the verification is a race that passes
+   * alone and fails in a full run.
+   */
+  async function waitForInvoice(
+    invoiceId: string,
+    ready: (invoice: { extractions?: unknown[]; verifications?: unknown[] }) => boolean,
+    what: string,
+    timeoutMs = 15_000,
+  ) {
+    const deadline = Date.now() + timeoutMs;
+    let last: { extractions?: unknown[]; verifications?: unknown[] } = {};
+    while (Date.now() < deadline) {
+      const res = await api(app).get(`/api/v1/invoices/${invoiceId}`).set(auth(s.finance));
+      last = res.body.data;
+      if (ready(last)) return last;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error(
+      `${what} never happened for ${invoiceId} ` +
+        `(extractions=${last.extractions?.length ?? 0}, verifications=${last.verifications?.length ?? 0})`,
+    );
+  }
+
+  it('returns without waiting for the provider, and queues the work', async () => {
     await setAiEnabled(true);
     extractSpy.mockClear();
 
@@ -137,15 +165,49 @@ describe('upload with AI ENABLED', () => {
       .attach('file', PDF, 'invoice-ai-on.pdf');
 
     expect(response.status).toBe(201);
-    expect(extractSpy).toHaveBeenCalledTimes(1);
-    // Mock provider → simulated flag surfaced, never presented as real (section 28).
-    expect(response.body.data.extraction.simulated).toBe(true);
+    // The point of the change: the uploader is not held on the request while a
+    // document is read. A one-page bill took 14.5s against a real provider, and
+    // a proxy timing out mid-extraction charged twice for one document.
+    expect(response.body.data.extraction).toMatchObject({ ran: false, queued: true });
+    expect(response.body.data.invoice.verificationStatus).toBe('PENDING_AI_PROCESSING');
 
-    const extraction = response.body.data.invoice.extractions[0];
+    const invoice = await waitForInvoice(
+      response.body.data.invoice.id,
+      (i) => (i.extractions?.length ?? 0) > 0,
+      'extraction',
+    );
+    expect(extractSpy).toHaveBeenCalledTimes(1);
+
+    // Mock provider → simulated flag surfaced, never presented as real (section 28).
+    const extraction = invoice.extractions[0];
     expect(extraction.simulated).toBe(true);
     expect(extraction.provider).toBe('mock');
 
     await setAiEnabled(false); // leave the company back at the safe default
+  });
+
+  it('verifies only after the fields exist, never against an empty invoice', async () => {
+    await setAiEnabled(true);
+    extractSpy.mockClear();
+
+    const response = await api(app)
+      .post('/api/v1/invoices/upload')
+      .set(auth(s.finance))
+      .attach('file', PDF, 'invoice-verify-order.pdf');
+
+    // Verification is what decides whether a bill can be paid. Grading an
+    // invoice before extraction filled it in would record a verdict on an empty
+    // document, so on the AI path it belongs after the job, not at upload.
+    expect(response.body.data.invoice.verifications ?? []).toHaveLength(0);
+
+    const invoice = await waitForInvoice(
+      response.body.data.invoice.id,
+      (i) => (i.verifications?.length ?? 0) > 0,
+      'verification',
+    );
+    expect(invoice.verifications!.length).toBeGreaterThan(0);
+
+    await setAiEnabled(false);
   });
 });
 
