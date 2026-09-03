@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
+import { PrismaClient } from '@prisma/client';
 import { AiDocumentProvider } from '../src/providers/ai/ai-document.provider.js';
 
 /**
@@ -207,6 +208,84 @@ describe('upload with AI ENABLED', () => {
     );
     expect(invoice.verifications!.length).toBeGreaterThan(0);
 
+    await setAiEnabled(false);
+  });
+});
+
+describe('the monthly spending ceiling', () => {
+  /**
+   * A ceiling that is stored but never checked is worse than no ceiling: it
+   * invites exactly the bulk upload somebody would otherwise think twice about.
+   * These prove the gate actually stops at the number.
+   */
+  const prisma = new PrismaClient();
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  async function setBudget(monthlyBudgetUsd: number | null) {
+    const res = await api(app)
+      .patch('/api/v1/ai-config')
+      .set(auth(s.superAdmin))
+      .send({ globallyEnabled: true, paused: false, monthlyBudgetUsd,
+              featureModes: { INVOICE_OCR: 'MANUAL_REVIEW_REQUIRED' }, humanReviewRequired: true });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+  }
+
+  async function spend(companyId: string, costUsd: number) {
+    await prisma.aIUsageRecord.create({
+      data: {
+        companyId,
+        feature: 'INVOICE_OCR',
+        provider: 'anthropic',
+        costUsd,
+        succeeded: true,
+        // Only real spend counts - a mock costs nothing, and letting it consume
+        // the budget would make development eat production's ceiling.
+        simulated: false,
+      },
+    });
+  }
+
+  it('refuses to extract once the month is spent, and does not call the provider', async () => {
+    const companyId = s.superAdmin.user.companyId;
+    await setBudget(5);
+    await spend(companyId, 5.5);
+    extractSpy.mockClear();
+
+    const response = await api(app)
+      .post('/api/v1/invoices/upload')
+      .set(auth(s.finance))
+      .attach('file', PDF, 'invoice-over-budget.pdf');
+
+    expect(response.status).toBe(201);
+    // The upload still succeeds - the bill is filed, it is just not read.
+    expect(response.body.data.extraction.ran).toBe(false);
+    expect(response.body.data.extraction.queued).toBe(false);
+    expect(response.body.data.extraction.reason).toBe('BUDGET_EXCEEDED');
+    expect(extractSpy).not.toHaveBeenCalled();
+
+    await setBudget(null);
+    await prisma.aIUsageRecord.deleteMany({ where: { companyId, simulated: false } });
+    await setAiEnabled(false);
+  });
+
+  it('still extracts while the budget has room', async () => {
+    const companyId = s.superAdmin.user.companyId;
+    await setBudget(100);
+    await spend(companyId, 1.25);
+    extractSpy.mockClear();
+
+    const response = await api(app)
+      .post('/api/v1/invoices/upload')
+      .set(auth(s.finance))
+      .attach('file', PDF, 'invoice-within-budget.pdf');
+
+    expect(response.body.data.extraction.queued).toBe(true);
+
+    await setBudget(null);
+    await prisma.aIUsageRecord.deleteMany({ where: { companyId, simulated: false } });
     await setAiEnabled(false);
   });
 });

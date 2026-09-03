@@ -59,6 +59,24 @@ export interface AiGateQuery {
   roleKeys?: readonly string[];
 }
 
+/**
+ * What the company has already spent this month, and on how many calls.
+ *
+ * Passed in rather than fetched, so this stays a pure function. Omitted means
+ * "not measured", which deliberately does NOT block: a caller that cannot count
+ * usage must not silently switch AI off for everyone.
+ */
+export interface AiUsageToDate {
+  spendUsd: number;
+  requests: number;
+}
+
+/** The ceilings, if the company set any. Null means no ceiling. */
+export interface AiLimits {
+  monthlyBudgetUsd: number | null;
+  monthlyRequestLimit: number | null;
+}
+
 export interface AiGateResult {
   /** Whether the feature runs at all. When false, no provider may be called. */
   enabled: boolean;
@@ -66,7 +84,13 @@ export interface AiGateResult {
   /** Whether a human must confirm before the result takes effect. */
   requiresHumanReview: boolean;
   /** Why it is off, for the UI to explain rather than silently hide the feature. */
-  reason?: 'GLOBALLY_DISABLED' | 'PAUSED' | 'FEATURE_DISABLED' | 'ROLE_NOT_PERMITTED';
+  reason?:
+    | 'GLOBALLY_DISABLED'
+    | 'PAUSED'
+    | 'FEATURE_DISABLED'
+    | 'ROLE_NOT_PERMITTED'
+    | 'BUDGET_EXCEEDED'
+    | 'REQUEST_LIMIT_EXCEEDED';
 }
 
 /**
@@ -77,6 +101,8 @@ export function resolveAiGate(
   config: AiConfigState,
   overrides: readonly AiFeatureOverride[],
   query: AiGateQuery,
+  limits?: AiLimits,
+  usage?: AiUsageToDate,
 ): AiGateResult {
   if (!config.globallyEnabled) {
     return {
@@ -88,6 +114,31 @@ export function resolveAiGate(
   }
   if (config.pausedAt) {
     return { enabled: false, mode: 'DISABLED', requiresHumanReview: true, reason: 'PAUSED' };
+  }
+
+  // A ceiling that is set but never checked is worse than no ceiling: it invites
+  // exactly the bulk upload somebody would otherwise think twice about. Checked
+  // before the mode, so an exhausted budget reads as an exhausted budget rather
+  // than as a disabled feature.
+  //
+  // The comparison is >=, so a limit of zero means zero rather than one more.
+  if (limits && usage) {
+    if (limits.monthlyBudgetUsd !== null && usage.spendUsd >= limits.monthlyBudgetUsd) {
+      return {
+        enabled: false,
+        mode: 'DISABLED',
+        requiresHumanReview: true,
+        reason: 'BUDGET_EXCEEDED',
+      };
+    }
+    if (limits.monthlyRequestLimit !== null && usage.requests >= limits.monthlyRequestLimit) {
+      return {
+        enabled: false,
+        mode: 'DISABLED',
+        requiresHumanReview: true,
+        reason: 'REQUEST_LIMIT_EXCEEDED',
+      };
+    }
   }
 
   // The most specific applicable override wins: office+role, then office, then

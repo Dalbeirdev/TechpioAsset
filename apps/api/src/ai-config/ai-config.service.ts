@@ -36,6 +36,7 @@ export class AiConfigService {
       id: string;
       confidenceThreshold: Prisma.Decimal;
       monthlyBudgetUsd: Prisma.Decimal | null;
+      monthlyRequestLimit: number | null;
     };
   }> {
     const record = await this.prisma.client.aIConfiguration.findUnique({
@@ -67,7 +68,35 @@ export class AiConfigService {
         id: record.id,
         confidenceThreshold: record.confidenceThreshold,
         monthlyBudgetUsd: record.monthlyBudgetUsd,
+        monthlyRequestLimit: record.monthlyRequestLimit,
       },
+    };
+  }
+
+  /**
+   * What this company has spent on AI since the start of the current month.
+   *
+   * Summed from the usage records the providers already write, so there is one
+   * source of truth for spend rather than a running total that can drift out of
+   * step with the records behind it. A failed call still counts as a request -
+   * it was still made - but contributes whatever cost it reported, usually none.
+   *
+   * Simulated calls are excluded: a mock provider costs nothing, and letting the
+   * mock consume a real budget would make development eat production's ceiling.
+   */
+  private async usageThisMonth(companyId: string): Promise<{ spendUsd: number; requests: number }> {
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+
+    const usage = await this.prisma.client.aIUsageRecord.aggregate({
+      where: { companyId, simulated: false, createdAt: { gte: monthStart } },
+      _sum: { costUsd: true },
+      _count: { _all: true },
+    });
+    return {
+      spendUsd: Number(usage._sum.costUsd ?? 0),
+      requests: usage._count._all,
     };
   }
 
@@ -82,12 +111,25 @@ export class AiConfigService {
     feature: DomainAiFeature,
     actor: { officeId?: string | null; roleKeys?: readonly string[] },
   ): Promise<AiGateResult & { confidenceThreshold: number }> {
-    const { config, overrides } = await this.loadState(companyId);
-    const result = resolveAiGate(config, overrides, {
-      feature,
-      officeId: actor.officeId,
-      roleKeys: actor.roleKeys,
-    });
+    const { config, overrides, raw } = await this.loadState(companyId);
+
+    // Only counted when a ceiling exists - no reason to aggregate usage on every
+    // gate check for a company that has not set one.
+    const hasLimit = raw.monthlyBudgetUsd !== null || raw.monthlyRequestLimit !== null;
+    const usage = hasLimit ? await this.usageThisMonth(companyId) : undefined;
+
+    const result = resolveAiGate(
+      config,
+      overrides,
+      { feature, officeId: actor.officeId, roleKeys: actor.roleKeys },
+      hasLimit
+        ? {
+            monthlyBudgetUsd: raw.monthlyBudgetUsd === null ? null : Number(raw.monthlyBudgetUsd),
+            monthlyRequestLimit: raw.monthlyRequestLimit,
+          }
+        : undefined,
+      usage,
+    );
     return { ...result, confidenceThreshold: config.confidenceThreshold };
   }
 

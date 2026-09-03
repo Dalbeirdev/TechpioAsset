@@ -135,3 +135,74 @@ describe('confidence threshold', () => {
     expect(isLowConfidence(0.85, 0.85)).toBe(false);
   });
 });
+
+describe('AI gate — spending ceilings', () => {
+  const q = { feature: 'INVOICE_OCR' } as const;
+  const limits = (over = {}) => ({ monthlyBudgetUsd: null, monthlyRequestLimit: null, ...over });
+
+  it('runs while the budget has room left', () => {
+    const r = resolveAiGate(config(), [], q, limits({ monthlyBudgetUsd: 25 }), {
+      spendUsd: 24.9,
+      requests: 600,
+    });
+    expect(r.enabled).toBe(true);
+  });
+
+  it('stops once the budget is reached, and says why', () => {
+    const r = resolveAiGate(config(), [], q, limits({ monthlyBudgetUsd: 25 }), {
+      spendUsd: 25,
+      requests: 600,
+    });
+    expect(r.enabled).toBe(false);
+    expect(r.reason).toBe('BUDGET_EXCEEDED');
+  });
+
+  it('treats a zero budget as zero, not as one more call', () => {
+    const r = resolveAiGate(config(), [], q, limits({ monthlyBudgetUsd: 0 }), {
+      spendUsd: 0,
+      requests: 0,
+    });
+    expect(r.enabled).toBe(false);
+    expect(r.reason).toBe('BUDGET_EXCEEDED');
+  });
+
+  it('enforces a request ceiling independently of cost', () => {
+    const r = resolveAiGate(config(), [], q, limits({ monthlyRequestLimit: 100 }), {
+      spendUsd: 0.5,
+      requests: 100,
+    });
+    expect(r.enabled).toBe(false);
+    expect(r.reason).toBe('REQUEST_LIMIT_EXCEEDED');
+  });
+
+  it('reports an exhausted budget as a budget, not as a disabled feature', () => {
+    // The distinction is the whole point of the reason: one is a ceiling that
+    // resets next month, the other is somebody having switched the feature off.
+    const r = resolveAiGate(config(), [], q, limits({ monthlyBudgetUsd: 25 }), {
+      spendUsd: 30,
+      requests: 1,
+    });
+    expect(r.reason).not.toBe('FEATURE_DISABLED');
+    expect(r.reason).toBe('BUDGET_EXCEEDED');
+  });
+
+  it('does not block when no ceiling is set', () => {
+    const r = resolveAiGate(config(), [], q, limits(), { spendUsd: 9999, requests: 9999 });
+    expect(r.enabled).toBe(true);
+  });
+
+  it('does not block when usage could not be measured', () => {
+    // A caller that cannot count usage must not silently switch AI off for the
+    // whole company - that would turn a counting failure into an outage.
+    const r = resolveAiGate(config(), [], q, limits({ monthlyBudgetUsd: 25 }), undefined);
+    expect(r.enabled).toBe(true);
+  });
+
+  it('lets the global switch outrank a ceiling that still has room', () => {
+    const r = resolveAiGate(config({ globallyEnabled: false }), [], q, limits({ monthlyBudgetUsd: 25 }), {
+      spendUsd: 0,
+      requests: 0,
+    });
+    expect(r.reason).toBe('GLOBALLY_DISABLED');
+  });
+});
