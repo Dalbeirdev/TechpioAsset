@@ -4,6 +4,7 @@ import type { DependencyHealth, HealthResponse, ProtectionHealth } from '@techpi
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { latestBackup, targetFromEnv } from '../backup/backup-storage.js';
+import { RoutingMailProvider } from '../providers/mail/routing-mail.provider.js';
 
 const startedAt = Date.now();
 /** A readiness probe runs every few seconds; object storage does not need that. */
@@ -20,6 +21,8 @@ export class HealthService {
   constructor(
     private readonly config: AppConfig,
     private readonly prisma: PrismaService,
+    // MailModule is @Global, so this needs no wiring in HealthModule.
+    private readonly mail: RoutingMailProvider,
   ) {}
 
   /** Liveness: the process is up. Deliberately checks nothing external. */
@@ -43,7 +46,7 @@ export class HealthService {
       this.describeProvider('storage', this.config.get('STORAGE_PROVIDER'), 'local'),
     );
     dependencies.push(this.describeProvider('ai', this.config.get('AI_PROVIDER'), 'mock'));
-    dependencies.push(this.describeProvider('mail', this.config.get('MAIL_PROVIDER'), 'mock'));
+    dependencies.push(await this.checkMail());
     dependencies.push(this.describeProvider('push', this.config.get('PUSH_PROVIDER'), 'mock'));
 
     const criticalDown = dependencies.some((d) => d.critical && d.status === 'down');
@@ -183,6 +186,51 @@ export class HealthService {
     } finally {
       client.disconnect();
     }
+  }
+
+  /**
+   * Mail is the one provider whose configuration does not live in the
+   * environment. Since v2.12 the router prefers SMTP settings held in the
+   * database, so MAIL_PROVIDER is routinely dead config - and reading it here
+   * told production it was simulating mail on a day it sent 352 real messages,
+   * while marking the whole service `degraded`. A probe that cries wolf gets
+   * ignored, which costs more than having no probe.
+   *
+   * So ask the router where a send would actually go, rather than asking the
+   * environment what it would have decided.
+   */
+  private async checkMail(): Promise<DependencyHealth> {
+    let route: Awaited<ReturnType<RoutingMailProvider['route']>>;
+    try {
+      route = await this.mail.route();
+    } catch (error) {
+      // Settings we cannot read prove nothing either way, and claiming a state
+      // we could not establish is the failure this whole change is about.
+      return {
+        name: 'mail',
+        status: 'degraded',
+        detail: `Could not determine the mail route: ${(error as Error).message}`,
+        critical: false,
+      };
+    }
+
+    if (route === 'simulated') {
+      return {
+        name: 'mail',
+        status: 'mocked',
+        detail: 'Using the mock provider. Results are simulated, not real.',
+        critical: false,
+      };
+    }
+    return {
+      name: 'mail',
+      status: 'up',
+      detail:
+        route === 'database'
+          ? 'Provider: SMTP, configured in Platform → Mail'
+          : 'Provider: SMTP, from the environment',
+      critical: false,
+    };
   }
 
   private describeProvider(name: string, configured: string, mockValue: string): DependencyHealth {
