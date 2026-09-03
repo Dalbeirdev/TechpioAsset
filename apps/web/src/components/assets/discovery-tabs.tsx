@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { apiFetch, apiFetchPage } from '@/lib/api-client';
 import { Button, Card, EmptyState, Skeleton } from '@/components/ui';
+import { ReportedFreshness } from './reported-freshness';
 
 /**
  * v2.5 H5 — the discovery-backed asset tabs (Hardware / OS & Security /
@@ -95,14 +96,6 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function DiscoveredStamp({ source, at }: { source: string; at: string }) {
-  return (
-    <p className="mt-4 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-content-subtle)]">
-      Reported by {source.toLowerCase()} discovery · {new Date(at).toLocaleString()}
-    </p>
-  );
-}
-
 const NOT_DISCOVERED = {
   title: 'Nothing discovered yet',
   description:
@@ -114,6 +107,9 @@ export function HardwareTab({ hw }: { hw: HardwareProfileDto | null }) {
   const gb = (v: string | null) => (v != null ? `${Number(v).toLocaleString()} GB` : null);
   return (
     <Card className="p-5">
+      {/* Ahead of the data, not under it: you should know how old a snapshot is
+          before you start reading it as fact. */}
+      <ReportedFreshness source={hw.source} at={hw.lastDiscoveredAt} />
       <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
         <Row label="Manufacturer" value={hw.manufacturer} />
         <Row label="Model" value={hw.modelName} />
@@ -138,7 +134,6 @@ export function HardwareTab({ hw }: { hw: HardwareProfileDto | null }) {
         <Row label="Graphics" value={hw.gpu} />
         <Row label="BIOS" value={hw.biosVersion} />
       </dl>
-      <DiscoveredStamp source={hw.source} at={hw.lastDiscoveredAt} />
     </Card>
   );
 }
@@ -160,6 +155,9 @@ export function OsTab({ os }: { os: OsInfoDto | null }) {
   if (!os) return <EmptyState {...NOT_DISCOVERED} />;
   return (
     <div className="grid gap-4">
+      {/* Once for the whole tab: both cards below are the same snapshot, and
+          repeating the warning would train people to ignore it. */}
+      <ReportedFreshness source={os.source} at={os.lastDiscoveredAt} />
       <Card className="p-5">
         <h2 className="text-[15px] font-semibold">Operating system</h2>
         <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
@@ -207,7 +205,6 @@ export function OsTab({ os }: { os: OsInfoDto | null }) {
             detail={os.missingCriticalPatches != null ? `${os.missingCriticalPatches}` : undefined}
           />
         </div>
-        <DiscoveredStamp source={os.source} at={os.lastDiscoveredAt} />
       </Card>
     </div>
   );
