@@ -61,6 +61,14 @@ interface InvoiceDetail {
 
 const SEVERITY_TONE = { ERROR: 'critical', WARNING: 'warning', INFO: 'info' } as const;
 
+/**
+ * The two states where the answer is still coming. Queued and processing are
+ * kept separate on the badge - "Queued for AI" and "AI processing" tell an
+ * operator different things when a queue backs up - but both mean the same
+ * thing to this page: keep looking.
+ */
+const AWAITING_EXTRACTION = new Set(['PENDING_AI_PROCESSING', 'AI_PROCESSING']);
+
 export default function InvoiceReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { can } = useAuth();
@@ -71,6 +79,12 @@ export default function InvoiceReviewPage({ params }: { params: Promise<{ id: st
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['invoice', id],
     queryFn: () => apiFetch<InvoiceDetail>(`/invoices/${id}`),
+    // Extraction runs on the queue now, so an upload lands here before its
+    // fields exist. Poll while the document is being read, and stop the moment
+    // it settles - a page that never updates would look broken, and one that
+    // polls forever is a needless request every few seconds on every invoice.
+    refetchInterval: (query) =>
+      AWAITING_EXTRACTION.has(query.state.data?.verificationStatus as string) ? 3000 : false,
   });
 
   const decide = useMutation({
@@ -120,6 +134,12 @@ export default function InvoiceReviewPage({ params }: { params: Promise<{ id: st
             <h1 className="text-xl font-semibold tracking-tight">{data.invoiceNumber}</h1>
             <StatusBadge token={VERIFICATION_STATUS_TOKENS[data.verificationStatus]} size="sm" />
           </div>
+          {AWAITING_EXTRACTION.has(data.verificationStatus) ? (
+            <p className="mt-1.5 text-sm text-[var(--color-content-muted)]">
+              Reading the document. The fields below will fill in on their own — a
+              single page usually takes under a minute, a long scan longer.
+            </p>
+          ) : null}
           <p className="mt-1 text-sm text-[var(--color-content-muted)]">
             {data.vendor?.name ?? 'Unknown vendor'} ·{' '}
             {new Date(data.invoiceDate).toLocaleDateString()}
