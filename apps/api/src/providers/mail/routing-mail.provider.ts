@@ -71,10 +71,22 @@ export class RoutingMailProvider extends MailProvider {
     return { messageId: info.messageId, simulated: false };
   }
 
+  /**
+   * Where a send would actually go, resolved the same way `send` resolves it.
+   *
+   * Reported rather than inferred: an operator reading a health probe cannot
+   * tell "mail is simulated" from "mail is live via settings the environment
+   * knows nothing about", and guessing from MAIL_PROVIDER gets it wrong on
+   * every deployment configured through the console.
+   */
+  async route(): Promise<'database' | 'env-smtp' | 'simulated'> {
+    if (await this.dbTransport()) return 'database';
+    return this.envProvider.name === 'smtp' ? 'env-smtp' : 'simulated';
+  }
+
   /** True when sends would actually leave the machine (DB or env SMTP). */
   async isLive(): Promise<boolean> {
-    if (await this.dbTransport()) return true;
-    return this.envProvider.name === 'smtp';
+    return (await this.route()) !== 'simulated';
   }
 
   private async dbTransport(): Promise<Transporter | null> {
