@@ -49,7 +49,21 @@ describe('health probes', () => {
       .map((d: { name: string }) => d.name);
     // Spec section 28: a simulated dependency is never presented as a real one.
     expect(names).toContain('ai');
-    expect(names).toContain('storage');
+    expect(names).toContain('push');
+  });
+
+  it('does not call local storage simulated - the files are real', async () => {
+    // `mocked` has to keep meaning "the results are invented", which is true of
+    // ai and push and was never true of the local storage provider: it writes
+    // real files that the nightly backup picks up. It is reported as degraded,
+    // because one host is not durable object storage.
+    const response = await api(app).get('/health/ready');
+    const storage = response.body.data.dependencies.find(
+      (d: { name: string }) => d.name === 'storage',
+    );
+    expect(storage.status).toBe('degraded');
+    expect(storage.detail).not.toMatch(/simulated/i);
+    expect(response.body.data.status).toBe('degraded');
   });
 
   it('does not leak tenant data through an unauthenticated probe', async () => {
