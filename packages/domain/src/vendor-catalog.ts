@@ -46,8 +46,8 @@ function toRupees(paise: number): number {
 /**
  * The landed cost of one unit.
  *
- *   taxable value = base − discount
- *   landed        = taxable value + GST on it + shipping + installation + other
+ *   taxable value = base − discount + shipping + installation
+ *   landed        = taxable value + GST on it + other charges
  *
  * GST IS CHARGED ON THE DISCOUNTED VALUE. Under section 15(3) of the CGST Act a
  * discount known at the time of supply and shown on the invoice is excluded
@@ -59,10 +59,15 @@ function toRupees(paise: number): number {
  * put the discount last; Finance corrected it. On a ₹1,08,000 unit with an
  * ₹8,000 discount at 18% the difference is ₹1,440.
  *
- * Shipping, installation and other charges are added AFTER tax here. In a
- * composite supply those are usually taxable at the same rate, so this is the
- * next question to settle - it is left as it was rather than changed in the
- * same breath as the discount fix.
+ * Shipping and installation are INSIDE the tax base: they are part of a
+ * composite supply and attract the same rate, which Finance confirmed.
+ *
+ * Other charges are deliberately still outside it. "Other" is whatever a vendor
+ * decides to put there - a statutory fee, insurance, a rounding line - and some
+ * of those are not taxable. Taxing them by default would quietly add tax nobody
+ * owes to a field with no defined meaning, so it stays out until somebody says
+ * what it contains. A test pins that, so including it later is a deliberate act
+ * rather than drift.
  */
 export function calculateLandedCost(components: PriceComponents): LandedCostBreakdown {
   const { unitPrice, gstPercent, discount, shippingCost, installationCost, otherCharges } =
@@ -74,16 +79,12 @@ export function calculateLandedCost(components: PriceComponents): LandedCostBrea
   }
   if (gstPercent > 100) throw new Error('gstPercent cannot exceed 100');
 
-  // Clamped before tax: a discount larger than the price must not produce a
-  // negative taxable value, which would then generate negative GST.
-  const taxablePaise = Math.max(0, toPaise(unitPrice) - toPaise(discount));
+  // Clamped before anything is added: a discount larger than the price must not
+  // produce a negative goods value that then eats into the freight.
+  const goodsPaise = Math.max(0, toPaise(unitPrice) - toPaise(discount));
+  const taxablePaise = goodsPaise + toPaise(shippingCost) + toPaise(installationCost);
   const gstPaise = Math.round((taxablePaise * gstPercent) / 100);
-  const landedPaise =
-    taxablePaise +
-    gstPaise +
-    toPaise(shippingCost) +
-    toPaise(installationCost) +
-    toPaise(otherCharges);
+  const landedPaise = taxablePaise + gstPaise + toPaise(otherCharges);
 
   return {
     ...components,

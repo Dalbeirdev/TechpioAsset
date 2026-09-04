@@ -37,6 +37,20 @@ describe('landed cost', () => {
     expect(r.landedCost).toBe(108000 - 4000 + 1500 + 2000 + 500);
   });
 
+  it('does not let a discount larger than the goods eat into the freight', () => {
+    // Clamping the goods value at zero before freight is added keeps the
+    // shipping charge payable rather than silently cancelled by a big discount.
+    const r = calculateLandedCost({
+      ...base,
+      gstPercent: 0,
+      unitPrice: 1000,
+      discount: 5000,
+      shippingCost: 800,
+    });
+    expect(r.taxableValue).toBe(800);
+    expect(r.landedCost).toBe(800);
+  });
+
   it('charges GST on the discounted value, not the list price', () => {
     // Section 15(3) CGST: a discount known at the time of supply and shown on
     // the invoice is excluded from the taxable value. Taxing the list price
@@ -82,11 +96,25 @@ describe('landed cost', () => {
     expect(r.landedCost).toBe(0);
   });
 
-  it('leaves shipping, installation and other charges outside the tax base', () => {
-    // Flagged rather than assumed: in a composite supply these are usually
-    // taxable at the same rate. Pinned here so changing it is a deliberate act
-    // with a failing test, not a silent drift.
-    const r = calculateLandedCost({ ...base, discount: 0, shippingCost: 1000 });
+  it('taxes shipping and installation as part of the same supply', () => {
+    // Confirmed by Finance: freight and fitting are a composite supply with the
+    // goods and attract the same rate.
+    const r = calculateLandedCost({
+      ...base,
+      discount: 8000,
+      shippingCost: 1500,
+      installationCost: 2000,
+    });
+    expect(r.taxableValue).toBe(103500);
+    expect(r.gstAmount).toBe(18630);
+    expect(r.landedCost).toBe(103500 + 18630);
+  });
+
+  it('leaves other charges outside the tax base, on purpose', () => {
+    // "Other" is whatever a vendor puts there - a statutory fee, insurance, a
+    // rounding line - and some of those are not taxable. Pinned so including it
+    // later is a deliberate act with a failing test rather than drift.
+    const r = calculateLandedCost({ ...base, discount: 0, otherCharges: 1000 });
     expect(r.taxableValue).toBe(108000);
     expect(r.gstAmount).toBe(19440);
     expect(r.landedCost).toBe(108000 + 19440 + 1000);
