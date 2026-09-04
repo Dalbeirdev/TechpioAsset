@@ -87,3 +87,86 @@ describe('file validation (spec sections 8, 20)', () => {
     expect(result.contentType).toBe('image/jpeg');
   });
 });
+
+describe('product images (v2.42)', () => {
+  const IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+  const png = () =>
+    Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]);
+  const webp = () =>
+    Buffer.concat([
+      Buffer.from('RIFF', 'ascii'),
+      Buffer.from([0x40, 0x00, 0x00, 0x00]),
+      Buffer.from('WEBP', 'ascii'),
+      Buffer.alloc(52),
+    ]);
+
+  it('accepts WEBP, which the vendor catalogue requires', () => {
+    const result = validateUpload({
+      data: webp(),
+      declaredMime: 'image/webp',
+      allowedMimes: IMAGE_MIMES,
+      maxBytes: 500 * 1024,
+    });
+    expect(result.contentType).toBe('image/webp');
+  });
+
+  it('rejects an executable renamed .jpg, whatever the client claims', () => {
+    // The attack the byte check exists for: a PE binary announced as an image.
+    const exe = Buffer.concat([Buffer.from('MZ', 'ascii'), Buffer.alloc(128)]);
+    expect(() =>
+      validateUpload({
+        data: exe,
+        declaredMime: 'image/jpeg',
+        allowedMimes: IMAGE_MIMES,
+        maxBytes: 500 * 1024,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a PDF on an image-only path even though PDFs are valid elsewhere', () => {
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.7', 'ascii'), Buffer.alloc(64)]);
+    expect(() =>
+      validateUpload({
+        data: pdf,
+        declaredMime: 'application/pdf',
+        allowedMimes: IMAGE_MIMES,
+        maxBytes: 500 * 1024,
+      }),
+    ).toThrow();
+  });
+
+  it('enforces the 500 KB ceiling at the boundary, not near it', () => {
+    const limit = 500 * 1024;
+    const atLimit = Buffer.concat([png(), Buffer.alloc(limit - png().length)]);
+    expect(atLimit.length).toBe(limit);
+    expect(() =>
+      validateUpload({
+        data: atLimit,
+        declaredMime: 'image/png',
+        allowedMimes: IMAGE_MIMES,
+        maxBytes: limit,
+      }),
+    ).not.toThrow();
+
+    const overLimit = Buffer.concat([atLimit, Buffer.alloc(1)]);
+    expect(() =>
+      validateUpload({
+        data: overLimit,
+        declaredMime: 'image/png',
+        allowedMimes: IMAGE_MIMES,
+        maxBytes: limit,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an empty file', () => {
+    expect(() =>
+      validateUpload({
+        data: Buffer.alloc(0),
+        declaredMime: 'image/png',
+        allowedMimes: IMAGE_MIMES,
+        maxBytes: 500 * 1024,
+      }),
+    ).toThrow(/empty/i);
+  });
+});
