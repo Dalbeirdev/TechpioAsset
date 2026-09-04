@@ -242,27 +242,35 @@ describe('module:resource:action taxonomy (v2.1 WS-C)', () => {
   });
 });
 
-describe('canonical 13-role model (v2.1 WS-C)', () => {
-  it('defines exactly the 13 canonical roles', () => {
-    expect(SYSTEM_ROLES).toHaveLength(13);
+/**
+ * v2.40: twelve, not thirteen. VENDOR was a placeholder for an external
+ * supplier portal that was never built - it granted nothing, and the one
+ * account assigned it could sign in and reach a dashboard that immediately
+ * failed. A role that cannot be used is worse than a missing one, because it
+ * can be picked by mistake.
+ */
+describe('canonical 12-role model (v2.1 WS-C, VENDOR removed in v2.40)', () => {
+  it('defines exactly the 12 canonical roles', () => {
+    expect(SYSTEM_ROLES).toHaveLength(12);
     for (const role of [
       'COMPANY_ADMIN',
       'IT_TECHNICIAN',
       'PROCUREMENT_MANAGER',
       'INVENTORY_MANAGER',
-      'VENDOR',
     ] as const) {
       expect(SYSTEM_ROLES).toContain(role);
     }
   });
 
-  it('every role has grants and a default scope (Vendor is an empty placeholder)', () => {
+  it('every role has grants and a default scope', () => {
     for (const role of SYSTEM_ROLES) {
       expect(ROLE_PERMISSIONS[role], `${role} grants`).toBeDefined();
       expect(ROLE_DEFAULT_SCOPE[role], `${role} scope`).toBeDefined();
+      // Every role must be able to do something. An empty grant list is what
+      // VENDOR had, and a role that grants nothing can still be assigned - which
+      // is how one account ended up able to sign in and reach nothing.
+      expect(ROLE_PERMISSIONS[role].length, `${role} has no permissions`).toBeGreaterThan(0);
     }
-    expect(ROLE_PERMISSIONS.VENDOR).toEqual([]);
-    expect(ROLE_DEFAULT_SCOPE.VENDOR).toBe('OWN');
   });
 
   it('Company Admin is the tenant sovereign (grant-equivalent to Super Admin in v1)', () => {

@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import { SYSTEM_ROLES } from '@techpioasset/domain';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { api, auth, createTestApp, loginAll, type AccountKey, type Session } from './harness.js';
@@ -65,12 +66,15 @@ describe('tenant provisioning', () => {
     adminPassword = created.body.data.admin.initialPassword;
     expect(adminPassword).toBeTruthy();
 
-    // Complete: 13 system roles with grants, core categories, safe AI config.
+    // Complete: every system role with grants, core categories, safe AI config.
+    // Counted from SYSTEM_ROLES rather than a literal, so removing a role (as
+    // v2.40 did with VENDOR) updates provisioning and this assertion together
+    // instead of leaving a number nobody remembers the reason for.
     const roles = await prisma.client.role.findMany({
       where: { companyId: tenantId },
       include: { _count: { select: { permissions: true } } },
     });
-    expect(roles).toHaveLength(13);
+    expect(roles).toHaveLength(SYSTEM_ROLES.length);
     const superAdmin = roles.find((r) => r.key === 'SUPER_ADMIN')!;
     expect(superAdmin._count.permissions).toBeGreaterThan(60);
     const auditor = roles.find((r) => r.key === 'AUDITOR')!;

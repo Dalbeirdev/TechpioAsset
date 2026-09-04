@@ -65,7 +65,6 @@ const PURPOSE: Record<SystemRole, string> = {
   MANAGER: 'Reviews and approves requests raised by their direct reports.',
   EMPLOYEE: 'Sees their own equipment, raises requests, reports damage.',
   AUDITOR: 'Read-only: assets, invoices, approvals, the audit log and reports.',
-  VENDOR: 'External supplier placeholder — no access until the vendor portal ships.',
 };
 
 const COST_PERMISSIONS: string[] = [PERMISSIONS.ASSETS_COST_READ, PERMISSIONS.LICENSES_COST_READ];

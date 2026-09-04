@@ -75,7 +75,6 @@ const ROLE_LABELS: Record<string, string> = {
   INVENTORY_MANAGER: 'Inventory Manager',
   EMPLOYEE: 'Employee',
   AUDITOR: 'Auditor',
-  VENDOR: 'Vendor',
 };
 const formatRole = (key: string): string =>
   ROLE_LABELS[key] ?? key.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
