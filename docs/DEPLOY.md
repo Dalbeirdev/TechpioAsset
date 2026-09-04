@@ -42,7 +42,7 @@ docker --version && docker compose version
 ## 3. Get the code
 
 ```bash
-git clone https://github.com/Dalbeirdev/TechpioAsset.git
+git clone https://github.com/TechPioDev/TechpioAsset.git
 cd TechpioAsset
 ```
 
