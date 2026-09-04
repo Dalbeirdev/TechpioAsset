@@ -34,7 +34,28 @@ describe('landed cost', () => {
       otherCharges: 500,
       discount: 4000,
     });
-    expect(r.landedCost).toBe(108000 + 1500 + 2000 + 500 - 4000);
+    expect(r.landedCost).toBe(108000 - 4000 + 1500 + 2000 + 500);
+  });
+
+  it('charges GST on the discounted value, not the list price', () => {
+    // Section 15(3) CGST: a discount known at the time of supply and shown on
+    // the invoice is excluded from the taxable value. Taxing the list price
+    // would disagree with the vendor's own invoice, and the three-way match
+    // would flag every discounted line as a price mismatch.
+    const r = calculateLandedCost({ ...base, discount: 8000 });
+    expect(r.taxableValue).toBe(100000);
+    expect(r.gstAmount).toBe(18000);
+    expect(r.landedCost).toBe(118000);
+
+    // What the earlier, pre-discount ordering produced, kept as the thing this
+    // test exists to prevent: ₹1,440 of tax per unit that nobody owes.
+    expect(r.landedCost).not.toBe(119440);
+  });
+
+  it('never charges tax on a negative amount', () => {
+    const r = calculateLandedCost({ ...base, discount: 999999 });
+    expect(r.taxableValue).toBe(0);
+    expect(r.gstAmount).toBe(0);
   });
 
   it('does not drift on values that break floating point', () => {
@@ -50,10 +71,25 @@ describe('landed cost', () => {
     expect(r.landedCost).toBe(1179.99);
   });
 
+  it('applies the discount before tax on values that break floating point', () => {
+    const r = calculateLandedCost({ ...base, unitPrice: 0.3, discount: 0.1, gstPercent: 0 });
+    expect(r.taxableValue).toBe(0.2);
+  });
+
   it('never returns a negative price, however large the discount', () => {
     // A negative landed cost would be approved and paid by everything downstream.
     const r = calculateLandedCost({ ...base, gstPercent: 0, discount: 999999 });
     expect(r.landedCost).toBe(0);
+  });
+
+  it('leaves shipping, installation and other charges outside the tax base', () => {
+    // Flagged rather than assumed: in a composite supply these are usually
+    // taxable at the same rate. Pinned here so changing it is a deliberate act
+    // with a failing test, not a silent drift.
+    const r = calculateLandedCost({ ...base, discount: 0, shippingCost: 1000 });
+    expect(r.taxableValue).toBe(108000);
+    expect(r.gstAmount).toBe(19440);
+    expect(r.landedCost).toBe(108000 + 19440 + 1000);
   });
 
   it('refuses negative inputs and impossible GST', () => {
