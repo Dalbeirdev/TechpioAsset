@@ -1,14 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createDepartmentSchema,
   createOfficeSchema,
+  createVendorSchema,
+  updateVendorSchema,
   updateDepartmentSchema,
   updateOfficeSchema,
   type AuthUser,
   type CreateDepartmentInput,
   type CreateOfficeInput,
+  type CreateVendorInput,
+  type UpdateVendorInput,
   type UpdateDepartmentInput,
   type UpdateOfficeInput,
 } from '@techpioasset/contracts';
@@ -134,5 +138,44 @@ export class OrgController {
   @ApiOperation({ summary: 'Vendors' })
   vendors(@CurrentUser() actor: AuthUser) {
     return this.org.vendors(actor);
+  }
+
+  // v2.40: vendors:manage was granted to Finance and Procurement Manager and
+  // enforced by nothing - there was no way to add a vendor, so a purchase order
+  // could only name the "Unknown vendor" placeholder a bill upload creates.
+
+  @Get('vendors/manage')
+  @RequirePermissions(PERMISSIONS.VENDORS_MANAGE)
+  @ApiOperation({ summary: 'All vendors, inactive included, for the management page' })
+  vendorsForManagement(@CurrentUser() actor: AuthUser) {
+    return this.org.vendorsForManagement(actor);
+  }
+
+  @Post('vendors')
+  @RequirePermissions(PERMISSIONS.VENDORS_MANAGE)
+  @ApiOperation({ summary: 'Add a vendor' })
+  createVendor(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(createVendorSchema)) body: CreateVendorInput,
+  ) {
+    return this.org.createVendor(actor, body);
+  }
+
+  @Patch('vendors/:id')
+  @RequirePermissions(PERMISSIONS.VENDORS_MANAGE)
+  @ApiOperation({ summary: 'Edit a vendor, or deactivate it with isActive:false' })
+  updateVendor(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(updateVendorSchema)) body: UpdateVendorInput,
+  ) {
+    return this.org.updateVendor(actor, id, body);
+  }
+
+  @Delete('vendors/:id')
+  @RequirePermissions(PERMISSIONS.VENDORS_MANAGE)
+  @ApiOperation({ summary: 'Delete a vendor that has no history; otherwise deactivate it' })
+  deleteVendor(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.org.deleteVendor(actor, id);
   }
 }

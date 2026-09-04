@@ -32,6 +32,7 @@ import { Sparkles,
   Users,
   Wrench,
   X,
+  Store,
 } from 'lucide-react';
 import { Wallet } from 'lucide-react';
 import { PERMISSIONS } from '@techpioasset/domain';
@@ -154,6 +155,12 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Departments',
         Icon: Network,
         permission: PERMISSIONS.SETTINGS_MANAGE,
+      },
+      {
+        href: '/settings/vendors',
+        label: 'Vendors',
+        Icon: Store,
+        permission: PERMISSIONS.VENDORS_MANAGE,
       },
       { href: '/settings/roles', label: 'Roles', Icon: ShieldCheck, permission: PERMISSIONS.ROLES_MANAGE },
       {

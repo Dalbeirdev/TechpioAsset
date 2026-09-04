@@ -59,6 +59,7 @@ const RULES: GuardRule[] = [
   { matches: startsWith('/audit'), allow: (_u, can) => can(P.AUDIT_READ) },
   { matches: startsWith('/people'), allow: (_u, can) => can(P.EMPLOYEES_READ) },
   { matches: startsWith('/settings/offices'), allow: (_u, can) => can(P.SETTINGS_MANAGE) },
+  { matches: startsWith('/settings/vendors'), allow: (_u, can) => can(P.VENDORS_MANAGE) },
   { matches: startsWith('/settings/roles'), allow: (_u, can) => can(P.ROLES_MANAGE) },
   { matches: startsWith('/settings/integrations'), allow: (_u, can) => can(P.INTEGRATIONS_MANAGE) },
   { matches: startsWith('/settings/ai'), allow: (_u, can) => can(P.AI_CONFIGURE) },

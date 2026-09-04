@@ -67,3 +67,49 @@ export const updateOfficeSchema = createOfficeSchema
 
 export type CreateOfficeInput = z.infer<typeof createOfficeSchema>;
 export type UpdateOfficeInput = z.infer<typeof updateOfficeSchema>;
+
+/**
+ * Vendors (v2.40).
+ *
+ * `vendors:manage` existed, was granted to Finance and Procurement Manager, and
+ * was enforced by nothing: there was no way to add a vendor at all. The only
+ * row that ever appeared was the "Unknown vendor" placeholder an uploaded bill
+ * falls back to, which meant a purchase order could only ever be raised against
+ * a vendor nobody chose.
+ *
+ * Contact and tax details are optional because a vendor is often created in a
+ * hurry, mid-purchase, with only a name to hand - refusing the record until
+ * somebody finds the GSTIN is how people end up filing under "Unknown" forever.
+ */
+export const createVendorSchema = z
+  .object({
+    /** Short unique handle, e.g. SCS. Uppercased server-side. */
+    code: trimmed(20),
+    name: trimmed(160),
+    contactName: optionalText(120),
+    contactEmail: optionalText(160),
+    contactPhone: optionalText(40),
+    website: optionalText(200),
+    /** GSTIN in India; free text, since the format differs by country. */
+    taxId: optionalText(40),
+    addressLine1: optionalText(200),
+    city: optionalText(80),
+    country: optionalText(80),
+    notes: optionalText(500),
+  })
+  .strict();
+
+export const updateVendorSchema = createVendorSchema
+  .partial()
+  .extend({
+    /**
+     * Deactivating hides a vendor from pickers without touching a single
+     * existing order or invoice. A vendor you have stopped buying from is not
+     * a vendor you were never billed by, and the history has to stay.
+     */
+    isActive: z.boolean().optional(),
+  })
+  .strict();
+
+export type CreateVendorInput = z.infer<typeof createVendorSchema>;
+export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;

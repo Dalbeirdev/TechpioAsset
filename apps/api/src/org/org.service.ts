@@ -6,6 +6,8 @@ import type {
   CreateOfficeInput,
   UpdateDepartmentInput,
   UpdateOfficeInput,
+  CreateVendorInput,
+  UpdateVendorInput,
 } from '@techpioasset/contracts';
 import { AppError } from '../common/errors/app-error.js';
 import { tenantFilter } from '../common/scope.js';
@@ -341,9 +343,165 @@ export class OrgService {
 
   private loadVendors(actor: AuthUser) {
     return this.prisma.client.vendor.findMany({
-      where: { ...tenantFilter(actor), isActive: true },
+      // deletedAt was not checked here before, which was harmless only because
+      // nothing could delete a vendor. It can now.
+      where: { ...tenantFilter(actor), isActive: true, deletedAt: null },
       orderBy: { name: 'asc' },
       select: { id: true, code: true, name: true, contactEmail: true },
     });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Vendors (v2.40) - see createVendorSchema for why this exists.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  private static readonly VENDOR_FIELDS = {
+    id: true,
+    code: true,
+    name: true,
+    contactName: true,
+    contactEmail: true,
+    contactPhone: true,
+    website: true,
+    taxId: true,
+    addressLine1: true,
+    city: true,
+    country: true,
+    notes: true,
+    isActive: true,
+  } as const;
+
+  /**
+   * Every vendor including inactive ones, for the management page.
+   *
+   * Deliberately not the cached `vendors()` list: that one feeds pickers and
+   * hides anything deactivated, which is exactly what somebody managing
+   * vendors needs to see and reactivate.
+   */
+  vendorsForManagement(actor: AuthUser) {
+    return this.prisma.client.vendor.findMany({
+      where: { ...tenantFilter(actor), deletedAt: null },
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+      select: { ...OrgService.VENDOR_FIELDS, _count: { select: { invoices: true, purchaseOrders: true } } },
+    });
+  }
+
+  async createVendor(actor: AuthUser, input: CreateVendorInput) {
+    const code = input.code.toUpperCase();
+    const clash = await this.prisma.client.vendor.findFirst({
+      where: { companyId: actor.companyId, code },
+      select: { id: true, deletedAt: true },
+    });
+    if (clash) {
+      // The unique index covers deleted rows too, so say which case this is
+      // rather than letting a raw constraint error reach the user.
+      throw new AppError(
+        'CONFLICT',
+        clash.deletedAt
+          ? `A deleted vendor already uses code ${code}. Choose another code.`
+          : `A vendor with code ${code} already exists`,
+      );
+    }
+    const vendor = await this.prisma.client.vendor.create({
+      data: { ...input, code, companyId: actor.companyId, createdById: actor.id },
+      select: OrgService.VENDOR_FIELDS,
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Vendor',
+      entityId: vendor.id,
+      newValues: { ...vendor, edited: 'vendor created' },
+    });
+    await this.cache.del(`vendors:${actor.companyId}`);
+    return vendor;
+  }
+
+  async updateVendor(actor: AuthUser, vendorId: string, input: UpdateVendorInput) {
+    const before = await this.prisma.client.vendor.findFirst({
+      where: { id: vendorId, ...tenantFilter(actor), deletedAt: null },
+      select: OrgService.VENDOR_FIELDS,
+    });
+    if (!before) throw new AppError('NOT_FOUND', 'Vendor not found');
+
+    const code = input.code ? input.code.toUpperCase() : undefined;
+    if (code && code !== before.code) {
+      const clash = await this.prisma.client.vendor.findFirst({
+        where: { companyId: actor.companyId, code, id: { not: vendorId } },
+        select: { id: true },
+      });
+      if (clash) throw new AppError('CONFLICT', `A vendor with code ${code} already exists`);
+    }
+
+    const vendor = await this.prisma.client.vendor.update({
+      where: { id: vendorId },
+      data: { ...input, ...(code ? { code } : {}), updatedById: actor.id },
+      select: OrgService.VENDOR_FIELDS,
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Vendor',
+      entityId: vendorId,
+      previousValues: before,
+      newValues: vendor,
+    });
+    await this.cache.del(`vendors:${actor.companyId}`);
+    return vendor;
+  }
+
+  /**
+   * Soft delete, and only when nothing points at the vendor.
+   *
+   * An invoice or a purchase order naming a vendor is the record of who was
+   * paid. Removing the vendor from under it would leave a bill attributed to
+   * nobody, so a vendor with history is deactivated instead - which is what the
+   * caller is told to do.
+   */
+  async deleteVendor(actor: AuthUser, vendorId: string) {
+    const vendor = await this.prisma.client.vendor.findFirst({
+      where: { id: vendorId, ...tenantFilter(actor), deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        _count: {
+          select: {
+            invoices: true,
+            purchaseOrders: true,
+            assets: true,
+            quotes: true,
+            softwareLicenses: true,
+            maintenance: true,
+          },
+        },
+      },
+    });
+    if (!vendor) throw new AppError('NOT_FOUND', 'Vendor not found');
+
+    const linked = Object.values(vendor._count).reduce((sum, n) => sum + n, 0);
+    if (linked > 0) {
+      throw new AppError(
+        'CONFLICT',
+        `${vendor.name} is used by ${linked} record(s). Deactivate the vendor instead so the history stays intact.`,
+      );
+    }
+
+    await this.prisma.client.vendor.update({
+      where: { id: vendorId },
+      data: { deletedAt: new Date(), isActive: false, updatedById: actor.id },
+    });
+    await this.audit.record({
+      companyId: actor.companyId,
+      actorId: actor.id,
+      action: AuditAction.SETTING_CHANGED,
+      entityType: 'Vendor',
+      entityId: vendorId,
+      previousValues: { name: vendor.name },
+      newValues: { edited: 'vendor deleted' },
+    });
+    await this.cache.del(`vendors:${actor.companyId}`);
+    return { id: vendorId };
   }
 }
