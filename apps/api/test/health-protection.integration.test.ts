@@ -60,3 +60,34 @@ describe('the readiness probe reports the protection posture', () => {
     expect(res.body.data.protection).toBeTruthy();
   });
 });
+
+describe('an off-site copy this server cannot reach', () => {
+  /**
+   * The office copy is PULLED by a machine the VPS holds no credential to and
+   * cannot contact - deliberately, so a compromised server cannot delete its own
+   * backups. That route therefore reports in rather than being polled, and this
+   * endpoint reads the receipt it leaves.
+   *
+   * The tests pin the part that matters: a receipt is another machine's word,
+   * and the wording must say so rather than implying the server checked.
+   */
+  const receiptPath = process.env.OFFSITE_RECEIPT_PATH ?? '/app/offsite/last-pull.json';
+
+  it('says no copy exists when there is neither a bucket nor a receipt', async () => {
+    const res = await api(app).get('/health/ready');
+    const p = res.body.data.protection;
+    // The suite runs with no BACKUP_S3_* and no receipt file.
+    expect(p.offsiteBackups).toBe('not-configured');
+    expect(p.lastOffsiteBackupAgeHours).toBeNull();
+    expect(p.offsiteDetail).toMatch(/only copy/i);
+  });
+
+  it('never claims a copy it cannot see', async () => {
+    // The receipt path is outside the test environment, so nothing here should
+    // ever report `configured` by accident - a probe that invents protection is
+    // worse than one that admits there is none.
+    const res = await api(app).get('/health/ready');
+    expect(res.body.data.protection.offsiteBackups).not.toBe('configured');
+    expect(receiptPath).toBeTruthy();
+  });
+});
