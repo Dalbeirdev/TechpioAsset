@@ -57,6 +57,11 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/app/apps/api/.local-storage
+      # Read-only, and one small file: where an off-site puller leaves word that
+      # it ran. Read-only because this is a claim the API reports, never one it
+      # should be able to write - a server that can forge its own backup receipt
+      # is reporting on itself.
+      - /var/lib/techpioasset/offsite:/app/offsite:ro
     # Localhost only: the host's nginx proxies /api/* and /health/* here.
     ports:
       - '127.0.0.1:3001:3001'

@@ -3,12 +3,29 @@ import Redis from 'ioredis';
 import type { DependencyHealth, HealthResponse, ProtectionHealth } from '@techpioasset/contracts';
 import { AppConfig } from '../config/config.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { readFile } from 'node:fs/promises';
 import { latestBackup, targetFromEnv } from '../backup/backup-storage.js';
 import { RoutingMailProvider } from '../providers/mail/routing-mail.provider.js';
 import { RoutingAiProvider } from '../providers/ai/routing-ai.provider.js';
 import { StorageProvider } from '../providers/storage/storage.provider.js';
 
 const startedAt = Date.now();
+
+/**
+ * Where an off-site copy leaves word that it happened (v2.41).
+ *
+ * Not every off-site route is one this server can inspect. The office copy is
+ * PULLED by a machine the VPS deliberately knows nothing about - it holds no
+ * credential to it and cannot reach it, which is the point: a compromised
+ * server must not be able to delete its own backups.
+ *
+ * So that route reports in rather than being polled. The puller drops a small
+ * receipt here after a verified run, and this endpoint reads it. What that
+ * proves is weaker than the S3 path, where the server asks the bucket directly,
+ * and the detail says so - a receipt is another machine's word, and the honest
+ * thing is to name whose word it is.
+ */
+const OFFSITE_RECEIPT_PATH = process.env.OFFSITE_RECEIPT_PATH ?? '/app/offsite/last-pull.json';
 /** A readiness probe runs every few seconds; object storage does not need that. */
 const OFFSITE_CACHE_MS = 10 * 60 * 1000;
 
@@ -207,6 +224,18 @@ export class HealthService {
   > {
     const target = targetFromEnv();
     if (!target) {
+      // No bucket to ask, but another machine may be pulling copies and saying so.
+      const receipt = await this.readOffsiteReceipt();
+      if (receipt) {
+        return {
+          offsiteBackups: 'configured',
+          lastOffsiteBackupAgeHours:
+            Math.round(((Date.now() - receipt.at.getTime()) / 3_600_000) * 10) / 10,
+          offsiteDetail:
+            `${receipt.files} file(s) held by ${receipt.host}, encrypted and verified there. ` +
+            'Reported by that machine - this server cannot reach it to confirm.',
+        };
+      }
       return {
         offsiteBackups: 'not-configured',
         lastOffsiteBackupAgeHours: null,
@@ -240,6 +269,27 @@ export class HealthService {
     }
     this.offsiteCache = { at: now, value };
     return value;
+  }
+
+  /**
+   * The receipt, if a puller has left one. Absent, unreadable or malformed all
+   * mean the same thing here - no claim to report - because a health probe that
+   * throws on a stray file is worse than one that says nothing about it.
+   */
+  private async readOffsiteReceipt(): Promise<{ at: Date; files: number; host: string } | null> {
+    try {
+      const parsed = JSON.parse(await readFile(OFFSITE_RECEIPT_PATH, 'utf8')) as {
+        at?: string;
+        files?: number;
+        host?: string;
+      };
+      if (!parsed.at) return null;
+      const at = new Date(parsed.at);
+      if (Number.isNaN(at.getTime())) return null;
+      return { at, files: parsed.files ?? 0, host: parsed.host ?? 'an off-site machine' };
+    } catch {
+      return null;
+    }
   }
 
   private async checkPostgres(): Promise<DependencyHealth> {
