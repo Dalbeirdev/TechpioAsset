@@ -22,6 +22,8 @@ export interface PriceComponents {
 }
 
 export interface LandedCostBreakdown extends PriceComponents {
+  /** What GST is charged on: the unit price after the trade discount. */
+  taxableValue: number;
   gstAmount: number;
   landedCost: number;
 }
@@ -44,15 +46,23 @@ function toRupees(paise: number): number {
 /**
  * The landed cost of one unit.
  *
- *   base + GST + shipping + installation + other charges − discount
+ *   taxable value = base − discount
+ *   landed        = taxable value + GST on it + shipping + installation + other
  *
- * NOTE ON GST: this applies GST to the unit price, before the discount, exactly
- * as the specification lists the order. Indian GST is normally charged on the
- * taxable value AFTER a trade discount, so on a discounted line this will
- * overstate tax. The order is followed as specified rather than quietly
- * "corrected", because which one is right is a question for Finance and not for
- * this function - but it is called out here so the choice is visible to whoever
- * reads it next.
+ * GST IS CHARGED ON THE DISCOUNTED VALUE. Under section 15(3) of the CGST Act a
+ * discount known at the time of supply and shown on the invoice is excluded
+ * from the taxable value, so taxing the pre-discount price would overstate the
+ * tax and disagree with the vendor's own invoice - which the three-way match
+ * would then flag as a price mismatch on every discounted line.
+ *
+ * The first implementation followed the specification's written order, which
+ * put the discount last; Finance corrected it. On a ₹1,08,000 unit with an
+ * ₹8,000 discount at 18% the difference is ₹1,440.
+ *
+ * Shipping, installation and other charges are added AFTER tax here. In a
+ * composite supply those are usually taxable at the same rate, so this is the
+ * next question to settle - it is left as it was rather than changed in the
+ * same breath as the discount fix.
  */
 export function calculateLandedCost(components: PriceComponents): LandedCostBreakdown {
   const { unitPrice, gstPercent, discount, shippingCost, installationCost, otherCharges } =
@@ -64,22 +74,22 @@ export function calculateLandedCost(components: PriceComponents): LandedCostBrea
   }
   if (gstPercent > 100) throw new Error('gstPercent cannot exceed 100');
 
-  const basePaise = toPaise(unitPrice);
-  const gstPaise = Math.round((basePaise * gstPercent) / 100);
+  // Clamped before tax: a discount larger than the price must not produce a
+  // negative taxable value, which would then generate negative GST.
+  const taxablePaise = Math.max(0, toPaise(unitPrice) - toPaise(discount));
+  const gstPaise = Math.round((taxablePaise * gstPercent) / 100);
   const landedPaise =
-    basePaise +
+    taxablePaise +
     gstPaise +
     toPaise(shippingCost) +
     toPaise(installationCost) +
-    toPaise(otherCharges) -
-    toPaise(discount);
+    toPaise(otherCharges);
 
   return {
     ...components,
+    taxableValue: toRupees(taxablePaise),
     gstAmount: toRupees(gstPaise),
-    // A discount larger than everything else must not produce a negative price
-    // that would then be approved and paid.
-    landedCost: toRupees(Math.max(0, landedPaise)),
+    landedCost: toRupees(landedPaise),
   };
 }
 
