@@ -35,6 +35,19 @@ function matchesSignature(data: Buffer, signature: number[]): boolean {
   return signature.every((byte, index) => data[index] === byte);
 }
 
+/**
+ * WEBP is a RIFF container: "RIFF", four length bytes, then "WEBP". The length
+ * sits between the two markers, so there is no fixed leading signature to match
+ * and it needs its own check - the same reason HEIC does below.
+ */
+function isWebp(data: Buffer): boolean {
+  if (data.length < 12) return false;
+  return (
+    data.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    data.subarray(8, 12).toString('ascii') === 'WEBP'
+  );
+}
+
 function isHeic(data: Buffer): boolean {
   if (data.length < 12) return false;
   const ftyp = data.subarray(4, 8).toString('ascii');
@@ -71,11 +84,12 @@ export function validateUpload(input: {
       break;
     }
   }
+  if (!detectedMime && isWebp(input.data)) detectedMime = 'image/webp';
   if (!detectedMime && isHeic(input.data)) detectedMime = 'image/heic';
 
   if (!detectedMime) {
     throw new AppError('UNSUPPORTED_MEDIA_TYPE', 'File type not recognised', {
-      detail: 'Only PDF, JPG, PNG and HEIC files are accepted.',
+      detail: 'Only PDF, JPG, PNG, WEBP and HEIC files are accepted.',
     });
   }
 
