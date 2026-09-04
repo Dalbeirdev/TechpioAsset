@@ -316,6 +316,16 @@ interface SpendReport {
 export default function DashboardPage() {
   const { user, can } = useAuth();
   const canSeeSpend = can(PERMISSIONS.ASSETS_COST_READ);
+  /**
+   * The fleet query needs a permission, and one role does not have it.
+   *
+   * VENDOR carries an empty permission list, so this call 403d and isError took
+   * the entire dashboard down - a role that can sign in landed on "Could not
+   * load the dashboard" with nothing else on the page, even though the role
+   * tiles below fetch from /dashboard and work for anyone. The spend query two
+   * lines down was already gated this way; this one was not.
+   */
+  const canSeeAssets = can(PERMISSIONS.ASSETS_READ);
 
   // Role context. Everyone reads their own scope; only non-OWN scopes see the
   // fleet-level widgets. A user whose grants are all read-only (e.g. Auditor)
@@ -332,6 +342,7 @@ export default function DashboardPage() {
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['dashboard-assets'],
+    enabled: canSeeAssets,
     queryFn: () => apiFetchPage<AssetRow>('/assets?pageSize=100'),
   });
 
@@ -343,7 +354,10 @@ export default function DashboardPage() {
     queryFn: () => apiFetch<SpendReport>('/reports?type=SPENDING_BY_CATEGORY'),
   });
 
-  if (isPending) {
+  // Both guards are conditional on the query having actually run: a disabled
+  // query reports `pending` forever, which would replace the error page with a
+  // skeleton that never resolves - a quieter version of the same bug.
+  if (canSeeAssets && isPending) {
     return (
       <div className="grid gap-5">
         <Skeleton className="h-9 w-72" />
@@ -361,12 +375,15 @@ export default function DashboardPage() {
     );
   }
 
-  if (isError) {
+  if (canSeeAssets && isError) {
     return <ErrorState title="Could not load the dashboard" detail={(error as Error).message} />;
   }
 
-  const assets = data.data;
-  const total = data.meta.page.totalItems;
+  // Empty rather than absent, so every derived count below is a real zero for a
+  // reader who cannot see the fleet. The sections that use them are already
+  // behind isFleetViewer.
+  const assets = data?.data ?? [];
+  const total = data?.meta.page.totalItems ?? 0;
   const count = (s: AssetStatus) => assets.filter((a) => a.status === s).length;
 
   const available = count('AVAILABLE');
