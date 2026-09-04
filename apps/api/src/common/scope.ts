@@ -18,6 +18,37 @@ export function tenantFilter(user: AuthUser): { companyId: string } {
   return { companyId: user.companyId };
 }
 
+/**
+ * True when the actor is an external supplier user rather than a colleague.
+ *
+ * Decided by the link on the account, not by the role, because the role can be
+ * edited by an administrator and the link is what every query actually filters
+ * on. If those two ever disagree, the narrower one has to win.
+ */
+export function isVendorUser(user: AuthUser): boolean {
+  return Boolean(user.vendorId);
+}
+
+/**
+ * Restricts vendor-owned rows to the one vendor the actor belongs to.
+ *
+ * Internal staff get the tenant filter alone - they are meant to see every
+ * vendor. A supplier user gets its own vendorId added, and a supplier user with
+ * no vendorId is a misconfiguration that must fail closed: returning the tenant
+ * filter there would hand one supplier the entire catalogue of its competitors,
+ * which is the single worst outcome this module can produce.
+ */
+export function vendorScopeFilter(user: AuthUser): { companyId: string; vendorId?: string } {
+  const base = tenantFilter(user);
+  if (!user.roles.includes('VENDOR')) return base;
+  if (!user.vendorId) {
+    throw new Error(
+      'Vendor user has no vendor linked; refusing to run an unscoped vendor query',
+    );
+  }
+  return { ...base, vendorId: user.vendorId };
+}
+
 /** Restricts assets to what the actor's scope permits. */
 export function assetScopeFilter(user: AuthUser): Prisma.AssetWhereInput {
   const base: Prisma.AssetWhereInput = tenantFilter(user);

@@ -764,6 +764,9 @@ export class AuthService {
       roles: roleKeys,
       roleNames,
       permissions: [...permissions],
+      // The link that decides whose rows a supplier user may touch. Null for
+      // colleagues; vendorScopeFilter reads it on every vendor-scoped query.
+      vendorId: user.vendorId ?? null,
       scope,
       mfaEnabled: user.mfaEnabledAt !== null,
       // Mirror of PlatformGuard's check, for navigation only - the guard

@@ -63,6 +63,12 @@ export const authUserSchema = z.object({
   officeId: z.string().nullable(),
   officeName: z.string().nullable(),
   roles: z.array(z.string()),
+  /**
+   * v2.42 - set only for external supplier users, and the value every
+   * vendor-scoped query filters on. Null for colleagues, who are meant to see
+   * every vendor.
+   */
+  vendorId: z.string().nullable().default(null),
   roleNames: z.array(z.string()),
   permissions: z.array(z.string()),
   scope: z.enum(['ALL', 'DEPARTMENT', 'DIRECT_REPORTS', 'OWN']),
