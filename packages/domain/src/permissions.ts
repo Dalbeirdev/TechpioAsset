@@ -44,6 +44,26 @@ export const PERMISSIONS = {
   INVOICES_VERIFY: 'invoices:verify',
   VENDORS_READ: 'vendors:read',
   VENDORS_MANAGE: 'vendors:manage',
+
+  /**
+   * v2.42 - the vendor portal.
+   *
+   * Held only by external supplier users, and deliberately a separate resource
+   * from `vendors:*`, which is the internal vendor register. A vendor managing
+   * its own catalogue is not the same act as an administrator managing the list
+   * of vendors, and one permission covering both would let a supplier edit its
+   * competitors' records.
+   *
+   * None of these grant sight of anything beyond the vendor's own rows; that is
+   * enforced by vendorId scoping in the services, not by the permission name.
+   */
+  VENDOR_PORTAL_ACCESS: 'vendor-portal:access',
+  VENDOR_PRODUCTS_READ: 'vendor-products:read',
+  VENDOR_PRODUCTS_MANAGE: 'vendor-products:manage',
+  VENDOR_PRODUCTS_REVIEW: 'vendor-products:review',
+  VENDOR_ORDERS_READ: 'vendor-orders:read',
+  VENDOR_INVOICES_READ: 'vendor-invoices:read',
+  VENDOR_QUOTES_RESPOND: 'vendor-quotes:respond',
   PURCHASE_ORDERS_READ: 'purchase-orders:read',
   PURCHASE_ORDERS_MANAGE: 'purchase-orders:manage',
 
@@ -189,6 +209,11 @@ export const SYSTEM_ROLES = [
   'IT_TECHNICIAN',
   'PROCUREMENT_MANAGER',
   'INVENTORY_MANAGER',
+  // v2.42 - back, and this time with permissions. It was removed in v2.40
+  // because it granted nothing: an account holding it could sign in and reach a
+  // dashboard that failed, which is worse than a role that does not exist. It
+  // returns only now that the vendor portal gives it something to do.
+  'VENDOR',
 ] as const;
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -216,6 +241,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
    * may set it. IT held it for a while and never used it.
    */
   IT_ADMIN: [
+    P.VENDOR_PRODUCTS_READ,
+    P.VENDOR_PRODUCTS_REVIEW,
     P.ASSETS_READ,
     P.DISCOVERY_READ,
     P.DISCOVERY_INGEST,
@@ -289,6 +316,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   ],
 
   OFFICE_ADMIN: [
+    P.VENDOR_PRODUCTS_READ,
+    P.VENDOR_PRODUCTS_REVIEW,
     P.ASSETS_READ,
     P.ASSETS_CREATE,
     P.ASSETS_UPDATE,
@@ -322,6 +351,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
   ],
 
   FINANCE: [
+    P.VENDOR_PRODUCTS_READ,
+    P.VENDOR_PRODUCTS_REVIEW,
     P.ANALYTICS_READ,
     P.ASSETS_READ,
     P.ASSETS_COST_READ,
@@ -451,6 +482,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
 
   // Sourcing and purchasing. Owns vendors + POs; approves requests.
   PROCUREMENT_MANAGER: [
+    P.VENDOR_PRODUCTS_READ,
+    P.VENDOR_PRODUCTS_REVIEW,
     P.ASSETS_READ,
     P.PROCUREMENT_RFQ_MANAGE,
     P.PROCUREMENT_PR_CREATE,
@@ -509,6 +542,23 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
     P.QR_PRINT,
     P.REPORTS_READ,
   ],
+  /**
+   * External supplier users. Everything here is scoped to the vendor's own rows
+   * by vendorId in the service layer - the permission says "may manage a
+   * catalogue", the scope decides whose.
+   *
+   * Note what is absent: no assets, no people, no inventory, no requests, no
+   * internal pricing or comparison. A supplier is a guest in this tenant, and
+   * the grant list is the place that has to stay boring.
+   */
+  VENDOR: [
+    P.VENDOR_PORTAL_ACCESS,
+    P.VENDOR_PRODUCTS_READ,
+    P.VENDOR_PRODUCTS_MANAGE,
+    P.VENDOR_ORDERS_READ,
+    P.VENDOR_INVOICES_READ,
+    P.VENDOR_QUOTES_RESPOND,
+  ],
 
   // External supplier. The vendor-portal module does not exist yet, so this role
   // is seeded as an assignable placeholder with no permissions until it ships.
@@ -533,6 +583,8 @@ export const ROLE_DEFAULT_SCOPE: Readonly<Record<SystemRole, DataScope>> = {
   IT_TECHNICIAN: 'ALL',
   PROCUREMENT_MANAGER: 'ALL',
   INVENTORY_MANAGER: 'ALL',
+  /// External supplier: only ever its own records.
+  VENDOR: 'OWN',
 };
 
 /**

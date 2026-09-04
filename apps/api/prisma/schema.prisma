@@ -560,16 +560,26 @@ model Company {
   quotes                    Quote[]
   catalogItems              CatalogItem[]
 
-  emailTemplates     EmailTemplate[]
-  notificationRules  NotificationRule[]
-  emailLogs          EmailLog[]
-  requestAssessments RequestAssessment[]
+  emailTemplates        EmailTemplate[]
+  notificationRules     NotificationRule[]
+  emailLogs             EmailLog[]
+  requestAssessments    RequestAssessment[]
+  vendorProducts        VendorProduct[]
+  vendorProductImages   VendorProductImage[]
+  vendorProductReviews  VendorProductReview[]
+  procurementSelections ProcurementSelection[]
 
   @@index([deletedAt])
   @@map("companies")
 }
 
 model User {
+  /// v2.42 - set only on external supplier users, and the thing that decides
+  /// whose rows they can touch. The VENDOR role says "may manage a catalogue";
+  /// this says whose. A vendor user without it is a bug, and the services treat
+  /// it as one rather than falling back to "all vendors".
+  vendorId String?
+
   id        String @id @default(cuid())
   companyId String
 
@@ -641,12 +651,16 @@ model User {
   licenseAssignments       LicenseAssignment[]        @relation("LicenseAssignee")
   purchaseRequests         PurchaseRequest[]          @relation("PurchaseRequester")
   requestAssessments       RequestAssessment[]        @relation("AssessmentAssessor")
+  vendorProductReviews     VendorProductReview[]      @relation("VendorProductReviewer")
+  procurementSelections    ProcurementSelection[]     @relation("ProcurementSelector")
+  vendorAccount            Vendor?                    @relation("VendorPortalUsers", fields: [vendorId], references: [id], onDelete: Restrict)
 
   /// Email is unique per tenant, not globally: the same person may exist in two companies.
   @@unique([companyId, email])
   @@index([companyId, status])
   @@index([externalIdpSubject])
   @@index([deletedAt])
+  @@index([companyId, vendorId])
   @@map("users")
 }
 
@@ -1023,6 +1037,7 @@ model Category {
   requestItems   RequestItem[]
   invoiceLines   InvoiceLine[]   @relation("SuggestedCategory")
   catalogItems   CatalogItem[]
+  vendorProducts VendorProduct[]
 
   @@unique([companyId, key])
   @@index([companyId, isActive, sortOrder])
@@ -1045,6 +1060,7 @@ model Subcategory {
   assets         Asset[]
   inventoryItems InventoryItem[]
   requestItems   RequestItem[]
+  vendorProducts VendorProduct[]
 
   @@unique([categoryId, key])
   @@map("subcategories")
@@ -1532,7 +1548,7 @@ model Vendor {
   createdById String?
   updatedById String?
 
-  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company            Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
   assets             Asset[]
   invoices           Invoice[]
   purchaseOrders     PurchaseOrder[]
@@ -1540,6 +1556,9 @@ model Vendor {
   maintenance        MaintenanceRecord[]
   softwareLicenses   SoftwareLicense[]
   requestAssessments RequestAssessment[]
+  vendorProducts     VendorProduct[]
+  selections         ProcurementSelection[]
+  portalUsers        User[]                 @relation("VendorPortalUsers")
 
   @@unique([companyId, code])
   @@index([companyId, name])
@@ -1866,12 +1885,13 @@ model AssetRequest {
   replacesAsset      Asset?              @relation("RequestReplacesAsset", fields: [replacesAssetId], references: [id], onDelete: SetNull)
   workflowDefinition WorkflowDefinition? @relation(fields: [workflowDefinitionId], references: [id], onDelete: SetNull)
 
-  items       RequestItem[]
-  approvals   RequestApproval[]
-  comments    RequestComment[]
-  attachments Attachment[]
-  workOrder   MaintenanceRecord?
-  assessment  RequestAssessment?
+  items                 RequestItem[]
+  approvals             RequestApproval[]
+  comments              RequestComment[]
+  attachments           Attachment[]
+  workOrder             MaintenanceRecord?
+  assessment            RequestAssessment?
+  procurementSelections ProcurementSelection[]
 
   @@unique([companyId, requestNumber])
   @@index([companyId, status])
@@ -3055,13 +3075,14 @@ model PurchaseRequest {
   createdById String?
   updatedById String?
 
-  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  requester     User                  @relation("PurchaseRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  convertedPo   PurchaseOrder?        @relation("RequestConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
-  costCentre    CostCentre?           @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
-  quoteRequests QuoteRequest[]
-  budget        Budget?               @relation(fields: [budgetId], references: [id], onDelete: Restrict)
-  lines         PurchaseRequestLine[]
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requester             User                   @relation("PurchaseRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  convertedPo           PurchaseOrder?         @relation("RequestConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  costCentre            CostCentre?            @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  quoteRequests         QuoteRequest[]
+  budget                Budget?                @relation(fields: [budgetId], references: [id], onDelete: Restrict)
+  lines                 PurchaseRequestLine[]
+  procurementSelections ProcurementSelection[]
 
   @@unique([companyId, prNumber])
   @@index([companyId, status])
@@ -3616,4 +3637,227 @@ model MaintenanceSchedule {
 
   @@index([companyId, nextDueAt])
   @@map("maintenance_schedules")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2.42 — Vendor catalog
+//
+// A vendor product is an OFFER, not stock. It is something a supplier says it
+// will sell, at a price, until a date. It becomes inventory only after money
+// moves and goods physically arrive, and the two must never be conflated: the
+// entire point of a procurement trail is that "we paid for it" and "we have it"
+// are different facts.
+//
+// Distinct from Quote, which already exists: a Quote is a priced response to one
+// RFQ and dies with it. A VendorProduct stands on its own, is browsable, expires
+// on its own clock, and can be compared against other vendors' offers before any
+// request exists.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum VendorProductCondition {
+  NEW
+  REFURBISHED
+  OPEN_BOX
+  OTHER
+}
+
+enum VendorProductStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  ACTIVE
+  EXPIRING_SOON
+  OUT_OF_STOCK
+  EXPIRED
+  PAUSED
+  REJECTED
+  DISCONTINUED
+}
+
+enum VendorProductReviewDecision {
+  APPROVED
+  REJECTED
+  RETURNED_TO_VENDOR
+  CORRECTION_REQUESTED
+}
+
+model VendorProduct {
+  id        String @id @default(cuid())
+  companyId String
+  vendorId  String
+
+  name          String
+  categoryId    String
+  subcategoryId String?
+  brand         String?
+  manufacturer  String?
+  model         String?
+  vendorSku     String?
+  mpn           String?
+  description   String?
+  condition     VendorProductCondition @default(NEW)
+
+  /// Category-shaped technical fields, validated against the spec template for
+  /// the category. JSON for the same reason Asset.specs is: the field set
+  /// differs per category and changes without a migration.
+  specs Json?
+
+  /// Validated at write time and stored as the video id alone - never raw embed
+  /// markup from a vendor, which is somebody else's HTML running on our page.
+  youtubeVideoId String?
+
+  currency         String  @default("INR") @db.Char(3)
+  unitPrice        Decimal @db.Decimal(14, 2)
+  gstPercent       Decimal @default(0) @db.Decimal(5, 2)
+  discount         Decimal @default(0) @db.Decimal(14, 2)
+  shippingCost     Decimal @default(0) @db.Decimal(14, 2)
+  installationCost Decimal @default(0) @db.Decimal(14, 2)
+  otherCharges     Decimal @default(0) @db.Decimal(14, 2)
+
+  /// Computed by the server on every write and stored. Stored because a
+  /// comparison, an approval and a selection snapshot must agree to the paisa
+  /// with what was shown, and recomputing it in three places is how they stop
+  /// agreeing.
+  landedCost Decimal @db.Decimal(14, 2)
+
+  minOrderQuantity  Int     @default(1)
+  availableQuantity Int     @default(0)
+  paymentTerms      String?
+  leadTimeDays      Int?
+  warrantyMonths    Int?
+
+  availableFrom  DateTime
+  /// Required on purpose: an offer with no end date is a price nobody has
+  /// promised to honour.
+  availableUntil DateTime
+
+  status VendorProductStatus @default(DRAFT)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+  version     Int       @default(0)
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor      Vendor       @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  category    Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  subcategory Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+
+  images     VendorProductImage[]
+  reviews    VendorProductReview[]
+  selections ProcurementSelection[]
+
+  @@index([companyId, status])
+  @@index([companyId, vendorId])
+  @@index([companyId, categoryId, status])
+  @@index([companyId, availableUntil])
+  @@map("vendor_products")
+}
+
+/// At least one image, at most three - both enforced in the service, because a
+/// catalogue entry nobody can see the product in is not a catalogue entry.
+model VendorProductImage {
+  id              String @id @default(cuid())
+  companyId       String
+  vendorProductId String
+
+  storageKey   String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  width        Int?
+  height       Int?
+
+  /// Exactly one per product, enforced on every write and on delete: removing
+  /// the primary must promote another, never leave none.
+  isPrimary Boolean @default(false)
+  sortOrder Int     @default(0)
+
+  createdAt    DateTime @default(now())
+  uploadedById String?
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendorProduct VendorProduct @relation(fields: [vendorProductId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorProductId, sortOrder])
+  @@index([companyId, vendorProductId])
+  @@map("vendor_product_images")
+}
+
+/// Every review decision, kept as a list rather than one status field, so
+/// "returned twice for the same missing specification" stays visible instead of
+/// being overwritten by the next decision.
+model VendorProductReview {
+  id              String @id @default(cuid())
+  companyId       String
+  vendorProductId String
+
+  decision     VendorProductReviewDecision
+  comments     String?
+  reviewedById String
+  createdAt    DateTime                    @default(now())
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendorProduct VendorProduct @relation(fields: [vendorProductId], references: [id], onDelete: Cascade)
+  reviewedBy    User          @relation("VendorProductReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+
+  @@index([companyId, vendorProductId])
+  @@map("vendor_product_reviews")
+}
+
+/// What was chosen, as it stood at the moment of choosing.
+///
+/// Deliberately a snapshot rather than a set of foreign keys: a vendor may edit
+/// the price, the stock or the specification tomorrow, and an approval granted
+/// on Tuesday must still show what Tuesday's approver actually approved.
+model ProcurementSelection {
+  id        String @id @default(cuid())
+  companyId String
+
+  vendorProductId   String
+  vendorId          String
+  purchaseRequestId String?
+  assetRequestId    String?
+
+  quantity Int
+
+  currency         String  @db.Char(3)
+  unitPrice        Decimal @db.Decimal(14, 2)
+  gstPercent       Decimal @db.Decimal(5, 2)
+  discount         Decimal @db.Decimal(14, 2)
+  shippingCost     Decimal @db.Decimal(14, 2)
+  installationCost Decimal @db.Decimal(14, 2)
+  otherCharges     Decimal @db.Decimal(14, 2)
+  landedCost       Decimal @db.Decimal(14, 2)
+  /// landedCost * quantity, held so a total never has to be re-derived from a
+  /// price that has since moved.
+  totalCost        Decimal @db.Decimal(14, 2)
+
+  productName            String
+  brand                  String?
+  model                  String?
+  specsSnapshot          Json?
+  warrantyMonths         Int?
+  availableUntil         DateTime
+  primaryImageStorageKey String?
+
+  selectedById   String
+  createdAt      DateTime  @default(now())
+  deselectedAt   DateTime?
+  deselectedById String?
+
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendorProduct   VendorProduct    @relation(fields: [vendorProductId], references: [id], onDelete: Restrict)
+  vendor          Vendor           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  purchaseRequest PurchaseRequest? @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull)
+  assetRequest    AssetRequest?    @relation(fields: [assetRequestId], references: [id], onDelete: SetNull)
+  selectedBy      User             @relation("ProcurementSelector", fields: [selectedById], references: [id], onDelete: Restrict)
+
+  @@index([companyId, vendorProductId])
+  @@index([companyId, purchaseRequestId])
+  @@index([companyId, assetRequestId])
+  @@map("procurement_selections")
 }

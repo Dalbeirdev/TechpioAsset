@@ -49,4 +49,8 @@ export const ROLE_LABELS: Record<SystemRole, { name: string; description: string
     name: 'Inventory Manager',
     description: 'Manages stock, receiving, transfers and asset provisioning.',
   },
+  VENDOR: {
+    name: 'Vendor',
+    description: 'External supplier. Manages only its own catalogue, orders and invoices.',
+  },
 };

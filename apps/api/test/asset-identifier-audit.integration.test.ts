@@ -28,13 +28,24 @@ afterAll(async () => {
   await app?.close();
 });
 
-/** The newest audit entry for one asset, as the trail reports it. */
-async function latestEntry(assetId: string) {
+/**
+ * The audit entry recording a specific change, found by the value it carries.
+ *
+ * Not "the newest entry for this asset": these tests share seeded assets with
+ * the rest of the suite, and another file touching the same asset makes the
+ * newest entry somebody else's. That passed in isolation and failed in a full
+ * run - the same trap as the queued-extraction tests earlier in v2.39.
+ */
+async function entryRecording(assetId: string, field: string, value: string) {
   const res = await api(app)
-    .get(`/api/v1/audit?entityType=Asset&entityId=${assetId}&pageSize=1`)
+    .get(`/api/v1/audit?entityType=Asset&entityId=${assetId}&pageSize=25`)
     .set(auth(s.superAdmin));
   expect(res.status, JSON.stringify(res.body)).toBe(200);
-  return res.body.data[0];
+  const match = res.body.data.find(
+    (e: { newValues?: Record<string, unknown> }) => e.newValues?.[field] === value,
+  );
+  expect(match, `no audit entry recording ${field}=${value}`).toBeTruthy();
+  return match;
 }
 
 async function anAsset() {
@@ -55,9 +66,8 @@ describe('identifier changes are recorded', () => {
       .send({ brand });
     expect(patch.status, JSON.stringify(patch.body)).toBe(200);
 
-    const entry = await latestEntry(asset.id);
+    const entry = await entryRecording(asset.id, 'brand', brand);
     expect(entry.action).toBe('ASSET_UPDATED');
-    expect(entry.newValues.brand).toBe(brand);
     // The previous value matters as much as the new one: an audit trail that
     // says only what a field became cannot show what was overwritten.
     expect(entry.previousValues).toHaveProperty('brand');
@@ -73,8 +83,7 @@ describe('identifier changes are recorded', () => {
       .send({ imei });
     expect(patch.status, JSON.stringify(patch.body)).toBe(200);
 
-    const entry = await latestEntry(asset.id);
-    expect(entry.newValues.imei).toBe(imei);
+    await entryRecording(asset.id, 'imei', imei);
   });
 
   it('records a MAC address change', async () => {
@@ -87,20 +96,21 @@ describe('identifier changes are recorded', () => {
       .send({ macAddress: mac });
     expect(patch.status, JSON.stringify(patch.body)).toBe(200);
 
-    const entry = await latestEntry(asset.id);
-    expect(String(entry.newValues.macAddress).toUpperCase()).toBe(mac.toUpperCase());
+    await entryRecording(asset.id, 'macAddress', mac.toUpperCase());
   });
 
   it('still writes nothing when nothing actually changed', async () => {
     // The early return is deliberate and worth keeping: re-saving an unchanged
     // asset should not fill the trail with entries that record no change.
     const asset = await anAsset();
-    await api(app).patch(`/api/v1/assets/${asset.id}`).set(auth(s.superAdmin)).send({ brand: 'Stable Co' });
-    const before = await latestEntry(asset.id);
+    const brand = `Stable-${Date.now()}`;
+    await api(app).patch(`/api/v1/assets/${asset.id}`).set(auth(s.superAdmin)).send({ brand });
+    const before = await entryRecording(asset.id, 'brand', brand);
 
-    await api(app).patch(`/api/v1/assets/${asset.id}`).set(auth(s.superAdmin)).send({ brand: 'Stable Co' });
-    const after = await latestEntry(asset.id);
+    await api(app).patch(`/api/v1/assets/${asset.id}`).set(auth(s.superAdmin)).send({ brand });
+    const after = await entryRecording(asset.id, 'brand', brand);
 
+    // Re-saving an unchanged value writes nothing, so the same entry is found.
     expect(after.id).toBe(before.id);
   });
 });

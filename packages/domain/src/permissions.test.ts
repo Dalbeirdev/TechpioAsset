@@ -249,14 +249,15 @@ describe('module:resource:action taxonomy (v2.1 WS-C)', () => {
  * failed. A role that cannot be used is worse than a missing one, because it
  * can be picked by mistake.
  */
-describe('canonical 12-role model (v2.1 WS-C, VENDOR removed in v2.40)', () => {
-  it('defines exactly the 12 canonical roles', () => {
-    expect(SYSTEM_ROLES).toHaveLength(12);
+describe('canonical 13-role model (v2.1 WS-C; VENDOR removed in v2.40, restored in v2.42)', () => {
+  it('defines exactly the 13 canonical roles', () => {
+    expect(SYSTEM_ROLES).toHaveLength(13);
     for (const role of [
       'COMPANY_ADMIN',
       'IT_TECHNICIAN',
       'PROCUREMENT_MANAGER',
       'INVENTORY_MANAGER',
+      'VENDOR',
     ] as const) {
       expect(SYSTEM_ROLES).toContain(role);
     }
@@ -284,5 +285,65 @@ describe('canonical 12-role model (v2.1 WS-C, VENDOR removed in v2.40)', () => {
 
   it('the read-only invariant still applies to exactly the Auditor', () => {
     expect(READ_ONLY_ROLES).toEqual(['AUDITOR']);
+  });
+});
+
+describe('the vendor role is a guest, not a colleague (v2.42)', () => {
+  /**
+   * The blast radius of this role is the whole point. A supplier user signs in
+   * to the buying company's tenant, so every grant it holds is a door into
+   * somebody else's business. These assertions are the lock on that door, and
+   * they are written as "must hold nothing outside its own surface" rather than
+   * a list of forbidden permissions, so a permission added next year is denied
+   * by default instead of being forgotten here.
+   */
+  const VENDOR_SURFACE = /^vendor-(portal|products|orders|invoices|quotes):/;
+
+  it('holds only vendor-portal permissions', () => {
+    for (const permission of ROLE_PERMISSIONS.VENDOR) {
+      expect(permission, `${permission} is outside the vendor portal surface`).toMatch(
+        VENDOR_SURFACE,
+      );
+    }
+  });
+
+  it('cannot see assets, people, inventory, requests or internal pricing', () => {
+    const held = new Set<string>(ROLE_PERMISSIONS.VENDOR);
+    for (const forbidden of [
+      P.ASSETS_READ,
+      P.EMPLOYEES_READ,
+      P.INVENTORY_READ,
+      P.REQUESTS_READ,
+      P.ASSETS_COST_READ,
+      P.VENDORS_READ,
+      P.VENDORS_MANAGE,
+      P.AUDIT_READ,
+    ]) {
+      expect(held.has(forbidden), `vendor must not hold ${forbidden}`).toBe(false);
+    }
+  });
+
+  it('cannot review its own catalogue entries', () => {
+    // Approval is the internal control on what a supplier publishes. A vendor
+    // holding it would be approving itself.
+    expect(ROLE_PERMISSIONS.VENDOR).not.toContain(P.VENDOR_PRODUCTS_REVIEW);
+  });
+
+  it('sees only its own records by default', () => {
+    expect(ROLE_DEFAULT_SCOPE.VENDOR).toBe('OWN');
+  });
+
+  it('gives review to internal roles that actually assess products', () => {
+    for (const role of ['IT_ADMIN', 'OFFICE_ADMIN', 'PROCUREMENT_MANAGER', 'FINANCE'] as const) {
+      expect(ROLE_PERMISSIONS[role], `${role} reviews vendor products`).toContain(
+        P.VENDOR_PRODUCTS_REVIEW,
+      );
+    }
+  });
+
+  it('never lets the auditor write through the new permissions', () => {
+    for (const permission of ROLE_PERMISSIONS.AUDITOR) {
+      expect(isReadOnlyPermission(permission), `${permission} is a write`).toBe(true);
+    }
   });
 });
