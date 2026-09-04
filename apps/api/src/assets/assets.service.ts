@@ -80,10 +80,29 @@ function assetOrderBy(
 }
 
 /** Fields whose changes are worth an audit row. Excludes noise like updatedAt. */
+/**
+ * What a change to an asset records in the audit trail.
+ *
+ * v2.40 added brand, model, imei, macAddress and specs. Their absence was found
+ * the hard way: fifteen brand corrections were applied to production and left no
+ * trace at all, because recordChange compares only the fields named here and
+ * returns early when none of them moved.
+ *
+ * The identifiers are the ones that matter. serialNumber was audited while imei
+ * and macAddress were not, so the numbers that identify a phone could be edited
+ * silently while the number that identifies a laptop could not - on a register
+ * whose whole purpose is saying which device is which, and which is produced as
+ * evidence when a device goes missing.
+ */
 const AUDITED_FIELDS = [
   'name',
   'assetTag',
   'serialNumber',
+  'brand',
+  'model',
+  'imei',
+  'macAddress',
+  'specs',
   'status',
   'condition',
   'categoryId',
