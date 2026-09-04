@@ -189,7 +189,6 @@ export const SYSTEM_ROLES = [
   'IT_TECHNICIAN',
   'PROCUREMENT_MANAGER',
   'INVENTORY_MANAGER',
-  'VENDOR',
 ] as const;
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -513,7 +512,6 @@ export const ROLE_PERMISSIONS: Readonly<Record<SystemRole, readonly Permission[]
 
   // External supplier. The vendor-portal module does not exist yet, so this role
   // is seeded as an assignable placeholder with no permissions until it ships.
-  VENDOR: [],
 };
 
 /**
@@ -535,8 +533,6 @@ export const ROLE_DEFAULT_SCOPE: Readonly<Record<SystemRole, DataScope>> = {
   IT_TECHNICIAN: 'ALL',
   PROCUREMENT_MANAGER: 'ALL',
   INVENTORY_MANAGER: 'ALL',
-  // External supplier: only ever its own records.
-  VENDOR: 'OWN',
 };
 
 /**
