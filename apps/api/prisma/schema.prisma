@@ -569,6 +569,7 @@ model Company {
   vendorProductReviews  VendorProductReview[]
   procurementSelections ProcurementSelection[]
   categorySpecFields    CategorySpecField[]
+  qualityChecks         QualityCheck[]
 
   @@index([deletedAt])
   @@map("companies")
@@ -651,6 +652,7 @@ model User {
   delegationsReceived      ApprovalDelegation[]       @relation("DelegationDelegate")
   licenseAssignments       LicenseAssignment[]        @relation("LicenseAssignee")
   purchaseRequests         PurchaseRequest[]          @relation("PurchaseRequester")
+  qualityChecks            QualityCheck[]             @relation("QualityInspector")
   requestAssessments       RequestAssessment[]        @relation("AssessmentAssessor")
   vendorProductReviews     VendorProductReview[]      @relation("VendorProductReviewer")
   procurementSelections    ProcurementSelection[]     @relation("ProcurementSelector")
@@ -3180,6 +3182,46 @@ model GoodsReceipt {
   @@map("goods_receipts")
 }
 
+/// Whether what arrived is fit to use (v2.42).
+///
+/// Receiving says a box turned up; this says the contents pass. It is also what
+/// lets a received asset become available - until now nothing did that
+/// automatically, so assets sat in RECEIVED until somebody edited them by hand.
+///
+/// One per receipt line: a line is inspected once, and a second opinion is a
+/// deliberate act rather than an accident of double submission.
+model QualityCheck {
+  id        String @id @default(cuid())
+  companyId String
+
+  goodsReceiptLineId String
+
+  outcome QualityOutcome
+  /// Always equals the quantity on the receipt line; held so the arithmetic
+  /// that was checked stays visible even if the line is later corrected.
+  quantityInspected Decimal @db.Decimal(14, 3)
+  quantityAccepted  Decimal @db.Decimal(14, 3)
+  quantityRejected  Decimal @db.Decimal(14, 3)
+
+  /// Required whenever anything was rejected: a rejection nobody explained is
+  /// one the vendor cannot be held to.
+  rejectionReason String?
+  disposition     RejectDisposition?
+  notes           String?
+
+  inspectedById String?
+  inspectedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  goodsReceiptLine GoodsReceiptLine @relation(fields: [goodsReceiptLineId], references: [id], onDelete: Cascade)
+  inspectedBy      User?            @relation("QualityInspector", fields: [inspectedById], references: [id], onDelete: SetNull)
+
+  @@unique([goodsReceiptLineId])
+  @@index([companyId, outcome])
+  @@map("quality_checks")
+}
+
 model GoodsReceiptLine {
   id             String @id @default(cuid())
   goodsReceiptId String
@@ -3199,6 +3241,7 @@ model GoodsReceiptLine {
   inventoryItem     InventoryItem?    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   /// v2.9 C1 — the assets this line brought into existence.
   assets            Asset[]           @relation("AssetFromReceipt")
+  qualityCheck      QualityCheck?
 
   @@index([purchaseOrderLineId])
   @@map("goods_receipt_lines")
@@ -3708,6 +3751,20 @@ enum VendorProductCondition {
   REFURBISHED
   OPEN_BOX
   OTHER
+}
+
+/// Quality check result, derived from the counts rather than stated (v2.42).
+enum QualityOutcome {
+  PASSED
+  PARTIAL
+  FAILED
+}
+
+/// Where rejected units go. Both map to transitions the asset state machine
+/// already allows out of RECEIVED, so no new asset status was invented.
+enum RejectDisposition {
+  RETURN_TO_VENDOR
+  HOLD_DAMAGED
 }
 
 /// How a spec field is compared (v2.42).
