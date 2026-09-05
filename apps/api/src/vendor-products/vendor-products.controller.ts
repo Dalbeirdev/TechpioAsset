@@ -16,18 +16,23 @@ import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type {
   AuthUser,
+  CompareOffersInput,
   CreateVendorProductInput,
   ReviewVendorProductInput,
+  SelectOfferInput,
   UpdateVendorProductInput,
 } from '@techpioasset/contracts';
 import {
+  compareOffersSchema,
   createVendorProductSchema,
   reviewVendorProductSchema,
+  selectOfferSchema,
   updateVendorProductSchema,
 } from '@techpioasset/contracts';
 import { PERMISSIONS, PRODUCT_IMAGE_RULES } from '@techpioasset/domain';
 import { zodBody } from '../common/pipes/zod-validation.pipe.js';
 import { CurrentUser, RequirePermissions } from '../auth/decorators.js';
+import { OfferComparisonService } from './offer-comparison.service.js';
 import { VendorProductImagesService } from './vendor-product-images.service.js';
 import { VendorProductsService } from './vendor-products.service.js';
 
@@ -48,6 +53,7 @@ export class VendorProductsController {
   constructor(
     private readonly products: VendorProductsService,
     private readonly images: VendorProductImagesService,
+    private readonly comparison: OfferComparisonService,
   ) {}
 
   @Get()
@@ -138,6 +144,69 @@ export class VendorProductsController {
   @ApiOperation({ summary: 'Withdraw an offer; it stays readable so past purchases stay explicable' })
   remove(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
     return this.products.remove(actor, id);
+  }
+
+  // ── Comparison and selection ──────────────────────────────────────────────
+  //
+  // Internal only. Gated on the review permission rather than the read one:
+  // suppliers and employees both hold read, and neither may see how offers
+  // score against each other. The service refuses supplier accounts a second
+  // time, because a supplier legitimately holds manage for its own drafts.
+
+  @Post('compare')
+  @RequirePermissions(PERMISSIONS.VENDOR_PRODUCTS_REVIEW)
+  @ApiOperation({
+    summary: 'Score offers against what was asked for',
+    description:
+      'Each requirement comes back as PASS, PARTIAL or FAIL with a reason. A specification the ' +
+      'vendor never filled in is a FAIL that says "not stated", so an unanswered question is never ' +
+      'mistaken for a met one. Arithmetic only - no model is consulted.',
+  })
+  compare(
+    @CurrentUser() actor: AuthUser,
+    @Body(zodBody(compareOffersSchema)) body: CompareOffersInput,
+  ) {
+    return this.comparison.compare(actor, body);
+  }
+
+  @Post(':id/select')
+  @RequirePermissions(PERMISSIONS.VENDOR_PRODUCTS_MANAGE)
+  @ApiOperation({
+    summary: 'Choose this offer',
+    description:
+      'Snapshots the price, specification and warranty as they are now. A vendor may change its ' +
+      'price tomorrow; a decision defended six months later has to show what was true when it was made.',
+  })
+  select(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body(zodBody(selectOfferSchema)) body: SelectOfferInput,
+  ) {
+    return this.comparison.select(actor, id, body);
+  }
+
+  @Get('selections/list')
+  @RequirePermissions(PERMISSIONS.VENDOR_PRODUCTS_REVIEW)
+  @ApiOperation({ summary: 'What has been chosen' })
+  selections(
+    @CurrentUser() actor: AuthUser,
+    @Query('purchaseRequestId') purchaseRequestId?: string,
+    @Query('take') take?: string,
+  ) {
+    return this.comparison.listSelections(actor, {
+      ...(purchaseRequestId ? { purchaseRequestId } : {}),
+      ...(take ? { take: Number(take) } : {}),
+    });
+  }
+
+  @Delete('selections/:selectionId')
+  @RequirePermissions(PERMISSIONS.VENDOR_PRODUCTS_MANAGE)
+  @ApiOperation({
+    summary: 'Undo a choice',
+    description: 'Kept as a dated row rather than deleted; that a vendor was dropped is auditable.',
+  })
+  deselect(@CurrentUser() actor: AuthUser, @Param('selectionId') selectionId: string) {
+    return this.comparison.deselect(actor, selectionId);
   }
 
   // ── Images ────────────────────────────────────────────────────────────────

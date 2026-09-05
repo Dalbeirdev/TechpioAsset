@@ -119,6 +119,20 @@ export const reviewVendorProductSchema = z
     path: ['comments'],
   });
 
+/**
+ * Choosing an offer. No prices here on purpose: the figures are snapshotted
+ * from the offer on the server, so a caller cannot record a purchase against a
+ * price the vendor never published.
+ */
+export const selectOfferSchema = z
+  .object({
+    quantity: z.number().int().positive().max(100_000),
+    purchaseRequestId: z.string().optional(),
+    assetRequestId: z.string().optional(),
+  })
+  .strict();
+
+export type SelectOfferInput = z.infer<typeof selectOfferSchema>;
 export type CreateVendorProductInput = z.infer<typeof createVendorProductSchema>;
 export type UpdateVendorProductInput = z.infer<typeof updateVendorProductSchema>;
 export type ReviewVendorProductInput = z.infer<typeof reviewVendorProductSchema>;
