@@ -68,6 +68,41 @@ describe('quality check arithmetic', () => {
   });
 });
 
+describe('naming the units that failed', () => {
+  it('accepts a count that agrees with the list', () => {
+    expect(
+      qualityCheckProblem({
+        received: 3,
+        accepted: 2,
+        rejected: 1,
+        reason: 'Cracked',
+        disposition: 'HOLD_DAMAGED',
+        namedUnits: 1,
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses a count that disagrees with the list', () => {
+    // Condemning a different laptop from the cracked one.
+    expect(
+      qualityCheckProblem({
+        received: 3,
+        accepted: 1,
+        rejected: 2,
+        reason: 'Cracked',
+        disposition: 'HOLD_DAMAGED',
+        namedUnits: 1,
+      }),
+    ).toBe('2 rejected but 1 unit(s) named');
+  });
+
+  it('does not apply to a line with no units to name', () => {
+    expect(
+      qualityCheckProblem({ received: 3, accepted: 2, rejected: 1, reason: 'Damp', disposition: 'RETURN_TO_VENDOR' }),
+    ).toBeNull();
+  });
+});
+
 describe('outcome', () => {
   it('is derived from the counts', () => {
     expect(qualityOutcome(10, 0)).toBe('PASSED');

@@ -4,10 +4,12 @@ import { qualityCheckProblem, type RejectDisposition } from '@techpioasset/domai
  * What the dock sends when it inspects a receipt line (v2.42).
  *
  * Outside the screen for the same reason receive.ts is: the payload has to be
- * exactly right or the inspection is wrong in a way nobody notices. In
- * particular, an asset line rejects *named units* — the ones in the inspector's
- * hands — and the count has to agree with that list, or the server condemns a
- * different laptop from the one with the cracked screen.
+ * exactly right or the inspection is wrong in a way nobody notices.
+ *
+ * The rules themselves live in @techpioasset/domain, so this screen, the web
+ * one and the server all argue from the same page - including the one that
+ * matters most, that an asset line's rejected count must agree with the units
+ * named, or the server condemns a different laptop from the cracked one.
  */
 
 export interface QualityCheckPayload {
@@ -57,17 +59,13 @@ export function buildQualityCheck(draft: QualityDraft): QualityCheckPayload {
  */
 export function qualityDraftProblem(draft: QualityDraft): string | null {
   const rejected = Number.isFinite(draft.rejected) ? Math.max(0, draft.rejected) : 0;
-  const problem = qualityCheckProblem({
+  return qualityCheckProblem({
     received: draft.received,
     accepted: draft.received - rejected,
     rejected,
     reason: draft.reason,
     disposition: rejected > 0 ? draft.disposition : null,
+    // Only an asset line has units to name; stock has none.
+    ...(draft.intake === 'ASSET' ? { namedUnits: draft.rejectedAssetIds.length } : {}),
   });
-  if (problem) return problem;
-
-  if (draft.intake === 'ASSET' && rejected !== draft.rejectedAssetIds.length) {
-    return `${rejected} rejected but ${draft.rejectedAssetIds.length} unit(s) named`;
-  }
-  return null;
 }

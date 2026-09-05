@@ -33,6 +33,15 @@ export interface QualityCheckInput {
   rejected: number;
   reason?: string | null | undefined;
   disposition?: RejectDisposition | null | undefined;
+  /**
+   * How many individual units the inspector named as failing.
+   *
+   * Only meaningful on an asset line, where the units are things somebody is
+   * holding. Pass it and the count has to agree, because a count that
+   * disagrees with the list condemns a different laptop from the cracked one.
+   * Left undefined for stock, which has no units to name.
+   */
+  namedUnits?: number | null | undefined;
 }
 
 /**
@@ -84,6 +93,10 @@ export function qualityCheckProblem(input: QualityCheckInput): string | null {
     if (!input.disposition) {
       return 'Say what happens to the rejected units: returned to the vendor, or held as damaged';
     }
+  }
+
+  if (input.namedUnits !== undefined && input.namedUnits !== null && input.namedUnits !== rejected) {
+    return `${rejected} rejected but ${input.namedUnits} unit(s) named`;
   }
 
   return null;
