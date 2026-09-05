@@ -3,7 +3,7 @@ import { AuditAction, Prisma } from '@prisma/client';
 import type { AuthUser, CreateSpecFieldInput, UpdateSpecFieldInput } from '@techpioasset/contracts';
 import type { SpecFieldDefinition } from '@techpioasset/domain';
 import { AppError } from '../common/errors/app-error.js';
-import { tenantFilter } from '../common/scope.js';
+import { denyVendorUsers, tenantFilter } from '../common/scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -17,6 +17,10 @@ import { PrismaService } from '../prisma/prisma.service.js';
  * Removing a field is a soft delete. Comparisons already made were snapshotted
  * when the offer was selected, so deleting a field never rewrites a decision
  * somebody has already defended.
+ *
+ * Every write refuses a supplier outright, on top of the route's permission:
+ * a vendor deciding what buyers compare it on would be marking its own
+ * homework, and the permission alone could be granted away by an administrator.
  */
 @Injectable()
 export class SpecTemplatesService {
@@ -86,6 +90,7 @@ export class SpecTemplatesService {
   }
 
   async create(actor: AuthUser, input: CreateSpecFieldInput) {
+    denyVendorUsers(actor, 'change what offers are described by');
     await this.categoryOrThrow(actor, input.categoryId);
 
     const clash = await this.prisma.client.categorySpecField.findFirst({
@@ -120,6 +125,7 @@ export class SpecTemplatesService {
   }
 
   async update(actor: AuthUser, id: string, input: UpdateSpecFieldInput) {
+    denyVendorUsers(actor, 'change what offers are described by');
     const existing = await this.prisma.client.categorySpecField.findFirst({
       where: { id, ...tenantFilter(actor), deletedAt: null },
       select: SpecTemplatesService.FIELDS,
@@ -163,6 +169,7 @@ export class SpecTemplatesService {
 
   /** Retire a field. The values vendors entered against it are left alone. */
   async remove(actor: AuthUser, id: string) {
+    denyVendorUsers(actor, 'change what offers are described by');
     const existing = await this.prisma.client.categorySpecField.findFirst({
       where: { id, ...tenantFilter(actor), deletedAt: null },
       select: { id: true, key: true, categoryId: true },

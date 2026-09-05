@@ -177,7 +177,7 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/settings/spec-templates',
         label: 'Spec templates',
         Icon: ListChecks,
-        permission: PERMISSIONS.CATEGORIES_MANAGE,
+        permission: PERMISSIONS.VENDOR_PRODUCTS_REVIEW,
       },
       { href: '/settings/roles', label: 'Roles', Icon: ShieldCheck, permission: PERMISSIONS.ROLES_MANAGE },
       {

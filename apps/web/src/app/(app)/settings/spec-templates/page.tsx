@@ -24,6 +24,10 @@ import {
  * them on. Editable here because the fields worth asking a laptop supplier for
  * are not the ones worth asking a chair supplier for, and nobody should need a
  * release to add a row.
+ *
+ * Behind the catalogue review permission - the people who assess offers decide
+ * what an offer is described by. Suppliers can read a template but never edit
+ * one, or they would be setting the questions they are marked on.
  */
 
 type Category = { id: string; name: string };
@@ -229,7 +233,7 @@ export default function SpecTemplatesPage() {
   const [categoryId, setCategoryId] = useState('');
   const [adding, setAdding] = useState(false);
 
-  const allowed = Boolean(user?.permissions?.includes(PERMISSIONS.CATEGORIES_MANAGE));
+  const allowed = Boolean(user?.permissions?.includes(PERMISSIONS.VENDOR_PRODUCTS_REVIEW));
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
@@ -289,7 +293,7 @@ export default function SpecTemplatesPage() {
   if (!allowed) {
     return (
       <Card className="mx-auto mt-10 max-w-md p-6 text-sm text-[var(--color-content-muted)]">
-        Editing specification templates needs the categories permission. Ask your administrator.
+        Editing specification templates needs the catalogue review permission. Ask your administrator.
       </Card>
     );
   }

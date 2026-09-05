@@ -149,6 +149,27 @@ describe('spec templates', () => {
     expect(res.status).toBe(403);
   });
 
+  it('lets an office admin edit the template, not only a super admin', async () => {
+    // The people who assess offers decide what an offer is described by. Gating
+    // this on the categories permission would leave it to Super Admin alone,
+    // which is nobody who actually runs the catalogue.
+    const res = await api(app)
+      .post('/api/v1/spec-templates')
+      .set(auth(s.officeAdmin))
+      .send({ categoryId, key: `ports_${stamp()}`, label: 'Ports', dataType: 'TEXT' });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+  });
+
+  it('will not let a supplier edit the template it is judged on', async () => {
+    // A vendor holds vendor-products:manage for its own drafts, so the route
+    // permission alone would not keep it out of here.
+    const res = await api(app)
+      .post('/api/v1/spec-templates')
+      .set(vendorAuth())
+      .send({ categoryId, key: `sneaky_${stamp()}`, label: 'Sneaky', dataType: 'TEXT' });
+    expect(res.status).toBe(403);
+  });
+
   it('lets a vendor read the template it has to fill in', async () => {
     const res = await api(app).get('/api/v1/spec-templates').query({ categoryId }).set(vendorAuth());
     expect(res.status).toBe(200);

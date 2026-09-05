@@ -10,14 +10,17 @@ import { SpecTemplatesService } from './spec-templates.service.js';
 /**
  * Spec templates (v2.42).
  *
- * Category configuration, so it sits behind the same permission as categories
- * themselves rather than a new one: whoever decides a company tracks laptops
- * decides what a laptop is described by.
+ * Writes sit behind the catalogue review permission: the people who assess
+ * offers are the ones who decide what an offer is described by. Deliberately
+ * not the manage permission, which suppliers hold for their own drafts - a
+ * vendor defining what buyers compare it on would be marking its own homework.
+ * Deliberately not the categories permission either, which only Super Admin
+ * holds, and which would leave procurement unable to set up its own fields.
  *
- * Reading is open to anyone who may manage categories AND to vendors filling in
- * an offer - a supplier cannot enter the specifications a buyer asks for
- * without being told which ones those are. The template holds no pricing and
- * nothing about any other vendor, so there is nothing here to leak.
+ * Reading is open to everyone who can see the catalogue, vendors included: a
+ * supplier cannot fill in the specifications a buyer asks for without being
+ * told which ones those are. The template holds no pricing and nothing about
+ * any other vendor, so there is nothing here to leak.
  */
 @ApiTags('spec-templates')
 @Controller('spec-templates')
@@ -35,7 +38,7 @@ export class SpecTemplatesController {
   }
 
   @Post()
-  @RequirePermissions(PERMISSIONS.CATEGORIES_MANAGE)
+  @RequirePermissions(PERMISSIONS.VENDOR_PRODUCTS_REVIEW)
   @ApiOperation({ summary: 'Add a field to a category template' })
   create(
     @CurrentUser() actor: AuthUser,
@@ -45,7 +48,7 @@ export class SpecTemplatesController {
   }
 
   @Patch(':id')
-  @RequirePermissions(PERMISSIONS.CATEGORIES_MANAGE)
+  @RequirePermissions(PERMISSIONS.VENDOR_PRODUCTS_REVIEW)
   @ApiOperation({
     summary: 'Edit a field',
     description:
@@ -60,7 +63,7 @@ export class SpecTemplatesController {
   }
 
   @Delete(':id')
-  @RequirePermissions(PERMISSIONS.CATEGORIES_MANAGE)
+  @RequirePermissions(PERMISSIONS.VENDOR_PRODUCTS_REVIEW)
   @ApiOperation({
     summary: 'Retire a field',
     description: 'The values vendors entered against it are left alone, so past comparisons still read.',
