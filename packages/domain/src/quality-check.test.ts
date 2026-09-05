@@ -30,6 +30,14 @@ describe('quality check arithmetic', () => {
     expect(qualityCheckProblem({ received: 5, accepted: 6, rejected: -1 })).toContain('negative');
   });
 
+  it('says plainly when more was rejected than arrived', () => {
+    // The inspector needs to know what to do, not that a derived number went
+    // below zero.
+    expect(qualityCheckProblem({ received: 3, accepted: -2, rejected: 5 })).toBe(
+      'Cannot reject 5 when only 3 arrived',
+    );
+  });
+
   it('refuses an empty line', () => {
     expect(qualityCheckProblem({ received: 0, accepted: 0, rejected: 0 })).toContain('nothing');
   });

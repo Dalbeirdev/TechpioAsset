@@ -316,6 +316,16 @@ export class ProcurementController {
     return this.quality.record(actor, lineId, body);
   }
 
+  @Get('receipts/:receiptId')
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_RECEIVE)
+  @ApiOperation({
+    summary: 'One receipt, with its lines, the units they created and any inspection',
+    description: 'What an inspector needs in one call, rather than three that can disagree.',
+  })
+  receipt(@CurrentUser() actor: AuthUser, @Param('receiptId') receiptId: string) {
+    return this.quality.findReceipt(actor, receiptId);
+  }
+
   @Get('receipts/:receiptId/quality-checks')
   @RequirePermissions(PERMISSIONS.PROCUREMENT_RECEIVE)
   @ApiOperation({ summary: 'The inspections recorded against one receipt' })

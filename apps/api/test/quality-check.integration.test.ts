@@ -295,6 +295,30 @@ describe('who may inspect', () => {
     expect(res.status).toBe(403);
   });
 
+  it('gives an inspector the whole receipt in one call', async () => {
+    // Three calls to assemble this on a loading dock is three chances to be
+    // holding a stale answer.
+    const line = await receivedAssets(2);
+    const res = await api(app)
+      .get(`${base}/receipts/${line.goodsReceiptId}`)
+      .set(auth(s.superAdmin));
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    const found = res.body.data.lines.find((l: { id: string }) => l.id === line.id);
+    expect(found.intake).toBe('ASSET');
+    expect(found.assets).toHaveLength(2);
+    expect(found.qualityCheck).toBeNull();
+    expect(res.body.data.purchaseOrder.poNumber).toBeTruthy();
+  });
+
+  it('does not show a receipt to an employee', async () => {
+    const line = await receivedAssets(1);
+    const res = await api(app)
+      .get(`${base}/receipts/${line.goodsReceiptId}`)
+      .set(auth(s.employee));
+    expect(res.status).toBe(403);
+  });
+
   it('shows the inspections recorded against a receipt', async () => {
     const line = await receivedAssets(1);
     await check(line.id, { quantityAccepted: 1, quantityRejected: 0 });

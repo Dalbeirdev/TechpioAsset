@@ -202,6 +202,56 @@ export class QualityCheckService {
     };
   }
 
+  /**
+   * One receipt with everything an inspector needs in their hand: what each
+   * line was, how much of it arrived, the units it created, and whether it has
+   * already been looked at.
+   *
+   * Assembled here rather than left to the client to stitch together from three
+   * calls - on a loading dock that is three chances to be holding a stale
+   * answer.
+   */
+  async findReceipt(actor: AuthUser, goodsReceiptId: string) {
+    const receipt = await this.prisma.client.goodsReceipt.findFirst({
+      where: { id: goodsReceiptId, ...tenantFilter(actor) },
+      select: {
+        id: true,
+        grnNumber: true,
+        receivedAt: true,
+        notes: true,
+        purchaseOrder: { select: { id: true, poNumber: true, vendor: { select: { name: true } } } },
+        lines: {
+          select: {
+            id: true,
+            quantity: true,
+            intake: true,
+            note: true,
+            purchaseOrderLine: { select: { lineNumber: true, description: true } },
+            inventoryItem: { select: { id: true, name: true } },
+            assets: {
+              select: { id: true, assetTag: true, serialNumber: true, status: true },
+              orderBy: { sourceUnitIndex: 'asc' },
+            },
+            qualityCheck: {
+              select: {
+                id: true,
+                outcome: true,
+                quantityAccepted: true,
+                quantityRejected: true,
+                rejectionReason: true,
+                disposition: true,
+                inspectedAt: true,
+              },
+            },
+          },
+          orderBy: { id: 'asc' },
+        },
+      },
+    });
+    if (!receipt) throw AppError.notFound('Goods receipt', goodsReceiptId);
+    return receipt;
+  }
+
   /** The inspections on one receipt, so a receiving screen can show them. */
   async listForReceipt(actor: AuthUser, goodsReceiptId: string) {
     const receipt = await this.prisma.client.goodsReceipt.findFirst({

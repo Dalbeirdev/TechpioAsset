@@ -51,9 +51,22 @@ export function qualityCheckProblem(input: QualityCheckInput): string | null {
     ['Rejected', rejected],
   ] as const) {
     if (!Number.isFinite(value)) return `${label} quantity must be a number`;
-    if (value < 0) return `${label} quantity cannot be negative`;
   }
   if (received <= 0) return 'There is nothing on this line to inspect';
+
+  // Named before the generic checks below, because this is the mistake people
+  // actually make and "accepted cannot be negative" tells an inspector holding
+  // a box nothing about what to do next.
+  if (rejected > received) {
+    return `Cannot reject ${rejected} when only ${received} arrived`;
+  }
+  for (const [label, value] of [
+    ['Received', received],
+    ['Accepted', accepted],
+    ['Rejected', rejected],
+  ] as const) {
+    if (value < 0) return `${label} quantity cannot be negative`;
+  }
 
   // Compared in thousandths: receipt quantities carry three decimal places, and
   // comparing floats exactly would reject a legitimate 0.1 + 0.2.
