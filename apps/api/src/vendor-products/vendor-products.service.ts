@@ -178,6 +178,8 @@ export class VendorProductsService {
         vendorId: true,
         status: true,
         name: true,
+        categoryId: true,
+        specs: true,
         unitPrice: true,
         gstPercent: true,
         discount: true,
@@ -277,6 +279,29 @@ export class VendorProductsService {
     }
     const problem = imageSetProblem(product._count.images);
     if (problem) throw new AppError('VALIDATION_FAILED', problem);
+
+    // A required field left blank reaches a buyer's comparison as "not stated",
+    // which fails. Better to stop it here, where the supplier can still fix it,
+    // than to let it be published and lose on a question nobody answered.
+    const required = await this.prisma.client.categorySpecField.findMany({
+      where: {
+        categoryId: product.categoryId,
+        ...tenantFilter(actor),
+        deletedAt: null,
+        isRequired: true,
+      },
+      select: { key: true, label: true },
+      take: 200,
+    });
+    if (required.length > 0) {
+      const specs = (product.specs ?? {}) as Record<string, string>;
+      const blank = required.filter((f) => !String(specs[f.key] ?? '').trim());
+      if (blank.length > 0) {
+        throw new AppError('VALIDATION_FAILED', 'Some required specifications are missing', {
+          detail: `Fill in: ${blank.map((f) => f.label).join(', ')}.`,
+        });
+      }
+    }
 
     const updated = await this.prisma.client.vendorProduct.update({
       where: { id },
@@ -378,15 +403,18 @@ export class VendorProductsService {
         vendor: { select: { id: true, name: true } },
         images: {
           where: { isPrimary: true },
-          select: { id: true, storageKey: true },
+          select: { id: true },
           take: 1,
         },
       },
     });
 
     const now = new Date();
-    const withStatus = products.map((p) => ({
+    const withStatus = products.map(({ images, ...p }) => ({
       ...p,
+      // The id is all a client needs to request the bytes; the storage key is
+      // an internal path and has no business leaving the server.
+      primaryImageId: images[0]?.id ?? null,
       // What it is right now, not what was last written to the row.
       effectiveStatus: effectiveOfferStatus(
         {
@@ -424,7 +452,9 @@ export class VendorProductsService {
         vendor: { select: { id: true, name: true, contactEmail: true } },
         images: {
           orderBy: { sortOrder: 'asc' },
-          select: { id: true, storageKey: true, isPrimary: true, sortOrder: true, mimeType: true },
+          // No storageKey: it is an internal path, and the id is all a client
+          // needs to ask for the bytes.
+          select: { id: true, isPrimary: true, sortOrder: true, mimeType: true, sizeBytes: true },
         },
         reviews: {
           orderBy: { createdAt: 'desc' },
